@@ -96,3 +96,8 @@ pnpm pack:edge
 - Firefox требует уникальный ID в `browser_specific_settings`
 - Автоматическая сборка восстанавливает оригинальный manifest после окончания
 - Для zip-упаковки Firefox требуется установленная утилита `zip`
+
+## Версионирование
+
+- Используйте `pnpm version patch|minor|major` — скрипт `scripts/sync-version.js` автоматически проставит новую версию во всех manifest-файлах.
+- Для ручного запуска синхронизации используйте `pnpm sync-version`.
