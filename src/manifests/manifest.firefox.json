@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "__MSG_extName__",
   "description": "__MSG_extDescription__",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "default_locale": "en",
   "browser_specific_settings": {
     "gecko": {
@@ -29,8 +29,12 @@
   ],
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["src/content/index.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/content/index.js"
+      ],
       "run_at": "document_end"
     }
   ]
