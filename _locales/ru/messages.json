@@ -1,0 +1,77 @@
+{
+  "extName": {
+    "message": "Let it snow"
+  },
+  "extDescription": {
+    "message": "Красивый настраиваемый снегопад на любой сайт"
+  },
+  "title": {
+    "message": "Let it snow ❄️"
+  },
+  "snowCount": {
+    "message": "Количество снежинок (1–300):"
+  },
+  "fallSpeed": {
+    "message": "Скорость падения (0.1–3.0):"
+  },
+  "snowSize": {
+    "message": "Размер снежинок:"
+  },
+  "from": {
+    "message": "от"
+  },
+  "to": {
+    "message": "до"
+  },
+  "px": {
+    "message": "px"
+  },
+  "colorsSection": {
+    "message": "Цвета снежинок"
+  },
+  "addColor": {
+    "message": "+ Добавить цвет"
+  },
+  "symbolsSection": {
+    "message": "Символы снежинок"
+  },
+  "addSymbol": {
+    "message": "+ Добавить символ"
+  },
+  "placeholderSymbol": {
+    "message": "Символ или HTML-код"
+  },
+  "startButton": {
+    "message": "Let it snow!"
+  },
+  "errorNoColor": {
+    "message": "Добавьте хотя бы один цвет!"
+  },
+  "errorNoSymbol": {
+    "message": "Добавьте хотя бы один символ!"
+  },
+  "errorChromePage": {
+    "message": "Снегопад нельзя запустить на системных страницах Chrome.\nПерейдите на обычный сайт (http/https) и попробуйте снова."
+  },
+  "errorInject": {
+    "message": "Не удалось запустить снегопад.\nПопробуйте обновить страницу."
+  },
+  "resetDefaults": {
+    "message": "Вернуть настройки по умолчанию"
+  },
+  "extenstionTitle": {
+    "message": "Новогодний снегопад"
+  },
+  "extenstionDescription": {
+    "message": "Настройте волшебный снегопад на любой странице"
+  },
+  "min": {
+    "message": "Мин: "
+  },
+  "max": {
+    "message": "Макс: "
+  },
+  "minimumHint": {
+    "message": "(минимум 1)"
+  }
+}
