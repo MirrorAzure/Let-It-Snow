@@ -9,7 +9,7 @@
     "message": "Let it snow ❄️"
   },
   "snowCount": {
-    "message": "Количество снежинок (1–300):"
+    "message": "Количество снежинок (1–320):"
   },
   "fallSpeed": {
     "message": "Скорость падения (0.1–3.0):"
@@ -73,5 +73,8 @@
   },
   "minimumHint": {
     "message": "(минимум 1)"
+  },
+  "delete": {
+    "message": "Удалить"
   }
 }

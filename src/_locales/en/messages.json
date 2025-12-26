@@ -9,7 +9,7 @@
     "message": "Let it snow ❄️"
   },
   "snowCount": {
-    "message": "Number of snowflakes (1–300):"
+    "message": "Number of snowflakes (1–320):"
   },
   "fallSpeed": {
     "message": "Falling speed (0.1–3.0):"
@@ -73,5 +73,8 @@
   },
   "minimumHint": {
     "message": "(at least 1)"
+  },
+  "delete": {
+    "message": "Delete"
   }
 }
