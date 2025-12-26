@@ -2,17 +2,28 @@ import { defineConfig } from 'vite';
 import { crx } from '@crxjs/vite-plugin';
 import manifest from './src/manifest.json';
 
-export default defineConfig({
-  plugins: [crx({ manifest })],
-  build: {
-    outDir: 'dist',
+const getBrowserConfig = (mode) => {
+  const outDir = `dist/${mode}`;
+  
+  return {
+    outDir,
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        assetFileNames: 'assets/[name].[ext]',
+        assetFileNames: '[name].[ext]',
         chunkFileNames: '[name].js',
         entryFileNames: '[name].js'
       }
     }
-  }
+  };
+};
+
+export default defineConfig(({ mode }) => {
+  return {
+    plugins: [crx({ manifest })],
+    build: getBrowserConfig(mode || 'chrome'),
+    define: {
+      'process.env.BROWSER': JSON.stringify(mode || 'chrome')
+    }
+  };
 });

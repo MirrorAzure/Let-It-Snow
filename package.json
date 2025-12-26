@@ -5,9 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/build.js",
+    "build:chrome": "vite build --mode chrome",
+    "build:firefox": "vite build --mode firefox",
+    "build:edge": "vite build --mode edge",
     "preview": "vite preview",
-    "pack": "crx3 dist -o let-it-snow.crx"
+    "pack:chrome": "crx3 dist/chrome -o builds/let-it-snow-chrome.crx",
+    "pack:firefox": "cd dist/firefox && zip -r ../../builds/let-it-snow-firefox.zip . && cd ../../",
+    "pack:edge": "crx3 dist/edge -o builds/let-it-snow-edge.crx"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0",
