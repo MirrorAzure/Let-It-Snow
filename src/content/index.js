@@ -22,7 +22,7 @@ function startSnow(config) {
   const flakes = [];
   const snowsizerange = snowmaxsize - snowminsize;
 
-    for (let i = 0; i < snowmax; i++) {
+  for (let i = 0; i < snowmax; i++) {
     const id = `snowflake-${i}`;
     const flake = document.createElement('span');
     flake.id = id;
@@ -39,7 +39,7 @@ function startSnow(config) {
     flake.style.textShadow = '0 0 5px rgba(255, 255, 255, 0.7)';
     flake.style.willChange = 'transform, opacity';
     
-        if (Math.random() > 0.7) {
+    if (Math.random() > 0.7) {
       flake.style.animation = `twinkle ${2 + Math.random() * 3}s infinite alternate`;
       const style = document.createElement('style');
       style.textContent = `
@@ -81,7 +81,7 @@ function startSnow(config) {
         flake.y = -snowmaxsize;
         flake.x = Math.random() * window.innerWidth;
         flake.phase = 0;
-                if (Math.random() > 0.8) {
+        if (Math.random() > 0.8) {
           flake.el.innerHTML = snowletters[Math.floor(Math.random() * snowletters.length)];
           flake.el.style.color = snowcolor[Math.floor(Math.random() * snowcolor.length)];
         }

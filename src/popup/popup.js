@@ -1,31 +1,34 @@
+import './popup.css';
+
 function t(key) {
   return chrome.i18n.getMessage(key) || key;
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    document.querySelectorAll('[data-i18n]').forEach(el => {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');
     const message = t(key);
 
-        if (el.children.length === 0) {
+    if (el.children.length === 0) {
       el.textContent = message;
       return;
     }
 
-        let replaced = false;
+    let replaced = false;
     for (let node of el.childNodes) {
       if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== '') {
         node.textContent = message;
         replaced = true;
-        break;       }
+        break;
+      }
     }
 
-        if (!replaced) {
+    if (!replaced) {
       el.prepend(document.createTextNode(message));
     }
   });
 
-    document.querySelectorAll('input[type="text"]').forEach(input => {
+  document.querySelectorAll('input[type="text"]').forEach(input => {
     if (input.closest('#symbolsList')) {
       input.placeholder = t('placeholderSymbol');
     }
@@ -47,7 +50,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     addSymbol: document.getElementById('addSymbol')
   };
 
-    const saveSettings = async () => {
+  const saveSettings = async () => {
     const colors = Array.from(elements.colorsList.querySelectorAll('input[type="color"]')).map(i => i.value);
     const symbols = Array.from(elements.symbolsList.querySelectorAll('input[type="text"]')).map(i => i.value.trim()).filter(s => s !== '');
 
@@ -61,7 +64,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   };
 
-    const saved = await chrome.storage.sync.get([
+  const saved = await chrome.storage.sync.get([
     'snowmax', 'sinkspeed', 'snowminsize', 'snowmaxsize',
     'colors', 'symbols'
   ]);
@@ -94,7 +97,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (elements.colorsList.children.length === 0) addColorItem('#ffffff');
   if (elements.symbolsList.children.length === 0) addSymbolItem('❄');
 
-    function addColorItem(color = '#ffffff') {
+  function addColorItem(color = '#ffffff') {
     const div = document.createElement('div');
     div.className = 'item';
     div.innerHTML = `
@@ -107,7 +110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const textInput = div.querySelector('.color-text');
     const deleteBtn = div.querySelector('button');
     
-        colorInput.addEventListener('input', () => {
+    colorInput.addEventListener('input', () => {
       textInput.value = colorInput.value;
       saveSettings();
     });
@@ -165,7 +168,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.symbolsList.appendChild(div);
   }
 
-    elements.addColor.addEventListener('click', () => {
+  elements.addColor.addEventListener('click', () => {
     const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16);
     addColorItem(randomColor);
     saveSettings();
@@ -178,7 +181,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveSettings();
   });
 
-    elements.snowmax.addEventListener('input', () => {
+  elements.snowmax.addEventListener('input', () => {
     elements.snowmaxValue.textContent = elements.snowmax.value;
     saveSettings();
   });
@@ -206,7 +209,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveSettings();
   });
 
-    elements.startSnow.addEventListener('click', async () => {
+  elements.startSnow.addEventListener('click', async () => {
     const colors = Array.from(elements.colorsList.querySelectorAll('input[type="color"]')).map(i => i.value);
     const symbols = Array.from(elements.symbolsList.querySelectorAll('input[type="text"]')).map(i => i.value.trim()).filter(s => s !== '');
 
@@ -228,12 +231,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       snowletters: symbols
     };
 
-        const originalHtml = elements.startSnow.innerHTML;
+    const originalHtml = elements.startSnow.innerHTML;
     const originalBackground = elements.startSnow.style.background;
     elements.startSnow.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Запускаем волшебство...</span>';
     elements.startSnow.disabled = true;
     
-        let blinkCount = 0;
+    let blinkCount = 0;
     const blinkInterval = setInterval(() => {
       const colors = ['#ff6b6b', '#4fc3f7', '#66bb6a', '#ffa726'];
       elements.startSnow.style.background = `linear-gradient(135deg, ${colors[blinkCount % 4]}, ${colors[(blinkCount + 1) % 4]})`;
@@ -244,7 +247,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-      if (!tab?.id || tab.url.startsWith('chrome:        clearInterval(blinkInterval);
+      if (!tab?.id || tab.url.startsWith('chrome:')) {
+        clearInterval(blinkInterval);
         elements.startSnow.innerHTML = originalHtml;
         elements.startSnow.disabled = false;
         elements.startSnow.style.background = originalBackground;
@@ -254,7 +258,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       await chrome.tabs.sendMessage(tab.id, { action: 'startSnow', config });
       
-            clearInterval(blinkInterval);
+      clearInterval(blinkInterval);
       elements.startSnow.innerHTML = '<i class="fas fa-check"></i><span>Снегопад запущен!</span>';
       elements.startSnow.style.background = 'linear-gradient(135deg, #66bb6a, #2e7d32)';
       
@@ -278,7 +282,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
           await chrome.tabs.sendMessage(tab.id, { action: 'startSnow', config });
           
-                    elements.startSnow.innerHTML = '<i class="fas fa-check"></i><span>Снегопад запущен!</span>';
+          elements.startSnow.innerHTML = '<i class="fas fa-check"></i><span>Снегопад запущен!</span>';
           elements.startSnow.style.background = 'linear-gradient(135deg, #66bb6a, #2e7d32)';
           
           setTimeout(() => {
