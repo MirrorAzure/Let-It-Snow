@@ -45,6 +45,16 @@ try {
         stdio: 'pipe'
       });
       console.log(`   ✓ Сборка завершена для ${browser}`);
+
+      // Копируем локализации (_locales) в итоговую сборку, чтобы default_locale не ломал установку
+      const localesSrc = path.join(srcDir, '_locales');
+      const localesDest = path.join(distDir, browser, '_locales');
+      if (fs.existsSync(localesSrc)) {
+        fs.cpSync(localesSrc, localesDest, { recursive: true });
+        console.log('   ✓ Локализации скопированы');
+      } else {
+        console.warn('   ⚠ Папка _locales не найдена и не была скопирована');
+      }
     } catch (error) {
       console.error(`   ✗ Ошибка сборки для ${browser}:`, error.message);
       throw error;
