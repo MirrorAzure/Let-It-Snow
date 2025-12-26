@@ -1,10 +1,13 @@
 let snowInterval = null;
+let creationTimeouts = [];
 
 function stopSnow() {
   if (snowInterval) {
     clearInterval(snowInterval);
     snowInterval = null;
   }
+  creationTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+  creationTimeouts = [];
   document.querySelectorAll('span[id^="snowflake-"]').forEach(el => el.remove());
 }
 
@@ -23,7 +26,7 @@ function startSnow(config) {
   const snowsizerange = snowmaxsize - snowminsize;
   let flakeCount = 0;
   
-  const groupSize = 80 / 80; // Размер группы снежинок
+  const groupSize = snowmax / 80; // Размер группы снежинок
   const groupDelay = 1000; // Задержка между группами в миллисекундах
 
   function createFlakeGroup() {
@@ -76,7 +79,8 @@ function startSnow(config) {
     }
 
     if (flakeCount < snowmax) {
-      setTimeout(createFlakeGroup, groupDelay);
+      const timeoutId = setTimeout(createFlakeGroup, groupDelay);
+      creationTimeouts.push(timeoutId);
     }
   }
 
