@@ -74,7 +74,6 @@ jobs:
         with:
           files: |
             builds/**
-            dist/**
           body: ${{ steps.changelog.outputs.changelog }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
