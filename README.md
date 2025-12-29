@@ -35,6 +35,12 @@ This creates an optimized build in the `dist` folder.
 pnpm run build && pnpm run pack
 ```
 
+### Playground server
+```bash
+pnpm run playground
+```
+Serves the `playground/` page for quickly testing the content script. Load the extension in your browser, open `http://localhost:4177`, and use the controls to start/stop snow, tweak parameters, and flip light/dark backgrounds.
+
 ### Load the extension in Chrome
 
 1. Run `pnpm run build` to generate the dist folder

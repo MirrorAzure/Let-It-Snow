@@ -5,6 +5,7 @@ const GIF_LAYER_ID = 'let-it-snow-gif-layer';
 const MAX_Z_INDEX = '2147483646';
 const FALLBACK_GIF_DATA_URL = 'data:image/gif;base64,R0lGODlhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs='; // 1x1 transparent gif
 const IS_TEST_ENV = import.meta?.env?.MODE === 'test';
+const PLAYGROUND_MESSAGE_TARGET = 'let-it-snow-playground';
 const DEFAULT_CONFIG = {
   snowmax: 80,
   sinkspeed: 0.4,
@@ -969,6 +970,36 @@ async function startSnow(config) {
   controller = new SnowWebGPUController(config);
   await controller.start();
 }
+
+const safePostMessage = (payload) => {
+  if (typeof window === 'undefined') return;
+  if (typeof window.postMessage !== 'function') return;
+  window.postMessage(payload, '*');
+};
+
+const handleWindowBridgeMessage = (event) => {
+  if (event.source !== window) return;
+
+  const { target, action, config } = event.data || {};
+  if (target !== PLAYGROUND_MESSAGE_TARGET) return;
+
+  if (action === 'startSnow') {
+    startSnow(config || {}).catch((err) => console.error(err));
+    return;
+  }
+
+  if (action === 'stopSnow') {
+    stopSnow();
+    return;
+  }
+
+  if (action === 'ping') {
+    safePostMessage({ target: PLAYGROUND_MESSAGE_TARGET, action: 'pong' });
+  }
+};
+
+window.addEventListener('message', handleWindowBridgeMessage);
+safePostMessage({ target: PLAYGROUND_MESSAGE_TARGET, action: 'ready' });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const respond = typeof sendResponse === 'function' ? sendResponse : () => {};
