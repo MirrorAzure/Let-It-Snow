@@ -19,7 +19,7 @@ class SnowWebGPUController {
     this.device = null;
     this.pipeline = null;
     this.uniformBuffer = null;
-    this.uniformArray = new Float32Array(4);
+    this.uniformArray = new Float32Array(8);
     this.uniformBindGroup = null;
     this.glyphTexture = null;
     this.glyphSampler = null;
@@ -166,6 +166,7 @@ class SnowWebGPUController {
       '  viewport: vec2<f32>,',
       '  glyphCount: f32,',
       '  glyphSize: f32,',
+      '  isMonotone: f32,',
       '};',
       '@group(0) @binding(0) var<uniform> uniforms: Uniforms;',
       '@group(0) @binding(1) var glyphSampler: sampler;',
@@ -225,12 +226,21 @@ class SnowWebGPUController {
       '  );',
       '  let glyphSample = textureSample(glyphTexture, glyphSampler, atlasUV);',
       '  let p = uv * 2.0 - 1.0;',
-      '  let sizeNormalized = clamp(size / 20.0, 0.5, 2.5);',
-      '  let haloRadius = 4.0 * sizeNormalized;',
+      '  let sizeFactor = clamp(size / uniforms.glyphSize, 0.5, 6.0);',
+      '  let haloRadius = 3.0 * sizeFactor;',
       '  let halo = exp(-haloRadius * dot(p, p));',
       '  let haloColor = halo * color;',
-      '  let texturedColor = glyphSample.rgb * color + haloColor * 0.8;',
-      '  let alpha = clamp(glyphSample.a + halo * 0.65, 0.0, 1.0);',
+      '  let glyphAlpha = glyphSample.a;',
+      '  let haloMask = 1.0 - glyphAlpha;',
+      '  var texturedColor: vec3<f32>;',
+      '  if (uniforms.isMonotone > 0.5) {',
+      '    // Свечение позади: не усиливаем центр глифа',
+      '    texturedColor = color * glyphAlpha + haloColor * haloMask * 1.1;',
+      '  } else {',
+      '    // Для текстур — цвет глифа спереди, свечение только там, где нет плотного пикселя',
+      '    texturedColor = glyphSample.rgb * color * glyphAlpha + haloColor * haloMask * 1.1;',
+      '  }',
+      '  let alpha = clamp(max(glyphAlpha, halo * 0.6), 0.0, 1.0);',
       '  return vec4<f32>(texturedColor, alpha);',
       '}',
     ].join('\n');
@@ -509,7 +519,18 @@ class SnowWebGPUController {
       ctx.fillText(g, x, y);
     });
 
+    // Проверка на монотонность текстуры
+    let isMonotone = false;
+    try {
+      const imageData = ctx.getImageData(0, 0, width, height);
+      isMonotone = this.isTextureMonotone(imageData);
+    } catch (e) {
+      // getImageData может не поддерживаться в тестовом окружении
+      isMonotone = false;
+    }
+    
     const bitmap = await createImageBitmap(canvas);
+    
     if (this.glyphTexture) {
       this.glyphTexture.destroy();
     }
@@ -537,6 +558,7 @@ class SnowWebGPUController {
 
     this.uniformArray[2] = this.glyphCount;
     this.uniformArray[3] = this.glyphSize;
+    this.uniformArray[4] = isMonotone ? 1.0 : 0.0;
   }
 
   startFallback2D() {
@@ -613,6 +635,45 @@ class SnowWebGPUController {
     const g = ((bigint >> 8) & 255) / 255;
     const b = (bigint & 255) / 255;
     return { r, g, b };
+  }
+
+  isTextureMonotone(imageData) {
+    const data = imageData.data;
+    if (data.length === 0) return true;
+    
+    let firstR = -1, firstG = -1, firstB = -1, firstA = -1;
+    let foundNonTransparent = false;
+    
+    // Находим первый непрозрачный пиксель
+    for (let i = 0; i < data.length; i += 4) {
+      const a = data[i + 3];
+      if (a > 0) {
+        firstR = data[i];
+        firstG = data[i + 1];
+        firstB = data[i + 2];
+        firstA = a;
+        foundNonTransparent = true;
+        break;
+      }
+    }
+    
+    if (!foundNonTransparent) return true;
+    
+    // Проверяем все остальные непрозрачные пиксели
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const a = data[i + 3];
+      
+      if (a > 0) {
+        if (r !== firstR || g !== firstG || b !== firstB || a !== firstA) {
+          return false;
+        }
+      }
+    }
+    
+    return true;
   }
 }
 
