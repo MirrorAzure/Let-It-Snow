@@ -175,6 +175,7 @@ class SnowWebGPUController {
       '  @location(0) uv: vec2<f32>,',
       '  @location(1) color: vec3<f32>,',
       '  @location(2) glyph: f32,',
+      '  @location(3) size: f32,',
       '};',
       '@vertex',
       'fn vs(',
@@ -206,27 +207,32 @@ class SnowWebGPUController {
       '  out.uv = uvIn;',
       '  out.color = iColor;',
       '  out.glyph = iGlyph;',
+      '  out.size = iSize;',
       '  return out;',
       '}',
       '@fragment',
       'fn fs(',
       '  @location(0) uv: vec2<f32>,',
       '  @location(1) color: vec3<f32>,',
-      '  @location(2) glyph: f32',
+      '  @location(2) glyph: f32,',
+      '  @location(3) size: f32',
       ') -> @location(0) vec4<f32> {',
       '  let glyphIdx = clamp(i32(round(glyph)), 0, i32(uniforms.glyphCount) - 1);',
       '  let atlasWidth = uniforms.glyphSize * uniforms.glyphCount;',
-      '  let atlasUV = vec2<f32>((',
-      '    uv.x * uniforms.glyphSize + uniforms.glyphSize * f32(glyphIdx)) / atlasWidth,',
+      '  let atlasUV = vec2<f32>(',
+      '    (uv.x * uniforms.glyphSize + uniforms.glyphSize * f32(glyphIdx)) / atlasWidth,',
       '    uv.y',
       '  );',
       '  let glyphSample = textureSample(glyphTexture, glyphSampler, atlasUV);',
       '  let p = uv * 2.0 - 1.0;',
-      '  let halo = exp(-6.0 * dot(p, p));',
-      '  let alpha = clamp(glyphSample.a + halo * 0.35, 0.0, 1.0);',
-      '  let texturedColor = glyphSample.rgb * color;',
+      '  let sizeNormalized = clamp(size / 20.0, 0.5, 2.5);',
+      '  let haloRadius = 4.0 * sizeNormalized;',
+      '  let halo = exp(-haloRadius * dot(p, p));',
+      '  let haloColor = halo * color;',
+      '  let texturedColor = glyphSample.rgb * color + haloColor * 0.8;',
+      '  let alpha = clamp(glyphSample.a + halo * 0.65, 0.0, 1.0);',
       '  return vec4<f32>(texturedColor, alpha);',
-      '}'
+      '}',
     ].join('\n');
 
     const shaderModule = this.device.createShaderModule({
@@ -345,7 +351,7 @@ class SnowWebGPUController {
 
     this.instances = new Array(Math.max(1, snowmax)).fill(null).map((_, idx) => {
       const size = snowminsize + Math.random() * sizeRange;
-      const colorHex = snowcolor[idx % snowcolor.length];
+      const colorHex = snowcolor[Math.floor(Math.random() * snowcolor.length)];
       const color = this.hexToRgb(colorHex);
       const speed = sinkspeed * (size / 20) * 20;
       const sway = 10 + Math.random() * 25;
@@ -632,6 +638,28 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 window.addEventListener('beforeunload', stopSnow);
+
+// Auto-start if enabled
+(async () => {
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      const stored = await chrome.storage.sync.get(['autoStart', 'snowmax', 'sinkspeed', 'snowminsize', 'snowmaxsize', 'colors', 'symbols']);
+      if (stored.autoStart) {
+        const config = {
+          snowmax: stored.snowmax || 80,
+          sinkspeed: stored.sinkspeed || 0.4,
+          snowminsize: stored.snowminsize || 15,
+          snowmaxsize: stored.snowmaxsize || 40,
+          snowcolor: stored.colors || ['#ffffff'],
+          snowletters: stored.symbols || ['❄']
+        };
+        startSnow(config).catch((err) => console.error(err));
+      }
+    }
+  } catch (err) {
+    console.error('Error checking auto-start setting:', err);
+  }
+})();
 
 // Export for testing
 export { SnowWebGPUController };

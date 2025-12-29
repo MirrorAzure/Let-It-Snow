@@ -8,6 +8,9 @@
   "title": {
     "message": "Let it snow ❄️"
   },
+  "autoStart": {
+    "message": "Авто старт"
+  },
   "snowCount": {
     "message": "Количество снежинок (1–320):"
   },

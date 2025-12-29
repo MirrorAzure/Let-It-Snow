@@ -47,7 +47,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     symbolsList: document.getElementById('symbolsList'),
     startSnow: document.getElementById('startSnow'),
     addColor: document.getElementById('addColor'),
-    addSymbol: document.getElementById('addSymbol')
+    addSymbol: document.getElementById('addSymbol'),
+    autoStart: document.getElementById('autoStart')
   };
 
   const saveSettings = async () => {
@@ -60,13 +61,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       snowminsize: parseInt(elements.snowminsize.value),
       snowmaxsize: parseInt(elements.snowmaxsize.value),
       colors: colors.length > 0 ? colors : ['#ffffff'],
-      symbols: symbols.length > 0 ? symbols : ['❄']
+      symbols: symbols.length > 0 ? symbols : ['❄'],
+      autoStart: elements.autoStart.checked
     });
   };
 
   const saved = await chrome.storage.sync.get([
     'snowmax', 'sinkspeed', 'snowminsize', 'snowmaxsize',
-    'colors', 'symbols'
+    'colors', 'symbols', 'autoStart'
   ]);
 
   const defaults = {
@@ -88,6 +90,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.snowmaxsize.value = config.snowmaxsize;
   elements.minsizeValue.textContent = config.snowminsize;
   elements.maxsizeValue.textContent = config.snowmaxsize;
+  elements.autoStart.checked = config.autoStart || false;
 
   elements.colorsList.innerHTML = '';
   elements.symbolsList.innerHTML = '';
@@ -171,6 +174,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.addColor.addEventListener('click', () => {
     const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16);
     addColorItem(randomColor);
+    saveSettings();
+  });
+
+  elements.autoStart.addEventListener('change', () => {
     saveSettings();
   });
 
