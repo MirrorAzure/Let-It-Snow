@@ -224,7 +224,8 @@ class SnowWebGPUController {
       '  let p = uv * 2.0 - 1.0;',
       '  let halo = exp(-6.0 * dot(p, p));',
       '  let alpha = clamp(glyphSample.a + halo * 0.35, 0.0, 1.0);',
-      '  return vec4<f32>(color, alpha);',
+      '  let texturedColor = glyphSample.rgb * color;',
+      '  return vec4<f32>(texturedColor, alpha);',
       '}'
     ].join('\n');
 
@@ -631,3 +632,6 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 window.addEventListener('beforeunload', stopSnow);
+
+// Export for testing
+export { SnowWebGPUController };
