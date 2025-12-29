@@ -41,6 +41,21 @@
   "addSymbol": {
     "message": "+ Добавить символ"
   },
+  "gifSection": {
+    "message": "GIF-анимации"
+  },
+  "gifHint": {
+    "message": "Добавьте ссылки на GIF, чтобы смешать их со снежинками"
+  },
+  "addGif": {
+    "message": "+ Добавить GIF"
+  },
+  "gifCount": {
+    "message": "Количество GIF"
+  },
+  "gifPlaceholder": {
+    "message": "https://example.com/snow.gif"
+  },
   "placeholderSymbol": {
     "message": "Символ или HTML-код"
   },

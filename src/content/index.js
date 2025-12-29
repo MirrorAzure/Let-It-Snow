@@ -1,4 +1,5 @@
 const OVERLAY_ID = 'let-it-snow-webgpu-canvas';
+const GIF_LAYER_ID = 'let-it-snow-gif-layer';
 const MAX_Z_INDEX = '2147483646';
 const DEFAULT_CONFIG = {
   snowmax: 80,
@@ -6,7 +7,9 @@ const DEFAULT_CONFIG = {
   snowminsize: 15,
   snowmaxsize: 40,
   snowcolor: ['#ffffff'],
-  snowletters: ['❄']
+  snowletters: ['❄'],
+  gifUrls: [],
+  gifCount: 0
 };
 
 let controller = null;
@@ -37,6 +40,12 @@ class SnowWebGPUController {
     this.isFallback2D = false;
     this.fallbackFlakes = [];
     this.fallbackCtx = null;
+    this.gifLayer = null;
+    this.gifFlakes = [];
+    this.gifFrameRequest = null;
+    this.gifLastTimestamp = 0;
+    this.isPaused = false;
+    this.fallbackDraw = null;
   }
 
   async start() {
@@ -45,6 +54,7 @@ class SnowWebGPUController {
     if (!ok) {
       this.startFallback2D();
     }
+    this.startGifLayer();
   }
 
   destroy() {
@@ -74,6 +84,9 @@ class SnowWebGPUController {
     this.instances = [];
     this.fallbackFlakes = [];
     this.fallbackCtx = null;
+    this.fallbackDraw = null;
+    this.isPaused = false;
+    this.stopGifLayer();
   }
 
   createOverlayCanvas() {
@@ -96,6 +109,149 @@ class SnowWebGPUController {
     document.documentElement.appendChild(canvas);
 
     this.canvas = canvas;
+  }
+
+  startGifLayer() {
+    const urls = Array.isArray(this.config.gifUrls)
+      ? this.config.gifUrls.filter((u) => typeof u === 'string' && u.trim() !== '')
+      : [];
+    const count = Math.max(0, Math.min(this.config.gifCount || 0, 160));
+
+    this.stopGifLayer();
+
+    if (!urls.length || count === 0) return;
+
+    const existing = document.getElementById(GIF_LAYER_ID);
+    if (existing) existing.remove();
+
+    const layer = document.createElement('div');
+    layer.id = GIF_LAYER_ID;
+    layer.style.position = 'fixed';
+    layer.style.top = '0';
+    layer.style.left = '0';
+    layer.style.width = '100vw';
+    layer.style.height = '100vh';
+    layer.style.pointerEvents = 'none';
+    layer.style.userSelect = 'none';
+    layer.style.zIndex = MAX_Z_INDEX;
+    layer.style.inset = '0';
+    layer.style.overflow = 'hidden';
+    layer.style.display = 'block';
+    layer.style.background = 'transparent';
+    document.documentElement.appendChild(layer);
+
+    const sizeRange = this.config.snowmaxsize - this.config.snowminsize;
+    const flakes = new Array(count).fill(null).map(() => {
+      const size = this.config.snowminsize + Math.random() * sizeRange;
+      const speed = this.config.sinkspeed * (size / 20) * 20;
+      const sway = 10 + Math.random() * 25;
+      const freq = 0.6 + Math.random() * 1.2;
+      const img = document.createElement('img');
+      img.src = urls[Math.floor(Math.random() * urls.length)];
+      img.alt = 'snow-gif';
+      img.draggable = false;
+      img.loading = 'lazy';
+      img.style.position = 'absolute';
+      img.style.pointerEvents = 'none';
+      img.style.userSelect = 'none';
+      img.style.willChange = 'transform, opacity';
+      img.style.width = `${size}px`;
+      img.style.height = `${size}px`;
+      img.style.opacity = '0.9';
+      layer.appendChild(img);
+      return {
+        el: img,
+        size,
+        speed,
+        sway,
+        freq,
+        x: Math.random() * window.innerWidth,
+        y: -size - Math.random() * window.innerHeight,
+        phase: Math.random() * Math.PI * 2
+      };
+    });
+
+    this.gifLayer = layer;
+    this.gifFlakes = flakes;
+    this.gifLastTimestamp = performance.now();
+    this.gifFrameRequest = requestAnimationFrame((ts) => this.animateGifLayer(ts));
+  }
+
+  pauseAnimations() {
+    if (this.isPaused) return;
+    this.isPaused = true;
+    if (this.frameRequest) {
+      cancelAnimationFrame(this.frameRequest);
+      this.frameRequest = null;
+    }
+    if (this.gifFrameRequest) {
+      cancelAnimationFrame(this.gifFrameRequest);
+      this.gifFrameRequest = null;
+    }
+  }
+
+  resumeAnimations() {
+    if (!this.isPaused) return;
+    this.isPaused = false;
+    this.lastTimestamp = performance.now();
+    this.gifLastTimestamp = performance.now();
+
+    if (this.isFallback2D && this.fallbackDraw) {
+      this.frameRequest = requestAnimationFrame(this.fallbackDraw);
+    } else if (this.device && this.context) {
+      this.frameRequest = requestAnimationFrame((ts) => this.frame(ts));
+    }
+
+    if (this.gifFlakes.length && this.gifLayer) {
+      this.gifFrameRequest = requestAnimationFrame((ts) => this.animateGifLayer(ts));
+    }
+  }
+
+  animateGifLayer(timestamp) {
+    if (!this.gifLayer || !this.gifFlakes.length) return;
+
+    const delta = Math.max(0.001, (timestamp - this.gifLastTimestamp) / 1000);
+    this.gifLastTimestamp = timestamp;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    this.gifFlakes.forEach((flake) => {
+      flake.phase += flake.freq * delta;
+      flake.y += flake.speed * delta;
+
+      if (flake.y - flake.size > height) {
+        flake.y = -flake.size;
+        flake.x = Math.random() * width;
+        flake.phase = Math.random() * Math.PI * 2;
+      }
+
+      const x = flake.x + Math.sin(flake.phase) * flake.sway;
+      const rotation = Math.sin(flake.phase * 0.5) * 0.4;
+      flake.el.style.transform = `translate3d(${x}px, ${flake.y}px, 0) rotate(${rotation}rad)`;
+    });
+
+    this.gifFrameRequest = requestAnimationFrame((ts) => this.animateGifLayer(ts));
+  }
+
+  stopGifLayer() {
+    if (this.gifFrameRequest) {
+      cancelAnimationFrame(this.gifFrameRequest);
+      this.gifFrameRequest = null;
+    }
+
+    this.gifFlakes.forEach((flake) => {
+      if (flake.el?.parentElement) {
+        flake.el.remove();
+      }
+    });
+
+    this.gifFlakes = [];
+
+    const layer = this.gifLayer || document.getElementById(GIF_LAYER_ID);
+    if (layer) {
+      layer.remove();
+    }
+    this.gifLayer = null;
   }
 
   async tryWebGPU() {
@@ -226,22 +382,26 @@ class SnowWebGPUController {
       '  );',
       '  let glyphSample = textureSample(glyphTexture, glyphSampler, atlasUV);',
       '  let p = uv * 2.0 - 1.0;',
+      '  let r = length(p);',
       '  let sizeFactor = clamp(size / uniforms.glyphSize, 0.5, 6.0);',
-      '  let haloRadius = 3.0 * sizeFactor;',
-      '  let halo = exp(-haloRadius * dot(p, p));',
-      '  let haloColor = halo * color;',
+      '  let gaussian = exp(-pow(r * sizeFactor * 0.95, 1.35));',
+      '  let rimFade = 1.0 - smoothstep(0.42, 0.98, r);',
+      '  let coreBoost = 1.15 + smoothstep(0.0, 0.55, 1.0 - r) * 0.35;',
+      '  let halo = gaussian * rimFade * coreBoost;',
+      '  let haloColor = halo * color * 1.1;',
       '  let glyphAlpha = glyphSample.a;',
-      '  let haloMask = 1.0 - glyphAlpha;',
+      '  let haloMask = (1.0 - glyphAlpha) * (1.0 - smoothstep(0.7, 0.98, r));',
       '  var texturedColor: vec3<f32>;',
       '  if (uniforms.isMonotone > 0.5) {',
       '    // Свечение позади: не усиливаем центр глифа',
-      '    texturedColor = color * glyphAlpha + haloColor * haloMask * 1.1;',
+      '    texturedColor = color * glyphAlpha + haloColor * haloMask;',
       '  } else {',
       '    // Для текстур — цвет глифа спереди, свечение только там, где нет плотного пикселя',
-      '    texturedColor = glyphSample.rgb * color * glyphAlpha + haloColor * haloMask * 1.1;',
+      '    texturedColor = glyphSample.rgb * color * glyphAlpha + haloColor * haloMask;',
       '  }',
-      '  let alpha = clamp(max(glyphAlpha, halo * 0.6), 0.0, 1.0);',
-      '  return vec4<f32>(texturedColor, alpha);',
+      '  let haloAlpha = halo * haloMask * 0.22;',
+      '  let alpha = clamp(max(glyphAlpha, haloAlpha), 0.0, 1.0);',
+      '  return vec4<f32>(texturedColor * alpha, alpha);',
       '}',
     ].join('\n');
 
@@ -564,7 +724,13 @@ class SnowWebGPUController {
   startFallback2D() {
     this.isFallback2D = true;
     if (!this.canvas || typeof this.canvas.getContext !== 'function') return;
-    const ctx = this.canvas.getContext('2d');
+    let ctx = null;
+    try {
+      ctx = this.canvas.getContext('2d');
+    } catch (err) {
+      console.warn('2D context unavailable, skipping fallback.', err);
+      return;
+    }
     if (!ctx) return;
     this.fallbackCtx = ctx;
     const {
@@ -625,6 +791,7 @@ class SnowWebGPUController {
       this.frameRequest = requestAnimationFrame(drawFallback);
     };
 
+    this.fallbackDraw = drawFallback;
     drawFallback();
   }
 
@@ -700,11 +867,22 @@ chrome.runtime.onMessage.addListener((message) => {
 
 window.addEventListener('beforeunload', stopSnow);
 
+const handleVisibilityChange = () => {
+  if (!controller) return;
+  if (document.hidden) {
+    controller.pauseAnimations();
+  } else {
+    controller.resumeAnimations();
+  }
+};
+
+document.addEventListener('visibilitychange', handleVisibilityChange);
+
 // Auto-start if enabled
 (async () => {
   try {
     if (typeof chrome !== 'undefined' && chrome.storage) {
-      const stored = await chrome.storage.sync.get(['autoStart', 'snowmax', 'sinkspeed', 'snowminsize', 'snowmaxsize', 'colors', 'symbols']);
+      const stored = await chrome.storage.sync.get(['autoStart', 'snowmax', 'sinkspeed', 'snowminsize', 'snowmaxsize', 'colors', 'symbols', 'gifs', 'gifCount']);
       if (stored.autoStart) {
         const config = {
           snowmax: stored.snowmax || 80,
@@ -712,7 +890,9 @@ window.addEventListener('beforeunload', stopSnow);
           snowminsize: stored.snowminsize || 15,
           snowmaxsize: stored.snowmaxsize || 40,
           snowcolor: stored.colors || ['#ffffff'],
-          snowletters: stored.symbols || ['❄']
+          snowletters: stored.symbols || ['❄'],
+          gifUrls: stored.gifs || [],
+          gifCount: stored.gifCount || 0
         };
         startSnow(config).catch((err) => console.error(err));
       }

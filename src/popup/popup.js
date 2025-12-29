@@ -48,12 +48,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     startSnow: document.getElementById('startSnow'),
     addColor: document.getElementById('addColor'),
     addSymbol: document.getElementById('addSymbol'),
-    autoStart: document.getElementById('autoStart')
+    autoStart: document.getElementById('autoStart'),
+    gifsList: document.getElementById('gifsList'),
+    addGif: document.getElementById('addGif'),
+    gifCount: document.getElementById('gifCount'),
+    gifCountValue: document.getElementById('gifCountValue')
   };
 
   const saveSettings = async () => {
     const colors = Array.from(elements.colorsList.querySelectorAll('input[type="color"]')).map(i => i.value);
     const symbols = Array.from(elements.symbolsList.querySelectorAll('input[type="text"]')).map(i => i.value.trim()).filter(s => s !== '');
+    const gifs = Array.from(elements.gifsList.querySelectorAll('input[type="url"]')).map(i => i.value.trim()).filter(s => s !== '');
 
     await chrome.storage.sync.set({
       snowmax: parseInt(elements.snowmax.value),
@@ -62,13 +67,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       snowmaxsize: parseInt(elements.snowmaxsize.value),
       colors: colors.length > 0 ? colors : ['#ffffff'],
       symbols: symbols.length > 0 ? symbols : ['❄'],
+      gifs,
+      gifCount: parseInt(elements.gifCount.value) || 0,
       autoStart: elements.autoStart.checked
     });
   };
 
   const saved = await chrome.storage.sync.get([
     'snowmax', 'sinkspeed', 'snowminsize', 'snowmaxsize',
-    'colors', 'symbols', 'autoStart'
+    'colors', 'symbols', 'autoStart', 'gifs', 'gifCount'
   ]);
 
   const defaults = {
@@ -77,7 +84,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     snowminsize: 15,
     snowmaxsize: 40,
     colors: ['#ffffff', '#4fc3f7', '#bbdefb', '#e1f5fe'],
-    symbols: ['❄', '❅', '❆', '＊', '⋅', '✦']
+    symbols: ['❄', '❅', '❆', '＊', '⋅', '✦'],
+    gifs: [],
+    gifCount: 0
   };
 
   const config = { ...defaults, ...saved };
@@ -91,14 +100,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.minsizeValue.textContent = config.snowminsize;
   elements.maxsizeValue.textContent = config.snowmaxsize;
   elements.autoStart.checked = config.autoStart || false;
+  elements.gifCount.value = config.gifCount || 0;
+  elements.gifCountValue.textContent = config.gifCount || 0;
 
   elements.colorsList.innerHTML = '';
   elements.symbolsList.innerHTML = '';
+  elements.gifsList.innerHTML = '';
   config.colors.forEach(color => addColorItem(color));
   config.symbols.forEach(symbol => addSymbolItem(symbol));
+  (config.gifs || []).forEach(gif => addGifItem(gif));
 
   if (elements.colorsList.children.length === 0) addColorItem('#ffffff');
   if (elements.symbolsList.children.length === 0) addSymbolItem('❄');
+  if (elements.gifsList.children.length === 0) addGifItem('');
 
   function addColorItem(color = '#ffffff') {
     const div = document.createElement('div');
@@ -171,6 +185,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.symbolsList.appendChild(div);
   }
 
+  function addGifItem(url = '') {
+    const div = document.createElement('div');
+    div.className = 'item gif-item';
+    div.innerHTML = `
+      <div class="gif-preview"><img src="${url}" alt="GIF preview"></div>
+      <input type="url" class="gif-url" value="${url}" placeholder="${t('gifPlaceholder')}">
+      <button type="button" title="${t('delete')}"><i class="fas fa-trash"></i></button>
+    `;
+
+    const preview = div.querySelector('.gif-preview img');
+    const urlInput = div.querySelector('.gif-url');
+    const deleteBtn = div.querySelector('button');
+
+    urlInput.addEventListener('input', () => {
+      preview.src = urlInput.value;
+      saveSettings();
+    });
+
+    deleteBtn.addEventListener('click', () => {
+      div.remove();
+      saveSettings();
+    });
+
+    elements.gifsList.appendChild(div);
+  }
+
   elements.addColor.addEventListener('click', () => {
     const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16);
     addColorItem(randomColor);
@@ -178,6 +218,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   elements.autoStart.addEventListener('change', () => {
+    saveSettings();
+  });
+
+  elements.addGif.addEventListener('click', () => {
+    addGifItem('https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWx1d29qYnYxODNyeXd2OTl1MGkxZHkwZWEwZDRqc2pkb2Y2b3hxdiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/vbQMBnrKxwmFH8gq3V/giphy.gif');
     saveSettings();
   });
 
@@ -195,6 +240,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   elements.sinkspeed.addEventListener('input', () => {
     elements.sinkspeedValue.textContent = parseFloat(elements.sinkspeed.value).toFixed(1);
+    saveSettings();
+  });
+
+  elements.gifCount.addEventListener('input', () => {
+    elements.gifCountValue.textContent = elements.gifCount.value;
     saveSettings();
   });
 
@@ -219,6 +269,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.startSnow.addEventListener('click', async () => {
     const colors = Array.from(elements.colorsList.querySelectorAll('input[type="color"]')).map(i => i.value);
     const symbols = Array.from(elements.symbolsList.querySelectorAll('input[type="text"]')).map(i => i.value.trim()).filter(s => s !== '');
+    const gifs = Array.from(elements.gifsList.querySelectorAll('input[type="url"]')).map(i => i.value.trim()).filter(s => s !== '');
 
     if (colors.length === 0) {
       alert(t('errorNoColor'));
@@ -235,7 +286,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       snowminsize: parseInt(elements.snowminsize.value),
       snowmaxsize: parseInt(elements.snowmaxsize.value),
       snowcolor: colors,
-      snowletters: symbols
+      snowletters: symbols,
+      gifUrls: gifs,
+      gifCount: gifs.length > 0 ? parseInt(elements.gifCount.value) || 0 : 0
     };
 
     const originalHtml = elements.startSnow.innerHTML;

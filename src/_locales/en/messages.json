@@ -41,6 +41,21 @@
   "addSymbol": {
     "message": "+ Add symbol"
   },
+  "gifSection": {
+    "message": "GIF animations"
+  },
+  "gifHint": {
+    "message": "Add GIF URLs to mix animated flakes into the snowfall"
+  },
+  "addGif": {
+    "message": "+ Add GIF"
+  },
+  "gifCount": {
+    "message": "GIF amount"
+  },
+  "gifPlaceholder": {
+    "message": "https://example.com/snow.gif"
+  },
   "placeholderSymbol": {
     "message": "Symbol or HTML code"
   },

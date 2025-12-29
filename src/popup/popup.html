@@ -90,6 +90,27 @@
       </button>
     </div>
 
+    <div class="settings-card">
+      <div class="card-header">
+        <i class="fas fa-film"></i>
+        <h3 data-i18n="gifSection">GIF-анимации</h3>
+      </div>
+      <p class="hint" data-i18n="gifHint">Добавьте ссылки на GIF, которые будут падать вместе со снежинками.</p>
+      <label class="setting-item">
+        <div class="setting-label">
+          <i class="fas fa-layer-group"></i>
+          <span data-i18n="gifCount">Количество GIF</span>
+          <span class="value-display" id="gifCountValue">0</span>
+        </div>
+        <input type="range" id="gifCount" min="0" max="80" value="0" class="snow-slider">
+      </label>
+      <div id="gifsList" class="items-list"></div>
+      <button id="addGif" class="add-button">
+        <i class="fas fa-plus-circle"></i>
+        <span data-i18n="addGif">Добавить GIF</span>
+      </button>
+    </div>
+
     <div class="footer">
       <button id="startSnow" class="big-btn">
         <i class="fas fa-play-circle"></i>

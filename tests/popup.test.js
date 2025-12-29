@@ -86,7 +86,9 @@ describe('popup UI', () => {
         snowminsize: 12,
         snowmaxsize: 30,
         snowcolor: ['#111111', '#222222'],
-        snowletters: ['❄', '*']
+        snowletters: ['❄', '*'],
+        gifUrls: [],
+        gifCount: 0
       }
     });
   });
