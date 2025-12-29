@@ -1,6 +1,10 @@
+import shaderSource from './shader.wgsl?raw';
+
 const OVERLAY_ID = 'let-it-snow-webgpu-canvas';
 const GIF_LAYER_ID = 'let-it-snow-gif-layer';
 const MAX_Z_INDEX = '2147483646';
+const FALLBACK_GIF_DATA_URL = 'data:image/gif;base64,R0lGODlhAQABAPAAAP///wAAACwAAAAAAQABAEACAkQBADs='; // 1x1 transparent gif
+const IS_TEST_ENV = import.meta?.env?.MODE === 'test';
 const DEFAULT_CONFIG = {
   snowmax: 80,
   sinkspeed: 0.4,
@@ -23,6 +27,7 @@ class SnowWebGPUController {
     this.pipeline = null;
     this.uniformBuffer = null;
     this.uniformArray = new Float32Array(8);
+    this.uniformArray[5] = 1; // glow enabled by default
     this.uniformBindGroup = null;
     this.glyphTexture = null;
     this.glyphSampler = null;
@@ -46,6 +51,10 @@ class SnowWebGPUController {
     this.gifLastTimestamp = 0;
     this.isPaused = false;
     this.fallbackDraw = null;
+    this.gifObjectUrls = new Map();
+    this.backgroundObserver = null;
+    this.colorSchemeMedia = null;
+    this.handleBackgroundChange = null;
   }
 
   async start() {
@@ -54,7 +63,7 @@ class SnowWebGPUController {
     if (!ok) {
       this.startFallback2D();
     }
-    this.startGifLayer();
+    await this.startGifLayer();
   }
 
   destroy() {
@@ -87,6 +96,7 @@ class SnowWebGPUController {
     this.fallbackDraw = null;
     this.isPaused = false;
     this.stopGifLayer();
+    this.stopBackgroundMonitoring();
   }
 
   createOverlayCanvas() {
@@ -111,7 +121,65 @@ class SnowWebGPUController {
     this.canvas = canvas;
   }
 
-  startGifLayer() {
+  cleanupGifObjectUrls() {
+    this.gifObjectUrls.forEach((objectUrl) => {
+      URL.revokeObjectURL(objectUrl);
+    });
+    this.gifObjectUrls.clear();
+  }
+
+  async toSafeGifUrl(url) {
+    if (!url) return null;
+
+    if (url.startsWith('data:') || url.startsWith('blob:')) {
+      return url;
+    }
+
+    const extensionOrigin = typeof chrome !== 'undefined' && chrome.runtime?.id
+      ? `chrome-extension://${chrome.runtime.id}/`
+      : '';
+
+    if (extensionOrigin && url.startsWith(extensionOrigin)) {
+      return url;
+    }
+
+    if (this.gifObjectUrls.has(url)) {
+      return this.gifObjectUrls.get(url);
+    }
+
+    if (IS_TEST_ENV && /^https?:\/\//.test(url)) {
+      return FALLBACK_GIF_DATA_URL;
+    }
+
+    if (typeof fetch !== 'function') {
+      return url;
+    }
+
+    try {
+      const response = await fetch(url, { cache: 'no-cache', mode: 'cors' });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      this.gifObjectUrls.set(url, objectUrl);
+      return objectUrl;
+    } catch (error) {
+      if (!IS_TEST_ENV) {
+        console.warn('Unable to fetch GIF for CSP-safe rendering:', url, error);
+      }
+      // Fallback to embedded transparent GIF to keep the layer alive without CSP violations.
+      return FALLBACK_GIF_DATA_URL;
+    }
+  }
+
+  async resolveGifUrls(urls) {
+    const resolved = await Promise.all(urls.map((u) => this.toSafeGifUrl(u)));
+    return resolved.filter(Boolean);
+  }
+
+  async startGifLayer() {
     const urls = Array.isArray(this.config.gifUrls)
       ? this.config.gifUrls.filter((u) => typeof u === 'string' && u.trim() !== '')
       : [];
@@ -120,6 +188,9 @@ class SnowWebGPUController {
     this.stopGifLayer();
 
     if (!urls.length || count === 0) return;
+
+    const safeUrls = await this.resolveGifUrls(urls);
+    if (!safeUrls.length) return;
 
     const existing = document.getElementById(GIF_LAYER_ID);
     if (existing) existing.remove();
@@ -147,7 +218,7 @@ class SnowWebGPUController {
       const sway = 10 + Math.random() * 25;
       const freq = 0.6 + Math.random() * 1.2;
       const img = document.createElement('img');
-      img.src = urls[Math.floor(Math.random() * urls.length)];
+      img.src = safeUrls[Math.floor(Math.random() * safeUrls.length)];
       img.alt = 'snow-gif';
       img.draggable = false;
       img.loading = 'lazy';
@@ -252,6 +323,8 @@ class SnowWebGPUController {
       layer.remove();
     }
     this.gifLayer = null;
+
+    this.cleanupGifObjectUrls();
   }
 
   async tryWebGPU() {
@@ -279,6 +352,8 @@ class SnowWebGPUController {
       this.setupInstances();
       await this.setupGlyphAtlas();
       this.setupUniforms();
+      this.updateGlowState();
+      this.startBackgroundMonitoring();
       this.handleResize();
 
       this.lastTimestamp = performance.now();
@@ -317,94 +392,6 @@ class SnowWebGPUController {
   }
 
   async setupPipeline(format) {
-    const shaderSource = [
-      'struct Uniforms {',
-      '  viewport: vec2<f32>,',
-      '  glyphCount: f32,',
-      '  glyphSize: f32,',
-      '  isMonotone: f32,',
-      '};',
-      '@group(0) @binding(0) var<uniform> uniforms: Uniforms;',
-      '@group(0) @binding(1) var glyphSampler: sampler;',
-      '@group(0) @binding(2) var glyphTexture: texture_2d<f32>;',
-      'struct VSOut {',
-      '  @builtin(position) position: vec4<f32>,',
-      '  @location(0) uv: vec2<f32>,',
-      '  @location(1) color: vec3<f32>,',
-      '  @location(2) glyph: f32,',
-      '  @location(3) size: f32,',
-      '};',
-      '@vertex',
-      'fn vs(',
-      '  @location(0) position: vec2<f32>,',
-      '  @location(1) uvIn: vec2<f32>,',
-      '  @location(2) iPos: vec2<f32>,',
-      '  @location(3) iSize: f32,',
-      '  @location(4) iFall: f32,',
-      '  @location(5) iPhase: f32,',
-      '  @location(6) iFreq: f32,',
-      '  @location(7) iSway: f32,',
-      '  @location(8) iRot: f32,',
-      '  @location(9) iRotSpeed: f32,',
-      '  @location(10) iColor: vec3<f32>,',
-      '  @location(11) iGlyph: f32',
-      ') -> VSOut {',
-      '  var out: VSOut;',
-      '  let local = position * iSize;',
-      '  let c = cos(iRot);',
-      '  let s = sin(iRot);',
-      '  let rotated = vec2<f32>(local.x * c - local.y * s, local.x * s + local.y * c);',
-      '  let sway = sin(iPhase) * iSway;',
-      '  let world = vec2<f32>(iPos.x + rotated.x + sway, iPos.y + rotated.y);',
-      '  let clip = vec2<f32>(',
-      '    (world.x / uniforms.viewport.x) * 2.0 - 1.0,',
-      '    1.0 - (world.y / uniforms.viewport.y) * 2.0',
-      '  );',
-      '  out.position = vec4<f32>(clip, 0.0, 1.0);',
-      '  out.uv = uvIn;',
-      '  out.color = iColor;',
-      '  out.glyph = iGlyph;',
-      '  out.size = iSize;',
-      '  return out;',
-      '}',
-      '@fragment',
-      'fn fs(',
-      '  @location(0) uv: vec2<f32>,',
-      '  @location(1) color: vec3<f32>,',
-      '  @location(2) glyph: f32,',
-      '  @location(3) size: f32',
-      ') -> @location(0) vec4<f32> {',
-      '  let glyphIdx = clamp(i32(round(glyph)), 0, i32(uniforms.glyphCount) - 1);',
-      '  let atlasWidth = uniforms.glyphSize * uniforms.glyphCount;',
-      '  let atlasUV = vec2<f32>(',
-      '    (uv.x * uniforms.glyphSize + uniforms.glyphSize * f32(glyphIdx)) / atlasWidth,',
-      '    uv.y',
-      '  );',
-      '  let glyphSample = textureSample(glyphTexture, glyphSampler, atlasUV);',
-      '  let p = uv * 2.0 - 1.0;',
-      '  let r = length(p);',
-      '  let sizeFactor = clamp(size / uniforms.glyphSize, 0.5, 6.0);',
-      '  let gaussian = exp(-pow(r * sizeFactor * 0.95, 1.35));',
-      '  let rimFade = 1.0 - smoothstep(0.42, 0.98, r);',
-      '  let coreBoost = 1.15 + smoothstep(0.0, 0.55, 1.0 - r) * 0.35;',
-      '  let halo = gaussian * rimFade * coreBoost;',
-      '  let haloColor = halo * color * 1.1;',
-      '  let glyphAlpha = glyphSample.a;',
-      '  let haloMask = (1.0 - glyphAlpha) * (1.0 - smoothstep(0.7, 0.98, r));',
-      '  var texturedColor: vec3<f32>;',
-      '  if (uniforms.isMonotone > 0.5) {',
-      '    // Свечение позади: не усиливаем центр глифа',
-      '    texturedColor = color * glyphAlpha + haloColor * haloMask;',
-      '  } else {',
-      '    // Для текстур — цвет глифа спереди, свечение только там, где нет плотного пикселя',
-      '    texturedColor = glyphSample.rgb * color * glyphAlpha + haloColor * haloMask;',
-      '  }',
-      '  let haloAlpha = halo * haloMask * 0.22;',
-      '  let alpha = clamp(max(glyphAlpha, haloAlpha), 0.0, 1.0);',
-      '  return vec4<f32>(texturedColor * alpha, alpha);',
-      '}',
-    ].join('\n');
-
     const shaderModule = this.device.createShaderModule({
       code: shaderSource
     });
@@ -804,6 +791,132 @@ class SnowWebGPUController {
     return { r, g, b };
   }
 
+  parseCssColor(value) {
+    if (!value) return null;
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === 'transparent') return null;
+
+    const rgbMatch = trimmed.match(/^rgba?\(([^)]+)\)$/);
+    if (rgbMatch) {
+      const parts = rgbMatch[1].split(',').map((v) => v.trim());
+      const r = Math.min(255, Math.max(0, parseFloat(parts[0])));
+      const g = Math.min(255, Math.max(0, parseFloat(parts[1])));
+      const b = Math.min(255, Math.max(0, parseFloat(parts[2])));
+      const a = parts[3] !== undefined ? Math.min(1, Math.max(0, parseFloat(parts[3]))) : 1;
+      return { r: r / 255, g: g / 255, b: b / 255, a };
+    }
+
+    if (trimmed.startsWith('#')) {
+      let hex = trimmed.slice(1);
+      if (hex.length === 3) {
+        hex = hex.split('').map((ch) => ch + ch).join('') + 'ff';
+      } else if (hex.length === 4) {
+        hex = hex.split('').map((ch) => ch + ch).join('');
+      } else if (hex.length === 6) {
+        hex = `${hex}ff`;
+      } else if (hex.length !== 8) {
+        return null;
+      }
+
+      const r = parseInt(hex.slice(0, 2), 16) / 255;
+      const g = parseInt(hex.slice(2, 4), 16) / 255;
+      const b = parseInt(hex.slice(4, 6), 16) / 255;
+      const a = parseInt(hex.slice(6, 8), 16) / 255;
+      return { r, g, b, a };
+    }
+
+    return null;
+  }
+
+  computeLuminance(color) {
+    const srgbToLinear = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+    const r = srgbToLinear(color.r);
+    const g = srgbToLinear(color.g);
+    const b = srgbToLinear(color.b);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  getSnowColorLightShare() {
+    const colors = Array.isArray(this.config.snowcolor) ? this.config.snowcolor : [];
+    let lightCount = 0;
+    let totalCount = 0;
+
+    colors.forEach((value) => {
+      const parsed = this.parseCssColor(value);
+      if (!parsed) return;
+      totalCount += 1;
+      const luminance = this.computeLuminance(parsed);
+      if (luminance >= 0.75) {
+        lightCount += 1;
+      }
+    });
+
+    return {
+      lightCount,
+      totalCount,
+      share: totalCount > 0 ? lightCount / totalCount : 0
+    };
+  }
+
+  getEffectiveBackgroundColor() {
+    const candidates = [document.body, document.documentElement];
+    for (const el of candidates) {
+      if (!el) continue;
+      const styles = getComputedStyle(el);
+      const parsed = this.parseCssColor(styles.backgroundColor);
+      if (parsed && parsed.a > 0) {
+        return parsed;
+      }
+    }
+    return { r: 1, g: 1, b: 1, a: 1 };
+  }
+
+  updateGlowState() {
+    const bg = this.getEffectiveBackgroundColor();
+    const luminance = this.computeLuminance(bg);
+    const { share } = this.getSnowColorLightShare();
+
+    const hasLightBackground = luminance >= 0.9;
+    const hasMostlyLightSnow = share >= 0.6;
+
+    const glowStrength = hasLightBackground || hasMostlyLightSnow ? 0 : 1;
+    if (this.uniformArray[5] === glowStrength) return;
+    this.uniformArray[5] = glowStrength;
+    if (this.uniformBuffer && this.device) {
+      this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformArray);
+    }
+  }
+
+  startBackgroundMonitoring() {
+    this.stopBackgroundMonitoring();
+    this.handleBackgroundChange = () => this.updateGlowState();
+
+    const observer = new MutationObserver(this.handleBackgroundChange);
+    [document.body, document.documentElement].forEach((el) => {
+      if (!el) return;
+      observer.observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+    });
+    this.backgroundObserver = observer;
+
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      const media = window.matchMedia('(prefers-color-scheme: dark)');
+      media.addEventListener('change', this.handleBackgroundChange);
+      this.colorSchemeMedia = media;
+    }
+  }
+
+  stopBackgroundMonitoring() {
+    if (this.backgroundObserver) {
+      this.backgroundObserver.disconnect();
+      this.backgroundObserver = null;
+    }
+    if (this.colorSchemeMedia && this.handleBackgroundChange) {
+      this.colorSchemeMedia.removeEventListener('change', this.handleBackgroundChange);
+      this.colorSchemeMedia = null;
+    }
+    this.handleBackgroundChange = null;
+  }
+
   isTextureMonotone(imageData) {
     const data = imageData.data;
     if (data.length === 0) return true;
@@ -857,11 +970,26 @@ async function startSnow(config) {
   await controller.start();
 }
 
-chrome.runtime.onMessage.addListener((message) => {
-  if (message.action === 'startSnow') {
-    startSnow(message.config || {}).catch((err) => console.error(err));
-  } else if (message.action === 'stopSnow') {
-    stopSnow();
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  const respond = typeof sendResponse === 'function' ? sendResponse : () => {};
+  try {
+    if (message.action === 'startSnow') {
+      // Fire-and-forget launch; respond immediately to close the channel.
+      startSnow(message.config || {}).catch((err) => console.error(err));
+      respond({ ok: true });
+      return;
+    }
+
+    if (message.action === 'stopSnow') {
+      stopSnow();
+      respond({ ok: true });
+      return;
+    }
+
+    respond({ ok: false, reason: 'unknown_action' });
+  } catch (err) {
+    console.error(err);
+    respond({ ok: false, error: err?.message || 'unknown_error' });
   }
 });
 
