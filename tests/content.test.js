@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const originalRandom = Math.random;
+const originalGpu = Object.getOwnPropertyDescriptor(global.navigator, 'gpu');
 
 describe('content script snow control', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    // Stable randomness to avoid twinkle style injection and random letters
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     document.body.innerHTML = '<div id="root"></div>';
     global.chrome = {
@@ -15,6 +15,11 @@ describe('content script snow control', () => {
         }
       }
     };
+
+    Object.defineProperty(global.navigator, 'gpu', {
+      value: undefined,
+      configurable: true
+    });
   });
 
   afterEach(() => {
@@ -23,33 +28,36 @@ describe('content script snow control', () => {
     document.body.innerHTML = '';
     delete global.chrome;
     vi.resetModules();
+    if (originalGpu) {
+      Object.defineProperty(global.navigator, 'gpu', originalGpu);
+    } else {
+      delete global.navigator.gpu;
+    }
   });
 
-  it('creates and removes snowflakes on messages', async () => {
+  it('adds and removes overlay canvas on start/stop', async () => {
     const module = await import('../src/content/index.js');
     expect(module).toBeDefined();
 
     const handler = global.chrome.runtime.onMessage.addListener.mock.calls[0][0];
 
     handler({ action: 'startSnow', config: {
-      snowmax: 160,
-      sinkspeed: 0.5,
+      snowmax: 32,
+      sinkspeed: 0.6,
       snowminsize: 10,
-      snowmaxsize: 20,
+      snowmaxsize: 22,
       snowcolor: ['#fff'],
       snowletters: ['*']
     } });
 
-    // First group spawns immediately
-    const initialFlakes = document.querySelectorAll('span[id^="snowflake-"]').length;
-    expect(initialFlakes).toBeGreaterThan(0);
+    vi.advanceTimersByTime(20);
 
-    // Next group after 1s
-    vi.advanceTimersByTime(1000);
-    const laterFlakes = document.querySelectorAll('span[id^="snowflake-"]').length;
-    expect(laterFlakes).toBeGreaterThanOrEqual(initialFlakes);
+    const canvas = document.getElementById('let-it-snow-webgpu-canvas');
+    expect(canvas).not.toBeNull();
+    expect(canvas.style.pointerEvents).toBe('none');
 
     handler({ action: 'stopSnow' });
-    expect(document.querySelectorAll('span[id^="snowflake-"]').length).toBe(0);
+    const removed = document.getElementById('let-it-snow-webgpu-canvas');
+    expect(removed).toBeNull();
   });
 });
