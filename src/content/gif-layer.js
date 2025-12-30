@@ -54,18 +54,34 @@ export class GifLayer {
     }
 
     try {
-      const response = await fetch(url, { cache: 'no-cache', mode: 'cors' });
+      const response = await fetch(url, { 
+        cache: 'no-cache', 
+        mode: 'cors',
+        timeout: 5000 
+      });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
       const blob = await response.blob();
+      if (!blob || blob.size === 0) {
+        throw new Error('Empty response blob');
+      }
+
       const objectUrl = URL.createObjectURL(blob);
       this.gifObjectUrls.set(url, objectUrl);
       return objectUrl;
     } catch (error) {
+      const errorMsg = error?.message || 'Unknown error';
+      const reason = 
+        error?.name === 'TypeError' && error?.message?.includes('Failed to fetch')
+          ? '(CORS or network issue)'
+          : error?.message?.includes('HTTP')
+          ? '(Server error)'
+          : '(Fetch failed)';
+      
       if (!IS_TEST_ENV) {
-        console.warn('Unable to fetch GIF for CSP-safe rendering:', url, error);
+        console.warn(`[Let It Snow] Unable to fetch GIF ${reason}:`, url, `- ${errorMsg}`);
       }
       return FALLBACK_GIF_DATA_URL;
     }
