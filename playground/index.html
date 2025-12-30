@@ -16,12 +16,12 @@
       <div>
         <p class="eyebrow">Let It Snow</p>
         <h1>Playground</h1>
-        <p class="lede">Trigger the content script, tweak snow parameters, and flip between light and dark scenes.</p>
+        <p class="lede">Test the snow animation with hot reload. Tweak parameters and see changes instantly — no extension installation needed.</p>
       </div>
       <div class="hero-actions">
         <button id="start-btn" class="btn primary">Start snow</button>
         <button id="stop-btn" class="btn ghost">Stop snow</button>
-        <span id="status" class="status status-wait">Content script: waiting…</span>
+        <span id="status" class="status status-ready">Ready — hot reload enabled</span>
       </div>
     </header>
 
@@ -49,7 +49,7 @@
         </label>
         <label class="field">
           <span>Fall speed</span>
-          <input id="sinkspeed" type="number" step="0.05" min="0.05" max="2" value="0.5" />
+          <input id="sinkspeed" type="number" step="0.05" min="0.05" max="2" value="1.0" />
           <small>Higher = faster descent.</small>
         </label>
         <label class="field">

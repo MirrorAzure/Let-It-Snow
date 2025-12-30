@@ -1,39 +1,28 @@
+/**
+ * Главный файл popup интерфейса расширения Let It Snow
+ * 
+ * Управляет пользовательским интерфейсом настроек снегопада,
+ * включая цвета, символы, GIF анимации и параметры поведения.
+ */
+
 import './popup.css';
+import { t, applyLocalization } from './localization.js';
+import { saveSettings, loadSettings, DEFAULT_SETTINGS } from './settings.js';
+import {
+  createColorItem,
+  createSymbolItem,
+  createGifItem,
+  setupSliderListener
+} from './ui-controllers.js';
 
-function t(key) {
-  return chrome.i18n.getMessage(key) || key;
-}
-
+/**
+ * Инициализация popup при загрузке DOM
+ */
 document.addEventListener('DOMContentLoaded', async () => {
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    const key = el.getAttribute('data-i18n');
-    const message = t(key);
+  // Применяем локализацию
+  applyLocalization();
 
-    if (el.children.length === 0) {
-      el.textContent = message;
-      return;
-    }
-
-    let replaced = false;
-    for (let node of el.childNodes) {
-      if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== '') {
-        node.textContent = message;
-        replaced = true;
-        break;
-      }
-    }
-
-    if (!replaced) {
-      el.prepend(document.createTextNode(message));
-    }
-  });
-
-  document.querySelectorAll('input[type="text"]').forEach(input => {
-    if (input.closest('#symbolsList')) {
-      input.placeholder = t('placeholderSymbol');
-    }
-  });
-
+  // Получаем ссылки на все элементы UI
   const elements = {
     snowmax: document.getElementById('snowmax'),
     snowmaxValue: document.getElementById('snowmaxValue'),
@@ -55,12 +44,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     gifCountValue: document.getElementById('gifCountValue')
   };
 
-  const saveSettings = async () => {
-    const colors = Array.from(elements.colorsList.querySelectorAll('input[type="color"]')).map(i => i.value);
-    const symbols = Array.from(elements.symbolsList.querySelectorAll('input[type="text"]')).map(i => i.value.trim()).filter(s => s !== '');
-    const gifs = Array.from(elements.gifsList.querySelectorAll('input[type="url"]')).map(i => i.value.trim()).filter(s => s !== '');
+  /**
+   * Сохраняет все настройки из UI в chrome.storage
+   */
+  const saveAllSettings = async () => {
+    const colors = Array.from(
+      elements.colorsList.querySelectorAll('.item')
+    ).map((item) => item.querySelector('input[type="color"]').value);
 
-    await chrome.storage.sync.set({
+    const symbols = Array.from(
+      elements.symbolsList.querySelectorAll('.item')
+    )
+      .map((item) => item.querySelector('input[type="text"]').value.trim())
+      .filter((s) => s !== '');
+
+    const gifs = Array.from(elements.gifsList.querySelectorAll('.item'))
+      .map((item) => item.querySelector('input[type="url"]').value.trim())
+      .filter((s) => s !== '');
+
+    await saveSettings({
       snowmax: parseInt(elements.snowmax.value),
       sinkspeed: parseFloat(elements.sinkspeed.value),
       snowminsize: parseInt(elements.snowminsize.value),
@@ -73,24 +75,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   };
 
-  const saved = await chrome.storage.sync.get([
-    'snowmax', 'sinkspeed', 'snowminsize', 'snowmaxsize',
-    'colors', 'symbols', 'autoStart', 'gifs', 'gifCount'
+  // Загружаем сохраненные настройки
+  const saved = await loadSettings([
+    'snowmax',
+    'sinkspeed',
+    'snowminsize',
+    'snowmaxsize',
+    'colors',
+    'symbols',
+    'autoStart',
+    'gifs',
+    'gifCount'
   ]);
 
-  const defaults = {
-    snowmax: 80,
-    sinkspeed: 0.4,
-    snowminsize: 15,
-    snowmaxsize: 40,
-    colors: ['#ffffff', '#4fc3f7', '#bbdefb', '#e1f5fe'],
-    symbols: ['❄', '❅', '❆', '＊', '⋅', '✦'],
-    gifs: [],
-    gifCount: 0
-  };
+  const config = { ...DEFAULT_SETTINGS, ...saved };
 
-  const config = { ...defaults, ...saved };
-
+  // Устанавливаем значения в UI
   elements.snowmax.value = config.snowmax;
   elements.snowmaxValue.textContent = config.snowmax;
   elements.sinkspeed.value = config.sinkspeed;
@@ -103,174 +103,115 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.gifCount.value = config.gifCount || 0;
   elements.gifCountValue.textContent = config.gifCount || 0;
 
+  // Очищаем списки и заполняем сохраненными значениями
   elements.colorsList.innerHTML = '';
   elements.symbolsList.innerHTML = '';
   elements.gifsList.innerHTML = '';
-  config.colors.forEach(color => addColorItem(color));
-  config.symbols.forEach(symbol => addSymbolItem(symbol));
-  (config.gifs || []).forEach(gif => addGifItem(gif));
 
-  if (elements.colorsList.children.length === 0) addColorItem('#ffffff');
-  if (elements.symbolsList.children.length === 0) addSymbolItem('❄');
-  if (elements.gifsList.children.length === 0) addGifItem('');
+  config.colors.forEach((color) =>
+    createColorItem(color, elements.colorsList, saveAllSettings)
+  );
+  config.symbols.forEach((symbol) =>
+    createSymbolItem(symbol, elements.symbolsList, saveAllSettings)
+  );
+  (config.gifs || []).forEach((gif) =>
+    createGifItem(gif, elements.gifsList, saveAllSettings)
+  );
 
-  function addColorItem(color = '#ffffff') {
-    const div = document.createElement('div');
-    div.className = 'item';
-    div.innerHTML = `
-      <input type="color" value="${color}">
-      <input type="text" class="color-text" value="${color}">
-      <button type="button" title="${t('delete')}"><i class="fas fa-trash"></i></button>
-    `;
-    
-    const colorInput = div.querySelector('input[type="color"]');
-    const textInput = div.querySelector('.color-text');
-    const deleteBtn = div.querySelector('button');
-    
-    colorInput.addEventListener('input', () => {
-      textInput.value = colorInput.value;
-      saveSettings();
-    });
-    
-    textInput.addEventListener('input', () => {
-      if (/^#[0-9A-F]{6}$/i.test(textInput.value)) {
-        colorInput.value = textInput.value;
-        saveSettings();
-      }
-    });
-    
-    deleteBtn.addEventListener('click', () => {
-      if (elements.colorsList.children.length > 1) {
-        div.remove();
-        saveSettings();
-      } else {
-        alert(t('errorNoColor'));
-      }
-    });
-    
-    elements.colorsList.appendChild(div);
+  // Минимум по одному элементу в каждом списке
+  if (elements.colorsList.children.length === 0) {
+    createColorItem('#ffffff', elements.colorsList, saveAllSettings);
+  }
+  if (elements.symbolsList.children.length === 0) {
+    createSymbolItem('❄', elements.symbolsList, saveAllSettings);
+  }
+  if (elements.gifsList.children.length === 0) {
+    createGifItem('', elements.gifsList, saveAllSettings);
   }
 
-  function addSymbolItem(symbol = '❄') {
-    const div = document.createElement('div');
-    div.className = 'item';
-    div.innerHTML = `
-      <div class="symbol-preview">${symbol}</div>
-      <input type="text" value="${symbol}" placeholder="${t('placeholderSymbol')}">
-      <button type="button" title="${t('delete')}"><i class="fas fa-trash"></i></button>
-    `;
-    
-    const preview = div.querySelector('.symbol-preview');
-    const textInput = div.querySelector('input[type="text"]');
-    const deleteBtn = div.querySelector('button');
-    
-    preview.style.fontSize = '24px';
-    preview.style.width = '40px';
-    preview.style.textAlign = 'center';
-    
-    textInput.addEventListener('input', () => {
-      preview.textContent = textInput.value || '?';
-      saveSettings();
-    });
-    
-    deleteBtn.addEventListener('click', () => {
-      if (elements.symbolsList.children.length > 1) {
-        div.remove();
-        saveSettings();
-      } else {
-        alert(t('errorNoSymbol'));
-      }
-    });
-    
-    elements.symbolsList.appendChild(div);
-  }
+  // === Настройка обработчиков событий ===
 
-  function addGifItem(url = '') {
-    const div = document.createElement('div');
-    div.className = 'item gif-item';
-    div.innerHTML = `
-      <div class="gif-preview"><img src="${url}" alt="GIF preview"></div>
-      <input type="url" class="gif-url" value="${url}" placeholder="${t('gifPlaceholder')}">
-      <button type="button" title="${t('delete')}"><i class="fas fa-trash"></i></button>
-    `;
-
-    const preview = div.querySelector('.gif-preview img');
-    const urlInput = div.querySelector('.gif-url');
-    const deleteBtn = div.querySelector('button');
-
-    urlInput.addEventListener('input', () => {
-      preview.src = urlInput.value;
-      saveSettings();
-    });
-
-    deleteBtn.addEventListener('click', () => {
-      div.remove();
-      saveSettings();
-    });
-
-    elements.gifsList.appendChild(div);
-  }
-
+  // Добавление нового цвета
   elements.addColor.addEventListener('click', () => {
-    const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16);
-    addColorItem(randomColor);
-    saveSettings();
+    const randomColor = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+    createColorItem(randomColor, elements.colorsList, saveAllSettings);
+    saveAllSettings();
   });
 
-  elements.autoStart.addEventListener('change', () => {
-    saveSettings();
-  });
-
-  elements.addGif.addEventListener('click', () => {
-    addGifItem('https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWx1d29qYnYxODNyeXd2OTl1MGkxZHkwZWEwZDRqc2pkb2Y2b3hxdiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/vbQMBnrKxwmFH8gq3V/giphy.gif');
-    saveSettings();
-  });
-
+  // Добавление нового символа
   elements.addSymbol.addEventListener('click', () => {
     const symbols = ['❄', '❅', '❆', '＊', '⋅', '✦', '❋', '✧', '✶', '✴', '✳', '❇'];
     const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
-    addSymbolItem(randomSymbol);
-    saveSettings();
+    createSymbolItem(randomSymbol, elements.symbolsList, saveAllSettings);
+    saveAllSettings();
   });
 
-  elements.snowmax.addEventListener('input', () => {
-    elements.snowmaxValue.textContent = elements.snowmax.value;
-    saveSettings();
+  // Добавление нового GIF
+  elements.addGif.addEventListener('click', () => {
+    createGifItem(
+      'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWx1d29qYnYxODNyeXd2OTl1MGkxZHkwZWEwZDRqc2pkb2Y2b3hxdiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/vbQMBnrKxwmFH8gq3V/giphy.gif',
+      elements.gifsList,
+      saveAllSettings
+    );
+    saveAllSettings();
   });
 
-  elements.sinkspeed.addEventListener('input', () => {
-    elements.sinkspeedValue.textContent = parseFloat(elements.sinkspeed.value).toFixed(1);
-    saveSettings();
+  // Автостарт
+  elements.autoStart.addEventListener('change', () => {
+    saveAllSettings();
   });
 
-  elements.gifCount.addEventListener('input', () => {
-    elements.gifCountValue.textContent = elements.gifCount.value;
-    saveSettings();
-  });
+  // Настройка слайдеров
+  setupSliderListener(elements.snowmax, elements.snowmaxValue, saveAllSettings);
 
+  setupSliderListener(
+    elements.sinkspeed,
+    elements.sinkspeedValue,
+    saveAllSettings,
+    (val) => parseFloat(val).toFixed(1)
+  );
+
+  setupSliderListener(elements.gifCount, elements.gifCountValue, saveAllSettings);
+
+  // Слайдер минимального размера
   elements.snowminsize.addEventListener('input', () => {
     if (parseInt(elements.snowminsize.value) >= parseInt(elements.snowmaxsize.value)) {
       elements.snowmaxsize.value = parseInt(elements.snowminsize.value) + 1;
       elements.maxsizeValue.textContent = elements.snowmaxsize.value;
     }
     elements.minsizeValue.textContent = elements.snowminsize.value;
-    saveSettings();
+    saveAllSettings();
   });
 
+  // Слайдер максимального размера
   elements.snowmaxsize.addEventListener('input', () => {
     if (parseInt(elements.snowmaxsize.value) <= parseInt(elements.snowminsize.value)) {
       elements.snowminsize.value = parseInt(elements.snowmaxsize.value) - 1;
       elements.minsizeValue.textContent = elements.snowminsize.value;
     }
     elements.maxsizeValue.textContent = elements.snowmaxsize.value;
-    saveSettings();
+    saveAllSettings();
   });
 
+  /**
+   * Запуск снегопада на активной вкладке
+   */
   elements.startSnow.addEventListener('click', async () => {
-    const colors = Array.from(elements.colorsList.querySelectorAll('input[type="color"]')).map(i => i.value);
-    const symbols = Array.from(elements.symbolsList.querySelectorAll('input[type="text"]')).map(i => i.value.trim()).filter(s => s !== '');
-    const gifs = Array.from(elements.gifsList.querySelectorAll('input[type="url"]')).map(i => i.value.trim()).filter(s => s !== '');
+    const colors = Array.from(
+      elements.colorsList.querySelectorAll('input[type="color"]')
+    ).map((i) => i.value);
 
+    const symbols = Array.from(
+      elements.symbolsList.querySelectorAll('input[type="text"]')
+    )
+      .map((i) => i.value.trim())
+      .filter((s) => s !== '');
+
+    const gifs = Array.from(elements.gifsList.querySelectorAll('input[type="url"]'))
+      .map((i) => i.value.trim())
+      .filter((s) => s !== '');
+
+    // Валидация
     if (colors.length === 0) {
       alert(t('errorNoColor'));
       return;
@@ -280,6 +221,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
+    // Формируем конфигурацию
     const config = {
       snowmax: parseInt(elements.snowmax.value),
       sinkspeed: parseFloat(elements.sinkspeed.value),
@@ -291,15 +233,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       gifCount: gifs.length > 0 ? parseInt(elements.gifCount.value) || 0 : 0
     };
 
+    // UI анимация кнопки
     const originalHtml = elements.startSnow.innerHTML;
     const originalBackground = elements.startSnow.style.background;
-    elements.startSnow.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Запускаем волшебство...</span>';
+    elements.startSnow.innerHTML =
+      '<i class="fas fa-spinner fa-spin"></i><span>Запускаем волшебство...</span>';
     elements.startSnow.disabled = true;
-    
+
+    // Мигающая анимация
     let blinkCount = 0;
     const blinkInterval = setInterval(() => {
       const colors = ['#ff6b6b', '#4fc3f7', '#66bb6a', '#ffa726'];
-      elements.startSnow.style.background = `linear-gradient(135deg, ${colors[blinkCount % 4]}, ${colors[(blinkCount + 1) % 4]})`;
+      elements.startSnow.style.background = `linear-gradient(135deg, ${colors[blinkCount % 4]}, ${
+        colors[(blinkCount + 1) % 4]
+      })`;
       blinkCount++;
     }, 200);
 
@@ -307,6 +254,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
+      // Проверка на системные страницы Chrome
       if (!tab?.id || tab.url.startsWith('chrome:')) {
         clearInterval(blinkInterval);
         elements.startSnow.innerHTML = originalHtml;
@@ -316,24 +264,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
+      // Отправка сообщения content script
       await chrome.tabs.sendMessage(tab.id, { action: 'startSnow', config });
-      
+
+      // Успешный запуск
       clearInterval(blinkInterval);
       elements.startSnow.innerHTML = '<i class="fas fa-check"></i><span>Снегопад запущен!</span>';
       elements.startSnow.style.background = 'linear-gradient(135deg, #66bb6a, #2e7d32)';
-      
+
       setTimeout(() => {
         elements.startSnow.innerHTML = originalHtml;
         elements.startSnow.disabled = false;
         elements.startSnow.style.background = '';
       }, 2000);
-      
     } catch (error) {
       clearInterval(blinkInterval);
       elements.startSnow.innerHTML = originalHtml;
       elements.startSnow.disabled = false;
       elements.startSnow.style.background = originalBackground;
-      
+
+      // Попытка инъекции content script если он не был загружен
       if (error.message?.includes('Receiving end does not exist')) {
         try {
           await chrome.scripting.executeScript({
@@ -341,16 +291,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             files: ['content.js']
           });
           await chrome.tabs.sendMessage(tab.id, { action: 'startSnow', config });
-          
-          elements.startSnow.innerHTML = '<i class="fas fa-check"></i><span>Снегопад запущен!</span>';
+
+          elements.startSnow.innerHTML =
+            '<i class="fas fa-check"></i><span>Снегопад запущен!</span>';
           elements.startSnow.style.background = 'linear-gradient(135deg, #66bb6a, #2e7d32)';
-          
+
           setTimeout(() => {
             elements.startSnow.innerHTML = originalHtml;
             elements.startSnow.disabled = false;
             elements.startSnow.style.background = '';
           }, 2000);
-          
         } catch {
           alert(t('errorInject'));
         }

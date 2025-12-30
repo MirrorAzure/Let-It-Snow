@@ -1,5 +1,15 @@
 const target = 'let-it-snow-playground';
 
+// Import content script with hot reload support
+import { startSnow, stopSnow } from './content-script.js';
+
+// HMR support indicator
+if (import.meta.hot) {
+  import.meta.hot.accept(['./content-script.js'], () => {
+    console.log('🔄 Hot reload: content script updated');
+  });
+}
+
 const els = {
   start: document.getElementById('start-btn'),
   stop: document.getElementById('stop-btn'),
@@ -24,7 +34,7 @@ const els = {
 
 const defaults = {
   snowmax: 120,
-  sinkspeed: 0.5,
+  sinkspeed: 1.0,
   snowminsize: 18,
   snowmaxsize: 48,
   colors: ['#ffffff', '#b7e0ff', '#7dd3fc'],
@@ -70,7 +80,11 @@ function renderPills(el, items, { isColor = false, onRemove }) {
     const close = document.createElement('button');
     close.type = 'button';
     close.textContent = '×';
-    close.addEventListener('click', () => onRemove(idx));
+    close.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onRemove(idx);
+    });
     pill.appendChild(close);
     el.appendChild(pill);
   });
@@ -80,9 +94,12 @@ function renderColors() {
   renderPills(els.colorsList, state.colors, {
     isColor: true,
     onRemove: (idx) => {
-      state.colors.splice(idx, 1);
-      if (!state.colors.length) state.colors.push('#ffffff');
-      renderColors();
+      if (state.colors.length > 1) {
+        state.colors.splice(idx, 1);
+        renderColors();
+      } else {
+        alert('You must have at least one color');
+      }
     }
   });
 }
@@ -90,9 +107,12 @@ function renderColors() {
 function renderSymbols() {
   renderPills(els.symbolsList, state.symbols, {
     onRemove: (idx) => {
-      state.symbols.splice(idx, 1);
-      if (!state.symbols.length) state.symbols.push('❄');
-      renderSymbols();
+      if (state.symbols.length > 1) {
+        state.symbols.splice(idx, 1);
+        renderSymbols();
+      } else {
+        alert('You must have at least one symbol');
+      }
     }
   });
 }
@@ -167,11 +187,13 @@ function resetForm() {
   renderSymbols();
 }
 
-els.start.addEventListener('click', () => {
-  post('startSnow', getConfigFromForm());
+els.start.addEventListener('click', async () => {
+  await startSnow(getConfigFromForm());
 });
 
-els.stop.addEventListener('click', () => post('stopSnow'));
+els.stop.addEventListener('click', () => {
+  stopSnow();
+});
 els.light.addEventListener('click', () => setTheme('light'));
 els.dark.addEventListener('click', () => setTheme('dark'));
 els.reset.addEventListener('click', () => resetForm());
@@ -189,7 +211,16 @@ els.colorText.addEventListener('keydown', (e) => {
   }
 });
 
-els.colorPicker.addEventListener('input', (e) => addColor(e.target.value));
+els.colorText.addEventListener('input', (e) => {
+  const val = e.target.value.trim();
+  if (/^#[0-9A-F]{6}$/i.test(val)) {
+    els.colorPicker.value = val;
+  }
+});
+
+els.colorPicker.addEventListener('input', (e) => {
+  els.colorText.value = e.target.value;
+});
 
 els.addSymbol.addEventListener('click', () => {
   addSymbol(els.symbolInput.value);
@@ -215,4 +246,6 @@ window.addEventListener('message', (event) => {
 
 resetForm();
 setTheme('dark');
-requestPing();
+
+// Initialize - playground uses direct source import
+setStatus('ready', 'Playground: ready - hot reload enabled');

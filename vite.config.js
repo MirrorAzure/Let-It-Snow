@@ -19,11 +19,23 @@ const getBrowserConfig = (mode) => {
 };
 
 export default defineConfig(({ mode }) => {
+  const isPlayground = process.env.PLAYGROUND === 'true';
+  
   return {
-    plugins: [crx({ manifest })],
+    plugins: isPlayground ? [] : [crx({ manifest })],
+    server: isPlayground ? {
+      open: '/playground/index.html',
+      middleware: [],
+      hmr: {
+        protocol: 'ws',
+        host: 'localhost',
+        port: 5173
+      }
+    } : undefined,
     build: getBrowserConfig(mode || 'chrome'),
     define: {
-      'process.env.BROWSER': JSON.stringify(mode || 'chrome')
+      'process.env.BROWSER': JSON.stringify(mode || 'chrome'),
+      'process.env.IS_PLAYGROUND': JSON.stringify(isPlayground)
     }
   };
 });
