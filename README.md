@@ -20,18 +20,18 @@ pnpm install
 
 ### 🎨 Playground - Quick Testing with Hot Reload
 
-**Быстрый способ тестировать анимацию БЕЗ установки расширения:**
+**Quick way to test animations WITHOUT installing the extension:**
 
 ```bash
 pnpm run playground
 ```
 
-✅ Загружает исходный код из `src/` с поддержкой HMR  
-✅ Горячая перезагрузка при любых изменениях  
-✅ Полная функциональность WebGPU/Fallback2D  
-✅ Все параметры настраиваются через UI  
+✅ Loads source code from `src/` with HMR support  
+✅ Hot reload on any changes  
+✅ Full WebGPU/Fallback2D functionality  
+✅ All parameters configurable via UI  
 
-**[Подробнее о Playground →](./PLAYGROUND.md)**
+**[Learn more about Playground →](./playground/README.md)**
 
 ### Build for development
 ```bash
