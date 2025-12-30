@@ -75,7 +75,10 @@ describe('content script snow control', () => {
       snowletters: ['*']
     } });
 
-    vi.advanceTimersByTime(20);
+    await vi.waitFor(() => {
+      const canvas = document.getElementById('let-it-snow-webgpu-canvas');
+      return canvas !== null;
+    });
 
     const canvas = document.getElementById('let-it-snow-webgpu-canvas');
     expect(canvas).not.toBeNull();

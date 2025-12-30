@@ -18,11 +18,26 @@ pnpm install
 
 ## Development
 
+### 🎨 Playground - Quick Testing with Hot Reload
+
+**Быстрый способ тестировать анимацию БЕЗ установки расширения:**
+
+```bash
+pnpm run playground
+```
+
+✅ Загружает исходный код из `src/` с поддержкой HMR  
+✅ Горячая перезагрузка при любых изменениях  
+✅ Полная функциональность WebGPU/Fallback2D  
+✅ Все параметры настраиваются через UI  
+
+**[Подробнее о Playground →](./PLAYGROUND.md)**
+
 ### Build for development
 ```bash
 pnpm run dev
 ```
-This starts the Vite development server.
+This starts the Vite development server for extension building.
 
 ### Build for production
 ```bash
@@ -34,6 +49,8 @@ This creates an optimized build in the `dist` folder.
 ```bash
 pnpm run build && pnpm run pack
 ```
+
+Serves the `playground/` page for quickly testing the content script. Load the extension in your browser, open `http://localhost:4177`, and use the controls to start/stop snow, tweak parameters, and flip light/dark backgrounds.
 
 ### Load the extension in Chrome
 

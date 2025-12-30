@@ -1,10 +1,11 @@
 {
   "name": "let-it-snow",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "A magical snowfall extension for web pages",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:playground": "vite --root=. --open=/playground/index.html",
     "build": "node scripts/build.js",
     "build:chrome": "vite build --mode chrome",
     "build:firefox": "vite build --mode firefox",
@@ -15,7 +16,8 @@
     "version": "pnpm run sync-version",
     "pack:chrome": "crx3 dist/chrome -o builds/let-it-snow-chrome.crx",
     "pack:firefox": "cd dist/firefox && zip -r ../../builds/let-it-snow-firefox.zip . && cd ../../",
-    "pack:edge": "crx3 dist/edge -o builds/let-it-snow-edge.crx"
+    "pack:edge": "crx3 dist/edge -o builds/let-it-snow-edge.crx",
+    "playground": "node scripts/playground-server.js"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0",
