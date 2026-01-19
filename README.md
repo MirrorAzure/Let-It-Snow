@@ -60,23 +60,54 @@ Serves the `playground/` page for quickly testing the content script. Load the e
 4. Click "Load unpacked"
 5. Select the `dist` folder from your project
 
+## Architecture Diagram
+
+Полная интерактивная диаграмма доступна в формате DrawIO:  
+![ScheemProject](./diagrams/architecture.drawio.svg)
+
+Архитектура проекта:
+- **Web Pages** — веб-страницы, на которых работает расширение
+- **Content Script** — основной скрипт расширения с движком снегопада
+- **Renderers** — WebGPU (современный) и Fallback 2D (совместимость)
+- **Popup UI** — интерфейс управления расширением
+- **Settings Manager** — управление и сохранение параметров
+- **Localization** — поддержка английского и русского языков
+- **Storage** — сохранение пользовательских настроек
+- **Manifest Config** — конфигурации для Chrome, Firefox и Edge
+
 ## Project Structure
 
 ```
 src/
 ├── manifest.json          # Extension configuration
 ├── content/
-│   └── index.js          # Content script (injected into web pages)
+│   ├── index.js          # Content script (injected into web pages)
+│   ├── webgpu-renderer.js    # WebGPU rendering engine
+│   ├── fallback-2d-renderer.js  # 2D Canvas fallback
+│   ├── gif-layer.js      # GIF layer support
+│   ├── shader.wgsl       # WebGPU shaders
+│   └── utils/
+│       ├── background-monitor.js  # Background monitoring
+│       ├── color-utils.js         # Color utilities
+│       └── glyph-utils.js         # Glyph/symbol utilities
 ├── popup/
 │   ├── popup.html        # Popup UI
 │   ├── popup.js          # Popup logic
+│   ├── settings.js       # Settings management
+│   ├── ui-controllers.js # UI controls
+│   ├── localization.js   # Localization logic
 │   └── popup.css         # Popup styles
 ├── _locales/
 │   ├── en/
 │   │   └── messages.json # English translations
 │   └── ru/
 │       └── messages.json # Russian translations
-└── icons/                # Extension icons
+├── manifests/
+│   ├── manifest.chrome.json   # Chrome manifest
+│   ├── manifest.firefox.json  # Firefox manifest
+│   └── manifest.edge.json     # Edge manifest
+├── icons/                     # Extension icons
+└── assets/                    # Static assets
 ```
 
 ## Features
