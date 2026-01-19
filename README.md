@@ -64,15 +64,15 @@ Serves the `playground/` page for quickly testing the content script. Load the e
   
 ![ScheemProject](./diagrams/architecture.drawio.svg)
 
-Архитектура проекта:
-- **Web Pages** — веб-страницы, на которых работает расширение
-- **Content Script** — основной скрипт расширения с движком снегопада
-- **Renderers** — WebGPU (современный) и Fallback 2D (совместимость)
-- **Popup UI** — интерфейс управления расширением
-- **Settings Manager** — управление и сохранение параметров
-- **Localization** — поддержка английского и русского языков
-- **Storage** — сохранение пользовательских настроек
-- **Manifest Config** — конфигурации для Chrome, Firefox и Edge
+Project Architecture:
+- **Web Pages** — web pages where the extension works
+- **Content Script** — main extension script with the snowfall engine
+- **Renderers** — WebGPU (modern) and Fallback 2D (compatibility)
+- **Popup UI** — extension control interface
+- **Settings Manager** — settings management and saving
+- **Localization** — support for English and Russian languages
+- **Storage** — saving user settings
+- **Manifest Config** — configurations for Chrome, Firefox and Edge
 
 ## Project Structure
 
