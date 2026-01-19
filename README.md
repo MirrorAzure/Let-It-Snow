@@ -61,8 +61,7 @@ Serves the `playground/` page for quickly testing the content script. Load the e
 5. Select the `dist` folder from your project
 
 ## Architecture Diagram
-
-Полная интерактивная диаграмма доступна в формате DrawIO:  
+  
 ![ScheemProject](./diagrams/architecture.drawio.svg)
 
 Архитектура проекта:
