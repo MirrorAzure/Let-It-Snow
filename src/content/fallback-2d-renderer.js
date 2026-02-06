@@ -13,6 +13,8 @@ export class Fallback2DRenderer {
     this.flakes = [];
     this.frameRequest = null;
     this.drawCallback = null;
+    this.sentenceQueue = [];
+    this.sentenceCursor = 0;
   }
 
   /**
@@ -31,14 +33,43 @@ export class Fallback2DRenderer {
 
     if (!this.ctx) return false;
 
-    const { snowmax, snowminsize, snowmaxsize, sinkspeed, snowcolor, snowletters } = this.config;
+    const { snowmax, snowminsize, snowmaxsize, sinkspeed, snowcolor, snowletters, snowsentences } = this.config;
 
     const sizeRange = snowmaxsize - snowminsize;
+    
+    const hasGlyphs = snowletters && snowletters.length > 0;
+    const hasSentences = snowsentences && snowsentences.length > 0;
 
-    // Создаем снежинки
+    this.sentenceQueue = hasSentences ? snowsentences : [];
+    this.sentenceCursor = 0;
+
+    // Создаем снежинки - микс глифов и предложений
     this.flakes = new Array(Math.max(1, snowmax)).fill(null).map((_, idx) => {
       const size = snowminsize + Math.random() * sizeRange;
       const speed = sinkspeed * (size / 20) * 20;
+      const color = snowcolor[idx % snowcolor.length];
+      
+      // Выбираем случайно между глифами и предложениями
+      let textItem;
+      let isSentence = false;
+      
+      if (!hasSentences) {
+        // Только глифы
+        textItem = hasGlyphs ? snowletters[idx % snowletters.length] : '❄';
+      } else if (!hasGlyphs) {
+        // Только предложения
+        textItem = this._nextSentence();
+        isSentence = true;
+      } else {
+        // Микс: 50/50 шанс между глифами и предложениями
+        if (Math.random() < 0.5) {
+          textItem = snowletters[idx % snowletters.length];
+        } else {
+          textItem = this._nextSentence();
+          isSentence = true;
+        }
+      }
+      
       return {
         x: Math.random() * window.innerWidth,
         y: -size - Math.random() * window.innerHeight,
@@ -47,8 +78,9 @@ export class Fallback2DRenderer {
         sway: 10 + Math.random() * 25,
         phase: Math.random() * Math.PI * 2,
         freq: 0.8 + Math.random() * 1.4,
-        color: snowcolor[idx % snowcolor.length],
-        char: snowletters[idx % snowletters.length]
+        color,
+        char: textItem,
+        isSentence
       };
     });
 
@@ -60,7 +92,7 @@ export class Fallback2DRenderer {
    */
   start() {
     const ctx = this.ctx;
-    const { snowminsize } = this.config;
+    const { snowminsize, snowmaxsize } = this.config;
 
     const draw = () => {
       const ratio = window.devicePixelRatio || 1;
@@ -74,9 +106,6 @@ export class Fallback2DRenderer {
       }
 
       ctx.clearRect(0, 0, width, height);
-      ctx.font = `${Math.max(16, snowminsize)}px serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
 
       // Рендерим каждую снежинку
       this.flakes.forEach((flake) => {
@@ -90,13 +119,62 @@ export class Fallback2DRenderer {
         if (y - flake.size * ratio > height) {
           flake.y = -flake.size;
           flake.x = Math.random() * window.innerWidth;
+          if (flake.isSentence) {
+            flake.char = this._nextSentence();
+          }
         }
 
         ctx.fillStyle = flake.color;
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(Math.sin(flake.phase) * 0.2);
-        ctx.fillText(flake.char, 0, 0);
+
+        // Для предложений используем многострочный рендеринг
+        if (flake.isSentence) {
+          const fontSize = Math.max(10, flake.size * 0.3);
+          ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          // Разбиваем предложение на строки
+          const words = flake.char.split(' ');
+          const lines = [];
+          let currentLine = '';
+          const maxWidth = flake.size * 2;
+
+          words.forEach((word) => {
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            const metrics = ctx.measureText(testLine);
+            
+            if (metrics.width > maxWidth && currentLine) {
+              lines.push(currentLine);
+              currentLine = word;
+            } else {
+              currentLine = testLine;
+            }
+          });
+          
+          if (currentLine) {
+            lines.push(currentLine);
+          }
+
+          // Рендерим строки
+          const lineHeight = fontSize * 1.2;
+          const totalHeight = lines.length * lineHeight;
+          const startY = -totalHeight / 2 + lineHeight / 2;
+
+          lines.forEach((line, i) => {
+            const lineY = startY + i * lineHeight;
+            ctx.fillText(line, 0, lineY);
+          });
+        } else {
+          // Обычные символы
+          ctx.font = `${Math.max(16, flake.size)}px serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(flake.char, 0, 0);
+        }
+
         ctx.restore();
       });
 
@@ -137,5 +215,13 @@ export class Fallback2DRenderer {
     if (this.drawCallback) {
       this.frameRequest = requestAnimationFrame(this.drawCallback);
     }
+  }
+
+  _nextSentence() {
+    const count = this.sentenceQueue.length;
+    if (!count) return '';
+    const index = this.sentenceCursor % count;
+    this.sentenceCursor = (this.sentenceCursor + 1) % count;
+    return this.sentenceQueue[index];
   }
 }

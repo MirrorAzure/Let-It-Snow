@@ -7,6 +7,8 @@
  * glyphSize: размер одного глифа в пикселях
  * isMonotone: флаг монотонности (0 или 1)
  * glowStrength: сила свечения (0-1)
+ * sentenceCount: количество предложений в атласе
+ * sentenceSize: размер ячейки предложения в пикселях
  */
 struct Uniforms {
   viewport: vec2<f32>,
@@ -14,12 +16,16 @@ struct Uniforms {
   glyphSize: f32,
   isMonotone: f32,
   glowStrength: f32,
+  sentenceCount: f32,
+  sentenceSize: f32,
 };
 
 // Bind group 0: uniform буфер и текстура глифов
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var glyphSampler: sampler;
 @group(0) @binding(2) var glyphTexture: texture_2d<f32>;
+@group(0) @binding(3) var sentenceSampler: sampler;
+@group(0) @binding(4) var sentenceTexture: texture_2d<f32>;
 /**
  * Выходные данные вершинного шейдера
  */
@@ -101,17 +107,27 @@ fn fs(
   @location(4) phase: f32           // Фаза для мерцания
 ) -> @location(0) vec4<f32> {
   // Определяем индекс глифа в атласе
-  let glyphIdx = clamp(i32(round(glyph)), 0, i32(uniforms.glyphCount) - 1);
-  
-  // Вычисляем UV координаты в атласе текстур
-  let atlasWidth = uniforms.glyphSize * uniforms.glyphCount;
-  let atlasUV = vec2<f32>(
-    (uv.x * uniforms.glyphSize + uniforms.glyphSize * f32(glyphIdx)) / atlasWidth,
+  let totalCount = max(1, i32(uniforms.glyphCount + uniforms.sentenceCount));
+  let glyphIdx = clamp(i32(round(glyph)), 0, totalCount - 1);
+  let isGlyph = glyphIdx < i32(uniforms.glyphCount);
+
+  // Семплируем оба атласа (uniform control flow), затем выбираем нужный
+  let glyphAtlasWidth = max(1.0, uniforms.glyphSize * uniforms.glyphCount);
+  let glyphUV = vec2<f32>(
+    (uv.x * uniforms.glyphSize + uniforms.glyphSize * f32(glyphIdx)) / glyphAtlasWidth,
     uv.y
   );
-  
-  // Семплируем текстуру глифа
-  let glyphSample = textureSample(glyphTexture, glyphSampler, atlasUV);
+  let glyphSample = textureSample(glyphTexture, glyphSampler, glyphUV);
+
+  let localIdx = max(0, glyphIdx - i32(uniforms.glyphCount));
+  let sentenceAtlasHeight = max(1.0, uniforms.sentenceSize * uniforms.sentenceCount);
+  let sentenceUV = vec2<f32>(
+    uv.x,
+    (uv.y * uniforms.sentenceSize + uniforms.sentenceSize * f32(localIdx)) / sentenceAtlasHeight
+  );
+  let sentenceSample = textureSample(sentenceTexture, sentenceSampler, sentenceUV);
+
+  let glyphSampleFinal = select(sentenceSample, glyphSample, isGlyph);
   
   // Вычисляем halo эффект (свечение вокруг снежинки)
   let p = uv * 2.0 - 1.0;  // Центрируем UV [-1, 1]
@@ -125,7 +141,7 @@ fn fs(
     baseColor = color;
   } else {
     // Цветной глиф - смешиваем с текстурой
-    baseColor = mix(color, glyphSample.rgb, glyphSample.a);
+    baseColor = mix(color, glyphSampleFinal.rgb, glyphSampleFinal.a);
   }
   
   // Добавляем эффект мерцающего свечения с плавным наростанием и затуханием
@@ -133,11 +149,11 @@ fn fs(
   let cycle = (sin(phase * 2.0) + 1.0) * 0.5;  // Нормализуем в [0, 1]
   let smoothFlicker = smoothstep(0.0, 1.0, cycle);  // Встроенная функция сглаживания
   let flicker = 0.3 + 0.7 * smoothFlicker;  // Мерцание от 0.3 до 1.0
-  let glowContribution = halo * uniforms.glowStrength * (1.0 - glyphSample.a) * flicker;
+  let glowContribution = halo * uniforms.glowStrength * (1.0 - glyphSampleFinal.a) * flicker;
   let finalColor = baseColor + color * glowContribution;
   
   // Итоговая прозрачность с учетом мерцающего halo
-  let alpha = clamp(glyphSample.a + halo * 0.35 * flicker, 0.0, 1.0);
+  let alpha = clamp(glyphSampleFinal.a + halo * 0.35 * flicker, 0.0, 1.0);
   
   return vec4<f32>(finalColor, alpha);
 }

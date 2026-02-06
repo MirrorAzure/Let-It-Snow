@@ -3,7 +3,7 @@
  */
 
 import shaderSource from './shader.wgsl?raw';
-import { createGlyphAtlas } from './utils/glyph-utils.js';
+import { createGlyphAtlas, createSentenceAtlas } from './utils/glyph-utils.js';
 import { hexToRgb } from './utils/color-utils.js';
 import { BackgroundMonitor } from './utils/background-monitor.js';
 
@@ -21,6 +21,33 @@ export class WebGPURenderer {
     this.uniformArray = new Float32Array(8);
     this.uniformArray[5] = 1; // glow enabled by default
     this.uniformBindGroup = null;
+    
+    // Раздельные атласы для глифов и предложений
+    this.glyphAtlas = {
+      texture: null,
+      sampler: null,
+      size: 64,
+      count: 1,
+      monotoneFlags: [true],
+      isMonotone: true,
+      canvas: null
+    };
+    
+    this.sentenceAtlas = {
+      texture: null,
+      sampler: null,
+      size: 64,
+      count: 0,
+      monotoneFlags: [],
+      isMonotone: false,
+      canvas: null
+    };
+
+    // Дополнительные uniform параметры
+    this.uniformArray[6] = 0; // sentenceCount
+    this.uniformArray[7] = 64; // sentenceSize
+    
+    // Для совместимости (deprecated)
     this.glyphTexture = null;
     this.glyphSampler = null;
     this.glyphSize = 64;
@@ -29,6 +56,8 @@ export class WebGPURenderer {
     this.instanceBuffer = null;
     this.instanceData = null;
     this.instances = [];
+    this.sentenceQueue = [];
+    this.sentenceCursor = 0;
     this.quadBuffer = null;
     this.canvasWidth = 0;
     this.canvasHeight = 0;
@@ -204,11 +233,19 @@ export class WebGPURenderer {
         },
         {
           binding: 1,
-          resource: this.glyphSampler
+          resource: this.glyphAtlas.sampler
         },
         {
           binding: 2,
-          resource: this.glyphTexture.createView()
+          resource: this.glyphAtlas.texture.createView()
+        },
+        {
+          binding: 3,
+          resource: this.sentenceAtlas.sampler
+        },
+        {
+          binding: 4,
+          resource: this.sentenceAtlas.texture.createView()
         }
       ]
     });
@@ -218,11 +255,27 @@ export class WebGPURenderer {
    * Настройка instance данных (снежинок)
    */
   setupInstances() {
-    const { snowmax, snowminsize, snowmaxsize, sinkspeed, snowcolor, snowletters } = this.config;
+    const { snowmax, snowminsize, snowmaxsize, sinkspeed, snowcolor, snowletters, snowsentences } = this.config;
 
     const sizeRange = snowmaxsize - snowminsize;
-    const seeds = snowletters.map((s) => s.charCodeAt(0) || 0);
-    this.glyphCount = Math.max(1, snowletters.length);
+    const hasGlyphs = snowletters && snowletters.length > 0;
+    const hasSentences = snowsentences && snowsentences.length > 0;
+    const useDefaultGlyph = !hasGlyphs && !hasSentences;
+    const effectiveHasGlyphs = hasGlyphs || useDefaultGlyph;
+    
+    // Определяем количество глифов и предложений
+    const glyphCount = effectiveHasGlyphs ? (hasGlyphs ? snowletters.length : 1) : 0;
+    const sentenceCount = hasSentences ? snowsentences.length : 0;
+    const totalCount = glyphCount + sentenceCount || 1;
+
+    this.sentenceQueue = hasSentences ? snowsentences : [];
+    this.sentenceCursor = 0;
+
+    this.glyphCount = totalCount;
+
+    const seeds = effectiveHasGlyphs
+      ? (hasGlyphs ? snowletters.map((s) => s.charCodeAt(0) || 0) : [1])
+      : [1];
 
     this.instances = new Array(Math.max(1, snowmax)).fill(null).map((_, idx) => {
       const size = snowminsize + Math.random() * sizeRange;
@@ -231,6 +284,33 @@ export class WebGPURenderer {
       const speed = sinkspeed * (size / 20) * 20;
       const sway = 10 + Math.random() * 25;
       const phaseSeed = seeds.length ? seeds[idx % seeds.length] : 1;
+
+      // Выбираем случайно между глифами и предложениями
+      let glyphIndex;
+      let isSentence = false;
+      let sentenceIndex = 0;
+
+      if (!hasSentences) {
+        // Только глифы
+        glyphIndex = idx % glyphCount;
+      } else if (!effectiveHasGlyphs) {
+        // Только предложения
+        isSentence = true;
+        sentenceIndex = this._nextSentenceIndex(sentenceCount);
+        glyphIndex = sentenceIndex;
+      } else {
+        // Микс глифов и предложений
+        const randomChoice = Math.random();
+        if (randomChoice < 0.5) {
+          // Выбираем глиф
+          glyphIndex = idx % glyphCount;
+        } else {
+          // Выбираем предложение
+          isSentence = true;
+          sentenceIndex = this._nextSentenceIndex(sentenceCount);
+          glyphIndex = glyphCount + sentenceIndex;
+        }
+      }
 
       return {
         x: Math.random() * window.innerWidth,
@@ -243,7 +323,9 @@ export class WebGPURenderer {
         rotation: Math.random() * Math.PI * 2,
         rotationSpeed: (Math.random() - 0.5) * 0.6,
         color,
-        glyphIndex: idx % this.glyphCount
+        glyphIndex,
+        isSentence,
+        sentenceIndex
       };
     });
 
@@ -255,59 +337,131 @@ export class WebGPURenderer {
     });
   }
 
+  _nextSentenceIndex(sentenceCount) {
+    if (!sentenceCount) return 0;
+    const index = this.sentenceCursor % sentenceCount;
+    this.sentenceCursor = (this.sentenceCursor + 1) % sentenceCount;
+    return index;
+  }
+
   /**
    * Настройка атласа глифов
    */
   async setupGlyphAtlas() {
-    const glyphs =
-      this.config.snowletters && this.config.snowletters.length
-        ? this.config.snowletters
-        : ['❄'];
+    // Получаем символы и предложения
+    const hasGlyphs = this.config.snowletters && this.config.snowletters.length > 0;
+    const hasSentences = this.config.snowsentences && this.config.snowsentences.length > 0;
+    const useDefaultGlyph = !hasGlyphs && !hasSentences;
 
-    const { canvas, glyphCount, isMonotone, glyphMonotoneFlags } = await createGlyphAtlas(
-      glyphs,
-      this.glyphSize
-    );
+    const glyphs = hasGlyphs
+      ? this.config.snowletters
+      : (useDefaultGlyph ? ['❄'] : []);
 
-    this.glyphCount = glyphCount;
-    this.glyphMonotoneFlags = glyphMonotoneFlags;
+    const sentences = hasSentences
+      ? this.config.snowsentences
+      : null;
 
-    const bitmap = await createImageBitmap(canvas);
+    // Создаем атлас для глифов
+    const glyphResult = await createGlyphAtlas(glyphs, this.glyphAtlas.size);
+    
+    // Обновляем данные атласа глифов
+    this.glyphAtlas.count = hasGlyphs || useDefaultGlyph ? glyphResult.glyphCount : 0;
+    this.glyphAtlas.monotoneFlags = hasGlyphs || useDefaultGlyph ? glyphResult.glyphMonotoneFlags : [];
+    this.glyphAtlas.isMonotone = hasGlyphs || useDefaultGlyph ? glyphResult.isMonotone : false;
+    this.glyphAtlas.canvas = glyphResult.canvas;
 
-    if (this.glyphTexture) {
-      this.glyphTexture.destroy();
+    // Создаем текстуру для глифов
+    await this._createAtlasTexture(this.glyphAtlas, 'glyph');
+
+    // Создаем атлас для предложений (если есть)
+    if (sentences) {
+      const sentenceResult = await createSentenceAtlas(sentences, this.sentenceAtlas.size);
+      
+      this.sentenceAtlas.count = sentenceResult.sentenceCount;
+      this.sentenceAtlas.monotoneFlags = new Array(sentenceResult.sentenceCount).fill(false);
+      this.sentenceAtlas.isMonotone = false;
+      this.sentenceAtlas.canvas = sentenceResult.canvas;
+
+      // Создаем текстуру для предложений
+      await this._createAtlasTexture(this.sentenceAtlas, 'sentence');
+    } else {
+      // Сбрасываем атлас предложений
+      this.sentenceAtlas.canvas = null;
+      this.sentenceAtlas.count = 0;
+      this.sentenceAtlas.monotoneFlags = [];
+      this.sentenceAtlas.isMonotone = false;
+      await this._createAtlasTexture(this.sentenceAtlas, 'sentence');
     }
 
-    const width = this.glyphSize * this.glyphCount;
-    const height = this.glyphSize;
+    // Обновляем deprecated поля для совместимости
+    this.glyphCount = this.glyphAtlas.count + this.sentenceAtlas.count;
+    this.glyphMonotoneFlags = [
+      ...this.glyphAtlas.monotoneFlags,
+      ...this.sentenceAtlas.monotoneFlags
+    ];
+    this.glyphTexture = this.glyphAtlas.texture;
+    this.glyphSampler = this.glyphAtlas.sampler;
 
-    this.glyphTexture = this.device.createTexture({
+    this.uniformArray[2] = this.glyphAtlas.count;
+    this.uniformArray[3] = this.glyphAtlas.size;
+    this.uniformArray[4] = this.glyphAtlas.isMonotone ? 1.0 : 0.0;
+    this.uniformArray[6] = this.sentenceAtlas.count;
+    this.uniformArray[7] = this.sentenceAtlas.size;
+  }
+
+  /**
+   * Вспомогательный метод для создания текстуры атласа
+   * @private
+   */
+  async _createAtlasTexture(atlas, type) {
+    const sourceCanvas = atlas.canvas || this._createFallbackCanvas();
+    const bitmap = await createImageBitmap(sourceCanvas);
+
+    if (atlas.texture) {
+      atlas.texture.destroy();
+    }
+
+    const width = sourceCanvas.width;
+    const height = sourceCanvas.height;
+
+    atlas.texture = this.device.createTexture({
       size: { width, height, depthOrArrayLayers: 1 },
       format: 'rgba8unorm',
       usage:
         GPUTextureUsage.TEXTURE_BINDING |
         GPUTextureUsage.COPY_DST |
-        GPUTextureUsage.RENDER_ATTACHMENT
+        GPUTextureUsage.RENDER_ATTACHMENT,
+      label: `${type}Atlas`
     });
 
     this.device.queue.copyExternalImageToTexture(
       { source: bitmap },
-      { texture: this.glyphTexture },
+      { texture: atlas.texture },
       { width, height }
     );
 
-    this.glyphSampler = this.device.createSampler({
+    atlas.sampler = this.device.createSampler({
       minFilter: 'linear',
       magFilter: 'linear',
       addressModeU: 'clamp-to-edge',
-      addressModeV: 'clamp-to-edge'
+      addressModeV: 'clamp-to-edge',
+      label: `${type}Sampler`
     });
 
     bitmap.close();
+  }
 
-    this.uniformArray[2] = this.glyphCount;
-    this.uniformArray[3] = this.glyphSize;
-    this.uniformArray[4] = isMonotone ? 1.0 : 0.0;
+  /**
+   * Создает резервный прозрачный canvas 1x1
+   * @private
+   */
+  _createFallbackCanvas() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, 1, 1);
+    return canvas;
   }
 
   /**
@@ -380,6 +534,8 @@ export class WebGPURenderer {
     const width = this.canvasWidth || window.innerWidth;
     const height = this.canvasHeight || window.innerHeight;
     const strideFloats = 14;
+    const glyphCount = this.glyphAtlas.count || 0;
+    const sentenceCount = this.sentenceAtlas.count || 0;
 
     this.instances.forEach((flake, idx) => {
       flake.phase += flake.freq * delta;
@@ -391,6 +547,11 @@ export class WebGPURenderer {
         flake.y = -flake.size;
         flake.x = Math.random() * width;
         flake.phase = Math.random() * Math.PI * 2;
+
+        if (flake.isSentence && sentenceCount > 0) {
+          flake.sentenceIndex = this._nextSentenceIndex(sentenceCount);
+          flake.glyphIndex = glyphCount + flake.sentenceIndex;
+        }
       }
 
       // Запись данных в буфер
@@ -501,8 +662,15 @@ export class WebGPURenderer {
       this.resizeObserver = null;
     }
 
+    if (this.glyphAtlas.texture) {
+      this.glyphAtlas.texture.destroy();
+      this.glyphAtlas.texture = null;
+    }
+    if (this.sentenceAtlas.texture) {
+      this.sentenceAtlas.texture.destroy();
+      this.sentenceAtlas.texture = null;
+    }
     if (this.glyphTexture) {
-      this.glyphTexture.destroy();
       this.glyphTexture = null;
     }
 
@@ -514,5 +682,46 @@ export class WebGPURenderer {
     this.instanceBuffer = null;
     this.instanceData = null;
     this.instances = [];
+  }
+
+  /**
+   * Получить данные атласа для конкретной снежинки
+   * @param {number} glyphIndex - Индекс глифа
+   * @returns {object} Объект с информацией об атласе { atlas, localIndex }
+   */
+  getAtlasForGlyph(glyphIndex) {
+    if (glyphIndex < this.glyphAtlas.count) {
+      return {
+        atlas: this.glyphAtlas,
+        localIndex: glyphIndex,
+        type: 'glyph'
+      };
+    } else {
+      return {
+        atlas: this.sentenceAtlas,
+        localIndex: glyphIndex - this.glyphAtlas.count,
+        type: 'sentence'
+      };
+    }
+  }
+
+  /**
+   * Получить информацию о глифах
+   * @returns {object} Статистика по атласам
+   */
+  getAtlasInfo() {
+    return {
+      glyphs: {
+        count: this.glyphAtlas.count,
+        isMonotone: this.glyphAtlas.isMonotone,
+        hasTexture: !!this.glyphAtlas.texture
+      },
+      sentences: {
+        count: this.sentenceAtlas.count,
+        isMonotone: this.sentenceAtlas.isMonotone,
+        hasTexture: !!this.sentenceAtlas.texture
+      },
+      total: this.glyphAtlas.count + this.sentenceAtlas.count
+    };
   }
 }

@@ -29,6 +29,9 @@ const els = {
   symbolsList: document.getElementById('symbols-list'),
   symbolInput: document.getElementById('symbol-input'),
   addSymbol: document.getElementById('add-symbol'),
+  sentencesList: document.getElementById('sentences-list'),
+  sentenceInput: document.getElementById('sentence-input'),
+  addSentence: document.getElementById('add-sentence'),
   status: document.getElementById('status')
 };
 
@@ -39,6 +42,7 @@ const defaults = {
   snowmaxsize: 48,
   colors: ['#ffffff', '#b7e0ff', '#7dd3fc'],
   symbols: ['❄', '✺', '✴'],
+  sentences: [],
   gifs: [],
   gifCount: 0
 };
@@ -46,6 +50,7 @@ const defaults = {
 const state = {
   colors: [...defaults.colors],
   symbols: [...defaults.symbols],
+  sentences: [...defaults.sentences],
   ready: false,
   pingAttempts: 0
 };
@@ -117,6 +122,15 @@ function renderSymbols() {
   });
 }
 
+function renderSentences() {
+  renderPills(els.sentencesList, state.sentences, {
+    onRemove: (idx) => {
+      state.sentences.splice(idx, 1);
+      renderSentences();
+    }
+  });
+}
+
 function addColor(value) {
   const val = (value || '').trim();
   if (!val) return;
@@ -133,6 +147,14 @@ function addSymbol(value) {
   renderSymbols();
 }
 
+function addSentence(value) {
+  const val = (value || '').trim();
+  if (!val) return;
+  if (state.sentences.includes(val)) return;
+  state.sentences.push(val);
+  renderSentences();
+}
+
 function getConfigFromForm() {
   const snowminsize = Number(els.snowminsize.value) || defaults.snowminsize;
   const snowmaxsize = Number(els.snowmaxsize.value) || defaults.snowmaxsize;
@@ -146,6 +168,7 @@ function getConfigFromForm() {
     snowmaxsize: maxSize,
     snowcolor: state.colors.slice(0, 12),
     snowletters: state.symbols.slice(0, 12),
+    snowsentences: state.sentences.slice(0, 12),
     gifUrls: toLines(els.gifs.value).slice(0, 10),
     gifCount: Math.max(0, Math.min(200, Number(els.gifCount.value) || defaults.gifCount))
   };
@@ -183,8 +206,10 @@ function resetForm() {
   els.gifs.value = defaults.gifs.join('\n');
   state.colors = [...defaults.colors];
   state.symbols = [...defaults.symbols];
+  state.sentences = [...defaults.sentences];
   renderColors();
   renderSymbols();
+  renderSentences();
 }
 
 els.start.addEventListener('click', async () => {
@@ -232,6 +257,19 @@ els.symbolInput.addEventListener('keydown', (e) => {
     e.preventDefault();
     addSymbol(els.symbolInput.value);
     els.symbolInput.value = '';
+  }
+});
+
+els.addSentence.addEventListener('click', () => {
+  addSentence(els.sentenceInput.value);
+  els.sentenceInput.value = '';
+});
+
+els.sentenceInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    addSentence(els.sentenceInput.value);
+    els.sentenceInput.value = '';
   }
 });
 

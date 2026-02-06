@@ -1,5 +1,5 @@
 /**
- * Утилиты для работы с глифами (символами снежинок)
+ * Утилиты для работы с глифами (символами снежинок) и длинными предложениями
  */
 
 /**
@@ -137,4 +137,239 @@ export async function createGlyphAtlas(glyphs, cellSize) {
   }
 
   return { canvas, glyphCount, isMonotone, glyphMonotoneFlags };
+}
+
+/**
+ * Создает атлас текстур из длинных предложений
+ * @param {string[]} sentences - Массив предложений для рендера
+ * @param {number} cellSize - Размер ячейки (ширина и высота)
+ * @returns {Promise<{canvas: HTMLCanvasElement, sentenceCount: number, isMonotone: boolean}>}
+ */
+export async function createSentenceAtlas(sentences, cellSize = 64) {
+  if (!sentences || sentences.length === 0) {
+    return {
+      canvas: null,
+      sentenceCount: 0,
+      isMonotone: false,
+      sentenceWidths: []
+    };
+  }
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('2D context unavailable for sentence atlas');
+
+  const sentenceCount = sentences.length;
+  // Размещаем предложения вертикально, каждое в своей ячейке
+  const width = cellSize;
+  const height = cellSize * sentenceCount;
+
+  canvas.width = width;
+  canvas.height = height;
+
+  // Настраиваем контекст
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  // Используем меньший шрифт для многострочного текста
+  const fontSize = Math.floor(cellSize * 0.25);
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+
+  // Рендерим каждое предложение с автоматическим переносом
+  sentences.forEach((sentence, i) => {
+    const yBase = i * cellSize;
+    const centerX = width / 2;
+    const centerY = yBase + cellSize / 2;
+    
+    // Разбиваем предложение на слова для переноса
+    const words = sentence.split(' ');
+    const lines = [];
+    let currentLine = '';
+    const maxWidth = cellSize * 0.9; // 90% ширины ячейки
+
+    words.forEach((word) => {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const metrics = ctx.measureText(testLine);
+      
+      if (metrics.width > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    });
+    
+    if (currentLine) {
+      lines.push(currentLine);
+    }
+
+    // Рендерим строки с равномерным распределением
+    const lineHeight = fontSize * 1.2;
+    const totalTextHeight = lines.length * lineHeight;
+    const startY = centerY - totalTextHeight / 2 + lineHeight / 2;
+
+    lines.forEach((line, lineIdx) => {
+      const y = startY + lineIdx * lineHeight;
+      ctx.fillText(line, centerX, y);
+    });
+  });
+
+  // Предложения не монотонные (белые)
+  return {
+    canvas,
+    sentenceCount,
+    isMonotone: false,
+    totalWidth: width,
+    totalHeight: height
+  };
+}
+
+/**
+ * Создает комбинированный атлас глифов и предложений
+ * @param {string[]} glyphs - Массив символов
+ * @param {string[]} sentences - Массив предложений
+ * @param {number} cellSize - Размер ячейки
+ * @returns {Promise<{canvas: HTMLCanvasElement, glyphCount: number, sentenceCount: number, totalCount: number, isMonotone: boolean, glyphMonotoneFlags: boolean[]}>}
+ */
+export async function createCombinedAtlas(glyphs, sentences, cellSize) {
+  const hasGlyphs = glyphs && glyphs.length > 0;
+  const hasSentences = sentences && sentences.length > 0;
+
+  if (!hasGlyphs && !hasSentences) {
+    // Если ничего нет, используем дефолтную снежинку
+    return await createGlyphAtlas(['❄'], cellSize);
+  }
+
+  // Создаем атласы отдельно
+  const glyphResult = hasGlyphs ? await createGlyphAtlas(glyphs, cellSize) : null;
+  const sentenceResult = hasSentences ? await createSentenceAtlas(sentences, cellSize) : null;
+
+  const glyphCount = glyphResult ? glyphResult.glyphCount : 0;
+  const sentenceCount = sentenceResult ? sentenceResult.sentenceCount : 0;
+  const totalCount = glyphCount + sentenceCount;
+
+  if (!hasSentences) {
+    // Только глифы
+    return {
+      canvas: glyphResult.canvas,
+      glyphCount,
+      sentenceCount: 0,
+      totalCount,
+      isMonotone: glyphResult.isMonotone,
+      glyphMonotoneFlags: glyphResult.glyphMonotoneFlags
+    };
+  }
+
+  if (!hasGlyphs) {
+    // Только предложения
+    return {
+      canvas: sentenceResult.canvas,
+      glyphCount: 0,
+      sentenceCount,
+      totalCount,
+      isMonotone: false,
+      glyphMonotoneFlags: new Array(sentenceCount).fill(false)
+    };
+  }
+
+  // Комбинируем оба атласа
+  const combinedCanvas = document.createElement('canvas');
+  const glyphWidth = glyphResult.canvas.width;
+  const sentenceWidth = sentenceResult.canvas.width;
+  const maxWidth = Math.max(glyphWidth, sentenceWidth);
+  const totalHeight = glyphResult.canvas.height + sentenceResult.canvas.height;
+
+  combinedCanvas.width = maxWidth;
+  combinedCanvas.height = totalHeight;
+
+  const ctx = combinedCanvas.getContext('2d');
+  if (!ctx) throw new Error('2D context unavailable for combined atlas');
+
+  // Рисуем глифы сверху
+  ctx.drawImage(glyphResult.canvas, 0, 0);
+  
+  // Рисуем предложения снизу
+  ctx.drawImage(sentenceResult.canvas, 0, glyphResult.canvas.height);
+
+  // Комбинируем флаги монотонности
+  const glyphMonotoneFlags = [
+    ...glyphResult.glyphMonotoneFlags,
+    ...new Array(sentenceCount).fill(false)
+  ];
+
+  return {
+    canvas: combinedCanvas,
+    glyphCount,
+    sentenceCount,
+    totalCount,
+    isMonotone: false,
+    glyphMonotoneFlags
+  };
+}
+
+/**
+ * Разделяет текст на более мелкие части
+ * @param {string} text - Текст для разделения
+ * @param {number} chunkSize - Размер части
+ * @returns {string[]} Массив частей
+ */
+export function splitTextIntoChunks(text, chunkSize) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += chunkSize) {
+    chunks.push(text.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+/**
+ * Разделяет предложения на более мелкие объекты
+ * @param {string} text - Текст для разделения
+ * @param {number} maxLength - Максимальная длина предложения
+ * @returns {string[]} Массив частей
+ */
+export function splitSentences(text, maxLength) {
+  const sentences = text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
+  const result = [];
+
+  sentences.forEach((sentence) => {
+    if (sentence.length <= maxLength) {
+      result.push(sentence);
+      return;
+    }
+
+    const words = sentence.split(/\s+/).filter(Boolean);
+    let current = '';
+
+    words.forEach((word) => {
+      if (!current) {
+        if (word.length > maxLength) {
+          result.push(...splitTextIntoChunks(word, maxLength));
+        } else {
+          current = word;
+        }
+        return;
+      }
+
+      const testLine = `${current} ${word}`;
+      if (testLine.length > maxLength) {
+        result.push(current);
+        if (word.length > maxLength) {
+          result.push(...splitTextIntoChunks(word, maxLength));
+          current = '';
+        } else {
+          current = word;
+        }
+      } else {
+        current = testLine;
+      }
+    });
+
+    if (current) {
+      result.push(current);
+    }
+  });
+
+  return result;
 }

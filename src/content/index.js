@@ -9,6 +9,7 @@
 import { WebGPURenderer } from './webgpu-renderer.js';
 import { Fallback2DRenderer } from './fallback-2d-renderer.js';
 import { GifLayer } from './gif-layer.js';
+import { splitSentences } from './utils/glyph-utils.js';
 
 // Константы
 const OVERLAY_ID = 'let-it-snow-webgpu-canvas';
@@ -23,8 +24,39 @@ const DEFAULT_CONFIG = {
   snowmaxsize: 40,
   snowcolor: ['#ffffff'],
   snowletters: ['❄'],
+  snowsentences: [],
   gifUrls: [],
   gifCount: 0
+};
+
+const SENTENCE_CELL_SIZE = 64;
+
+const estimateSentenceMaxLength = (cellSize) => {
+  const fontSize = Math.max(10, Math.floor(cellSize * 0.25));
+  const maxWidth = cellSize * 0.9;
+  const lineHeight = fontSize * 1.2;
+  const maxLines = Math.max(1, Math.floor(cellSize / lineHeight));
+  const avgCharWidth = fontSize * 0.6;
+  const maxCharsPerLine = Math.max(1, Math.floor(maxWidth / avgCharWidth));
+  return Math.max(10, maxCharsPerLine * maxLines);
+};
+
+const MAX_SENTENCE_LENGTH = estimateSentenceMaxLength(SENTENCE_CELL_SIZE);
+
+const normalizeSentences = (sentences, maxLength = MAX_SENTENCE_LENGTH) => {
+  if (!Array.isArray(sentences)) return [];
+  const result = [];
+
+  sentences.forEach((sentence) => {
+    const text = String(sentence || '').trim();
+    if (!text) return;
+    const parts = splitSentences(text, maxLength)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    result.push(...parts);
+  });
+
+  return result;
 };
 
 // Глобальный контроллер
@@ -35,7 +67,9 @@ let controller = null;
  */
 class SnowWebGPUController {
   constructor(userConfig = {}) {
-    this.config = { ...DEFAULT_CONFIG, ...userConfig };
+    const mergedConfig = { ...DEFAULT_CONFIG, ...userConfig };
+    mergedConfig.snowsentences = normalizeSentences(mergedConfig.snowsentences);
+    this.config = mergedConfig;
     this.canvas = null;
     this.renderer = null;
     this.gifLayer = null;
@@ -277,6 +311,7 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
         'snowmaxsize',
         'colors',
         'symbols',
+        'sentences',
         'gifs',
         'gifCount'
       ]);
@@ -289,6 +324,7 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
           snowmaxsize: stored.snowmaxsize || 40,
           snowcolor: stored.colors || ['#ffffff'],
           snowletters: stored.symbols || ['❄'],
+          snowsentences: stored.sentences || [],
           gifUrls: stored.gifs || [],
           gifCount: stored.gifCount || 0
         };

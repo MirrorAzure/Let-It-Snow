@@ -107,6 +107,41 @@ export function createSymbolItem(symbol, container, onSave) {
 }
 
 /**
+ * Создает элемент длинного предложения
+ * @param {string} sentence - Длинное предложение
+ * @param {HTMLElement} container - Контейнер для добавления элемента
+ * @param {Function} onSave - Callback для сохранения
+ * @returns {HTMLElement}
+ */
+export function createSentenceItem(sentence, container, onSave) {
+  const div = document.createElement('div');
+  div.className = 'item sentence-item';
+  div.innerHTML = `
+    <input type="text" class="sentence-text" value="${sentence}" placeholder="${t('placeholderSentence', 'Введите предложение...')}">
+    <button type="button" title="${t('delete')}"><i class="fas fa-trash"></i></button>
+  `;
+
+  const textInput = div.querySelector('.sentence-text');
+  const deleteBtn = div.querySelector('button');
+
+  // Обновление при изменении текста
+  textInput.addEventListener('input', () => {
+    onSave();
+  });
+
+  // Удаление предложения
+  deleteBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    div.remove();
+    onSave();
+  });
+
+  container.appendChild(div);
+  return div;
+}
+
+/**
  * Создает элемент GIF URL
  * @param {string} url - URL GIF изображения
  * @param {HTMLElement} container - Контейнер для добавления элемента

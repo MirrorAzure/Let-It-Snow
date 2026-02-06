@@ -30,6 +30,7 @@ export const DEFAULT_SETTINGS = {
   snowmaxsize: 40,
   colors: ['#ffffff', '#4fc3f7', '#bbdefb', '#e1f5fe'],
   symbols: ['❄', '❅', '❆', '＊', '⋅', '✦'],
+  sentences: [],
   gifs: [],
   gifCount: 0,
   autoStart: false

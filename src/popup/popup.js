@@ -11,6 +11,7 @@ import { saveSettings, loadSettings, DEFAULT_SETTINGS } from './settings.js';
 import {
   createColorItem,
   createSymbolItem,
+  createSentenceItem,
   createGifItem,
   setupSliderListener
 } from './ui-controllers.js';
@@ -34,9 +35,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     maxsizeValue: document.getElementById('maxsizeValue'),
     colorsList: document.getElementById('colorsList'),
     symbolsList: document.getElementById('symbolsList'),
+    sentencesList: document.getElementById('sentencesList'),
     startSnow: document.getElementById('startSnow'),
     addColor: document.getElementById('addColor'),
     addSymbol: document.getElementById('addSymbol'),
+    addSentence: document.getElementById('addSentence'),
     autoStart: document.getElementById('autoStart'),
     gifsList: document.getElementById('gifsList'),
     addGif: document.getElementById('addGif'),
@@ -58,6 +61,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       .map((item) => item.querySelector('input[type="text"]').value.trim())
       .filter((s) => s !== '');
 
+    const sentences = Array.from(
+      elements.sentencesList.querySelectorAll('.item')
+    )
+      .map((item) => item.querySelector('.sentence-text').value.trim())
+      .filter((s) => s !== '');
+
     const gifs = Array.from(elements.gifsList.querySelectorAll('.item'))
       .map((item) => item.querySelector('input[type="url"]').value.trim())
       .filter((s) => s !== '');
@@ -69,6 +78,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       snowmaxsize: parseInt(elements.snowmaxsize.value),
       colors: colors.length > 0 ? colors : ['#ffffff'],
       symbols: symbols.length > 0 ? symbols : ['❄'],
+      sentences: sentences,
       gifs,
       gifCount: parseInt(elements.gifCount.value) || 0,
       autoStart: elements.autoStart.checked
@@ -83,6 +93,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     'snowmaxsize',
     'colors',
     'symbols',
+    'sentences',
     'autoStart',
     'gifs',
     'gifCount'
@@ -106,6 +117,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Очищаем списки и заполняем сохраненными значениями
   elements.colorsList.innerHTML = '';
   elements.symbolsList.innerHTML = '';
+  elements.sentencesList.innerHTML = '';
   elements.gifsList.innerHTML = '';
 
   config.colors.forEach((color) =>
@@ -113,6 +125,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   );
   config.symbols.forEach((symbol) =>
     createSymbolItem(symbol, elements.symbolsList, saveAllSettings)
+  );
+  (config.sentences || []).forEach((sentence) =>
+    createSentenceItem(sentence, elements.sentencesList, saveAllSettings)
   );
   (config.gifs || []).forEach((gif) =>
     createGifItem(gif, elements.gifsList, saveAllSettings)
@@ -143,6 +158,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const symbols = ['❄', '❅', '❆', '＊', '⋅', '✦', '❋', '✧', '✶', '✴', '✳', '❇'];
     const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
     createSymbolItem(randomSymbol, elements.symbolsList, saveAllSettings);
+    saveAllSettings();
+  });
+
+  // Добавление нового предложения
+  elements.addSentence.addEventListener('click', () => {
+    const examples = [
+      'Счастливого Нового года!',
+      'С праздником!',
+      'Веселых праздников!',
+      'Чудесных выходных!',
+      'Хорошего настроения!'
+    ];
+    const randomSentence = examples[Math.floor(Math.random() * examples.length)];
+    createSentenceItem(randomSentence, elements.sentencesList, saveAllSettings);
     saveAllSettings();
   });
 
@@ -207,6 +236,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       .map((i) => i.value.trim())
       .filter((s) => s !== '');
 
+    const sentences = Array.from(
+      elements.sentencesList.querySelectorAll('.sentence-text')
+    )
+      .map((i) => i.value.trim())
+      .filter((s) => s !== '');
+
     const gifs = Array.from(elements.gifsList.querySelectorAll('input[type="url"]'))
       .map((i) => i.value.trim())
       .filter((s) => s !== '');
@@ -216,7 +251,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       alert(t('errorNoColor'));
       return;
     }
-    if (symbols.length === 0) {
+    if (symbols.length === 0 && sentences.length === 0) {
       alert(t('errorNoSymbol'));
       return;
     }
@@ -228,7 +263,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       snowminsize: parseInt(elements.snowminsize.value),
       snowmaxsize: parseInt(elements.snowmaxsize.value),
       snowcolor: colors,
-      snowletters: symbols,
+      snowletters: symbols.length > 0 ? symbols : ['❄'],
+      snowsentences: sentences,
       gifUrls: gifs,
       gifCount: gifs.length > 0 ? parseInt(elements.gifCount.value) || 0 : 0
     };
