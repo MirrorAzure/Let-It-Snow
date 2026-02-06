@@ -122,11 +122,11 @@ describe('Snow Animation System', () => {
       return null;
     });
 
-    global.ResizeObserver = vi.fn().mockImplementation(() => ({
-      observe: vi.fn(),
-      disconnect: vi.fn(),
-      unobserve: vi.fn()
-    }));
+    global.ResizeObserver = vi.fn(function() {
+      this.observe = vi.fn();
+      this.disconnect = vi.fn();
+      this.unobserve = vi.fn();
+    });
 
     global.requestAnimationFrame = vi.fn((cb) => {
       const id = Math.random();

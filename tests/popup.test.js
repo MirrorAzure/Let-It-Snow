@@ -87,6 +87,7 @@ describe('popup UI', () => {
         snowmaxsize: 30,
         snowcolor: ['#111111', '#222222'],
         snowletters: ['❄', '*'],
+        snowsentences: [],
         gifUrls: [],
         gifCount: 0
       }
