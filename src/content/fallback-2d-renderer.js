@@ -45,10 +45,6 @@ export class Fallback2DRenderer {
 
     // Создаем снежинки - микс глифов и предложений
     this.flakes = new Array(Math.max(1, snowmax)).fill(null).map((_, idx) => {
-      const size = snowminsize + Math.random() * sizeRange;
-      const speed = sinkspeed * (size / 20) * 20;
-      const color = snowcolor[idx % snowcolor.length];
-      
       // Выбираем случайно между глифами и предложениями
       let textItem;
       let isSentence = false;
@@ -69,6 +65,13 @@ export class Fallback2DRenderer {
           isSentence = true;
         }
       }
+      
+      // Предложения должны быть больше
+      const size = isSentence 
+        ? Math.max(snowmaxsize * 1.2, 60) + Math.random() * 20
+        : snowminsize + Math.random() * sizeRange;
+      const speed = sinkspeed * (size / 20) * 20;
+      const color = snowcolor[idx % snowcolor.length];
       
       return {
         x: Math.random() * window.innerWidth,

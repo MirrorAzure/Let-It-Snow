@@ -161,7 +161,8 @@ export async function createSentenceAtlas(sentences, cellSize = 64) {
 
   const sentenceCount = sentences.length;
   // Размещаем предложения вертикально, каждое в своей ячейке
-  const width = cellSize;
+  // Делаем atlas шире для многострочного текста
+  const width = cellSize * 2;
   const height = cellSize * sentenceCount;
 
   canvas.width = width;
@@ -187,7 +188,7 @@ export async function createSentenceAtlas(sentences, cellSize = 64) {
     const words = sentence.split(' ');
     const lines = [];
     let currentLine = '';
-    const maxWidth = cellSize * 0.9; // 90% ширины ячейки
+    const maxWidth = width * 0.85; // 85% ширины atlas
 
     words.forEach((word) => {
       const testLine = currentLine ? `${currentLine} ${word}` : word;
@@ -216,11 +217,11 @@ export async function createSentenceAtlas(sentences, cellSize = 64) {
     });
   });
 
-  // Предложения не монотонные (белые)
+  // Предложения монотонные (белые), к ним применяется цвет снежинки
   return {
     canvas,
     sentenceCount,
-    isMonotone: false,
+    isMonotone: true,
     totalWidth: width,
     totalHeight: height
   };

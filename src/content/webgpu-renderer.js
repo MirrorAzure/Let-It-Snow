@@ -278,13 +278,6 @@ export class WebGPURenderer {
       : [1];
 
     this.instances = new Array(Math.max(1, snowmax)).fill(null).map((_, idx) => {
-      const size = snowminsize + Math.random() * sizeRange;
-      const colorHex = snowcolor[Math.floor(Math.random() * snowcolor.length)];
-      const color = hexToRgb(colorHex);
-      const speed = sinkspeed * (size / 20) * 20;
-      const sway = 10 + Math.random() * 25;
-      const phaseSeed = seeds.length ? seeds[idx % seeds.length] : 1;
-
       // Выбираем случайно между глифами и предложениями
       let glyphIndex;
       let isSentence = false;
@@ -311,6 +304,16 @@ export class WebGPURenderer {
           glyphIndex = glyphCount + sentenceIndex;
         }
       }
+
+      // Предложения должны быть больше, чтобы текст не был сжат
+      const size = isSentence 
+        ? Math.max(snowmaxsize * 1.2, 60) + Math.random() * 20
+        : snowminsize + Math.random() * sizeRange;
+      const colorHex = snowcolor[Math.floor(Math.random() * snowcolor.length)];
+      const color = hexToRgb(colorHex);
+      const speed = sinkspeed * (size / 20) * 20;
+      const sway = 10 + Math.random() * 25;
+      const phaseSeed = seeds.length ? seeds[idx % seeds.length] : 1;
 
       return {
         x: Math.random() * window.innerWidth,
@@ -378,8 +381,8 @@ export class WebGPURenderer {
       const sentenceResult = await createSentenceAtlas(sentences, this.sentenceAtlas.size);
       
       this.sentenceAtlas.count = sentenceResult.sentenceCount;
-      this.sentenceAtlas.monotoneFlags = new Array(sentenceResult.sentenceCount).fill(false);
-      this.sentenceAtlas.isMonotone = false;
+      this.sentenceAtlas.monotoneFlags = new Array(sentenceResult.sentenceCount).fill(true);
+      this.sentenceAtlas.isMonotone = true;
       this.sentenceAtlas.canvas = sentenceResult.canvas;
 
       // Создаем текстуру для предложений
@@ -389,7 +392,7 @@ export class WebGPURenderer {
       this.sentenceAtlas.canvas = null;
       this.sentenceAtlas.count = 0;
       this.sentenceAtlas.monotoneFlags = [];
-      this.sentenceAtlas.isMonotone = false;
+      this.sentenceAtlas.isMonotone = true;
       await this._createAtlasTexture(this.sentenceAtlas, 'sentence');
     }
 

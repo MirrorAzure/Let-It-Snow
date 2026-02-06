@@ -281,8 +281,18 @@ h2, h3 {
   border-radius: 12px;
   border: 1px solid rgba(100, 200, 255, 0.1);
   transition: all 0.3s ease;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   min-height: 60px;
+}
+
+.sentence-item {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.sentence-item .sentence-text {
+  flex-basis: 100%;
+  width: 100%;
 }
 
 .item:hover {
@@ -369,6 +379,14 @@ h2, h3 {
   flex-shrink: 0;
 }
 
+.sentence-item .sentence-text {
+  width: 100%;
+  flex-basis: 100%;
+  text-align: left;
+  min-height: 40px;
+  resize: vertical;
+}
+
 .item input[type="text"]:focus,
 .item .color-text:focus {
   outline: none;
@@ -401,6 +419,12 @@ h2, h3 {
   transition: all 0.3s ease;
   flex-shrink: 0;
   margin-left: auto;
+}
+
+.sentence-item button {
+  margin-left: auto;
+  margin-top: 8px;
+  align-self: flex-end;
 }
 
 .item button:hover {
