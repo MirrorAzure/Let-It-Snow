@@ -41,6 +41,15 @@
   "addSymbol": {
     "message": "+ Add symbol"
   },
+  "sentencesSection": {
+    "message": "Long sentences"
+  },
+  "sentencesHint": {
+    "message": "Add long phrases and sentences that will fall instead of individual symbols."
+  },
+  "addSentence": {
+    "message": "+ Add sentence"
+  },
   "gifSection": {
     "message": "GIF animations"
   },

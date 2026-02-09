@@ -41,6 +41,15 @@
   "addSymbol": {
     "message": "+ Добавить символ"
   },
+  "sentencesSection": {
+    "message": "Длинные предложения"
+  },
+  "sentencesHint": {
+    "message": "Добавьте длинные фразы и предложения, которые будут падать вместо отдельных символов."
+  },
+  "addSentence": {
+    "message": "+ Добавить предложение"
+  },
   "gifSection": {
     "message": "GIF-анимации"
   },

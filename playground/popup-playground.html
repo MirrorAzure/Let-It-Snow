@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Let It Snow - Popup Playground</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=Caveat:wght@400;700&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="../src/popup/popup.css">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow-y: auto;
+    }
+
+    .playground-wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 40px 20px;
+      background: linear-gradient(135deg, #0a1428 0%, #1a1a2e 50%, #16213e 100%);
+      gap: 40px;
+      flex-wrap: wrap;
+    }
+
+    .playground-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .playground-label {
+      font-family: 'Nunito', sans-serif;
+      font-size: 18px;
+      font-weight: 600;
+      color: #4fc3f7;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+      padding: 10px 20px;
+      background: rgba(79, 195, 247, 0.1);
+      border-radius: 12px;
+      border: 1px solid rgba(79, 195, 247, 0.3);
+    }
+
+    .popup-preview {
+      border: 2px solid rgba(79, 195, 247, 0.3);
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      overflow: hidden;
+      background: transparent;
+      max-height: 80vh;
+      overflow-y: auto;
+      width: 420px;
+    }
+
+    .popup-preview::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .popup-preview::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+
+    .popup-preview::-webkit-scrollbar-thumb {
+      background: rgba(79, 195, 247, 0.5);
+      border-radius: 4px;
+    }
+
+    .popup-preview::-webkit-scrollbar-thumb:hover {
+      background: rgba(79, 195, 247, 0.7);
+    }
+
+    .playground-controls {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 1000;
+    }
+
+    .control-btn {
+      padding: 12px 20px;
+      background: linear-gradient(135deg, #4fc3f7, #1565c0);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-family: 'Nunito', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(21, 101, 192, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .control-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 20px rgba(21, 101, 192, 0.6);
+    }
+
+    .control-btn.reset {
+      background: linear-gradient(135deg, #ff6b6b, #c62828);
+    }
+
+    .control-btn.reset:hover {
+      box-shadow: 0 8px 20px rgba(198, 40, 40, 0.5);
+    }
+
+    .playground-info {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      padding: 16px 20px;
+      background: rgba(30, 40, 70, 0.9);
+      border-radius: 12px;
+      border: 1px solid rgba(79, 195, 247, 0.3);
+      font-family: 'Nunito', sans-serif;
+      color: #bbdefb;
+      font-size: 14px;
+      max-width: 300px;
+      backdrop-filter: blur(10px);
+    }
+
+    .playground-info h3 {
+      margin: 0 0 8px 0;
+      color: #4fc3f7;
+      font-size: 16px;
+    }
+
+    .playground-info p {
+      margin: 0;
+      line-height: 1.6;
+    }
+
+    /* Анимация появления */
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .popup-preview {
+      animation: fadeInUp 0.6s ease-out;
+    }
+
+    /* Медиа запросы для адаптивности */
+    @media (max-width: 768px) {
+      .playground-controls {
+        position: static;
+        flex-direction: row;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+      }
+
+      .playground-info {
+        position: static;
+        margin: 20px;
+      }
+
+      .playground-wrapper {
+        padding: 20px 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="playground-controls">
+    <button class="control-btn" id="toggleColors">
+      <i class="fas fa-palette"></i>
+      Добавить цвет
+    </button>
+    <button class="control-btn" id="toggleSymbols">
+      <i class="fas fa-star"></i>
+      Добавить символ
+    </button>
+    <button class="control-btn reset" id="resetPreview">
+      <i class="fas fa-redo"></i>
+      Сброс
+    </button>
+  </div>
+
+  <div class="playground-info">
+    <h3><i class="fas fa-info-circle"></i> Popup Playground</h3>
+    <p>
+      Визуализация popup меню расширения Let It Snow. 
+      Используйте кнопки справа для интерактивной демонстрации функционала.
+    </p>
+  </div>
+
+  <div class="playground-wrapper">
+    <div class="playground-section">
+      <div class="playground-label">
+        <i class="fas fa-browser"></i> Popup Preview
+      </div>
+      <div class="popup-preview" id="popupPreview">
+        <!-- Popup контент -->
+        <div class="container">
+          <div class="header">
+            <div class="snowflake-icon">❄️</div>
+            <h1><i class="fas fa-snowflake"></i> Новогодний снегопад <i class="fas fa-snowflake"></i></h1>
+            <p class="subtitle">Настройте волшебный снегопад на любой странице</p>
+          </div>
+
+          <div class="settings-card">
+            <div class="card-header">
+              <i class="fas fa-snowman"></i>
+              <h2>Настройки снегопада</h2>
+            </div>
+            
+            <label class="setting-item toggle-item">
+              <div class="setting-label">
+                <i class="fas fa-power-off"></i>
+                <span>Авто старт</span>
+              </div>
+              <input type="checkbox" id="autoStart" class="toggle-checkbox" checked>
+              <div class="toggle-switch"></div>
+            </label>
+            
+            <label class="setting-item">
+              <div class="setting-label">
+                <i class="fas fa-snowflake"></i>
+                <span>Количество снежинок</span>
+                <span class="value-display" id="snowmaxValue">80</span>
+              </div>
+              <input type="range" id="snowmax" min="1" max="320" value="80" class="snow-slider">
+            </label>
+
+            <label class="setting-item">
+              <div class="setting-label">
+                <i class="fas fa-tachometer-alt"></i>
+                <span>Скорость падения</span>
+                <span class="value-display" id="sinkspeedValue">0.4</span>
+              </div>
+              <input type="range" id="sinkspeed" min="0.1" max="3" step="0.1" value="0.4" class="snow-slider">
+            </label>
+
+            <div class="setting-item">
+              <div class="setting-label">
+                <i class="fas fa-expand-alt"></i>
+                <span>Размер снежинок</span>
+              </div>
+              <div class="range-dual">
+                <div class="range-labels">
+                  <span><i class="fas fa-snowflake small-icon"></i> Мин: <span id="minsizeValue">15</span>px</span>
+                  <span><i class="fas fa-snowflake large-icon"></i> Макс: <span id="maxsizeValue">40</span>px</span>
+                </div>
+                <div class="dual-sliders">
+                  <input type="range" id="snowminsize" min="1" max="100" value="15" class="snow-slider">
+                  <input type="range" id="snowmaxsize" min="1" max="100" value="40" class="snow-slider">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <div class="card-header">
+              <i class="fas fa-palette"></i>
+              <h3>Цвета снежинок <span class="hint">(минимум 1)</span></h3>
+            </div>
+            <div id="colorsList" class="items-list">
+              <div class="item">
+                <input type="color" value="#ffffff">
+                <input type="text" class="color-text" value="#ffffff" readonly>
+                <button><i class="fas fa-trash"></i></button>
+              </div>
+              <div class="item">
+                <input type="color" value="#4fc3f7">
+                <input type="text" class="color-text" value="#4fc3f7" readonly>
+                <button><i class="fas fa-trash"></i></button>
+              </div>
+            </div>
+            <button id="addColor" class="add-button">
+              <i class="fas fa-plus-circle"></i>
+              <span>Добавить цвет</span>
+            </button>
+          </div>
+
+          <div class="settings-card">
+            <div class="card-header">
+              <i class="fas fa-star"></i>
+              <h3>Символы снежинок <span class="hint">(минимум 1)</span></h3>
+            </div>
+            <div id="symbolsList" class="items-list">
+              <div class="item">
+                <div class="symbol-preview">❄</div>
+                <input type="text" value="❄" maxlength="3">
+                <button><i class="fas fa-trash"></i></button>
+              </div>
+              <div class="item">
+                <div class="symbol-preview">⛄</div>
+                <input type="text" value="⛄" maxlength="3">
+                <button><i class="fas fa-trash"></i></button>
+              </div>
+            </div>
+            <button id="addSymbol" class="add-button">
+              <i class="fas fa-plus-circle"></i>
+              <span>Добавить символ</span>
+            </button>
+          </div>
+
+          <div class="settings-card">
+            <div class="card-header">
+              <i class="fas fa-star"></i>
+              <h3>Длинные предложения <span class="hint">(опционально)</span></h3>
+            </div>
+            <p class="hint">Добавьте длинные фразы и предложения, которые будут падать вместо отдельных символов.</p>
+            <div id="sentencesList" class="items-list">
+              <div class="item sentence-item">
+                <input type="text" class="sentence-text" value="С Новым Годом!">
+                <button><i class="fas fa-trash"></i></button>
+              </div>
+            </div>
+            <button id="addSentence" class="add-button">
+              <i class="fas fa-plus-circle"></i>
+              <span>Добавить предложение</span>
+            </button>
+          </div>
+
+          <div class="settings-card">
+            <div class="card-header">
+              <i class="fas fa-film"></i>
+              <h3>GIF-анимации</h3>
+            </div>
+            <p class="hint">Добавьте ссылки на GIF, которые будут падать вместе со снежинками.</p>
+            <label class="setting-item">
+              <div class="setting-label">
+                <i class="fas fa-layer-group"></i>
+                <span>Количество GIF</span>
+                <span class="value-display" id="gifCountValue">0</span>
+              </div>
+              <input type="range" id="gifCount" min="0" max="80" value="0" class="snow-slider">
+            </label>
+            <div id="gifsList" class="items-list">
+            </div>
+            <button id="addGif" class="add-button">
+              <i class="fas fa-plus-circle"></i>
+              <span>Добавить GIF</span>
+            </button>
+          </div>
+
+          <div class="footer">
+            <button id="startSnow" class="big-btn">
+              <i class="fas fa-play-circle"></i>
+              <span>Запустить снегопад!</span>
+            </button>
+            <div class="decoration">
+              <span class="decoration-icon">🎄</span>
+              <span class="decoration-icon">🦌</span>
+              <span class="decoration-icon">🎅</span>
+              <span class="decoration-icon">🧦</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Интерактивная функциональность для playground
+    document.addEventListener('DOMContentLoaded', () => {
+      const colorsList = document.getElementById('colorsList');
+      const symbolsList = document.getElementById('symbolsList');
+      const sentencesList = document.getElementById('sentencesList');
+      const gifsList = document.getElementById('gifsList');
+
+      // Обработчики для слайдеров
+      const setupSlider = (sliderId, valueId, formatter = (v) => v) => {
+        const slider = document.getElementById(sliderId);
+        const valueDisplay = document.getElementById(valueId);
+        
+        slider.addEventListener('input', (e) => {
+          valueDisplay.textContent = formatter(e.target.value);
+        });
+      };
+
+      setupSlider('snowmax', 'snowmaxValue');
+      setupSlider('sinkspeed', 'sinkspeedValue', (v) => parseFloat(v).toFixed(1));
+      setupSlider('snowminsize', 'minsizeValue');
+      setupSlider('snowmaxsize', 'maxsizeValue');
+      setupSlider('gifCount', 'gifCountValue');
+
+      // Создание нового элемента цвета
+      const createColorItem = () => {
+        const item = document.createElement('div');
+        item.className = 'item';
+        const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+        item.innerHTML = `
+          <input type="color" value="${randomColor}">
+          <input type="text" class="color-text" value="${randomColor}" readonly>
+          <button><i class="fas fa-trash"></i></button>
+        `;
+        
+        const colorInput = item.querySelector('input[type="color"]');
+        const textInput = item.querySelector('.color-text');
+        colorInput.addEventListener('input', (e) => {
+          textInput.value = e.target.value;
+        });
+        
+        item.querySelector('button').addEventListener('click', () => {
+          if (colorsList.children.length > 1) {
+            item.remove();
+          }
+        });
+        
+        return item;
+      };
+
+      // Создание нового элемента символа
+      const createSymbolItem = () => {
+        const item = document.createElement('div');
+        item.className = 'item';
+        const symbols = ['❄', '⛄', '☃', '❅', '❆', '⛇', '🎄', '🎅', '🦌', '⭐'];
+        const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
+        item.innerHTML = `
+          <div class="symbol-preview">${randomSymbol}</div>
+          <input type="text" value="${randomSymbol}" maxlength="3">
+          <button><i class="fas fa-trash"></i></button>
+        `;
+        
+        const textInput = item.querySelector('input[type="text"]');
+        const preview = item.querySelector('.symbol-preview');
+        textInput.addEventListener('input', (e) => {
+          preview.textContent = e.target.value;
+        });
+        
+        item.querySelector('button').addEventListener('click', () => {
+          if (symbolsList.children.length > 1) {
+            item.remove();
+          }
+        });
+        
+        return item;
+      };
+
+      // Создание нового элемента предложения
+      const createSentenceItem = () => {
+        const item = document.createElement('div');
+        item.className = 'item sentence-item';
+        const sentences = [
+          'С Новым Годом!',
+          'Счастливого Рождества!',
+          'Пусть сбудутся мечты!',
+          'Волшебного праздника!'
+        ];
+        const randomSentence = sentences[Math.floor(Math.random() * sentences.length)];
+        item.innerHTML = `
+          <input type="text" class="sentence-text" value="${randomSentence}">
+          <button><i class="fas fa-trash"></i></button>
+        `;
+        
+        item.querySelector('button').addEventListener('click', () => {
+          item.remove();
+        });
+        
+        return item;
+      };
+
+      // Создание нового элемента GIF
+      const createGifItem = () => {
+        const item = document.createElement('div');
+        item.className = 'item gif-item';
+        item.innerHTML = `
+          <div class="gif-preview">
+            <i class="fas fa-image" style="font-size: 24px; color: #4fc3f7;"></i>
+          </div>
+          <input type="url" class="gif-url" placeholder="https://example.com/snow.gif">
+          <button><i class="fas fa-trash"></i></button>
+        `;
+        
+        const urlInput = item.querySelector('.gif-url');
+        const preview = item.querySelector('.gif-preview');
+        
+        urlInput.addEventListener('input', (e) => {
+          const url = e.target.value.trim();
+          if (url && (url.endsWith('.gif') || url.endsWith('.webp') || url.includes('giphy'))) {
+            preview.innerHTML = `<img src="${url}" alt="GIF preview">`;
+          } else {
+            preview.innerHTML = '<i class="fas fa-image" style="font-size: 24px; color: #4fc3f7;"></i>';
+          }
+        });
+        
+        item.querySelector('button').addEventListener('click', () => {
+          item.remove();
+        });
+        
+        return item;
+      };
+
+      // Кнопки добавления элементов
+      document.getElementById('addColor').addEventListener('click', () => {
+        colorsList.appendChild(createColorItem());
+      });
+
+      document.getElementById('addSymbol').addEventListener('click', () => {
+        symbolsList.appendChild(createSymbolItem());
+      });
+
+      document.getElementById('addSentence').addEventListener('click', () => {
+        sentencesList.appendChild(createSentenceItem());
+      });
+
+      document.getElementById('addGif').addEventListener('click', () => {
+        gifsList.appendChild(createGifItem());
+      });
+
+      // Обработчики существующих кнопок удаления
+      document.querySelectorAll('.item button').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const item = e.target.closest('.item');
+          const list = item.parentElement;
+          if (list.children.length > 1 || list.id === 'sentencesList' || list.id === 'gifsList') {
+            item.remove();
+          }
+        });
+      });
+
+      // Обработчики синхронизации цветов
+      document.querySelectorAll('.item input[type="color"]').forEach(input => {
+        const item = input.closest('.item');
+        const textInput = item.querySelector('.color-text');
+        input.addEventListener('input', (e) => {
+          textInput.value = e.target.value;
+        });
+      });
+
+      // Обработчики синхронизации символов
+      document.querySelectorAll('.item input[type="text"]').forEach(input => {
+        const item = input.closest('.item');
+        const preview = item.querySelector('.symbol-preview');
+        if (preview) {
+          input.addEventListener('input', (e) => {
+            preview.textContent = e.target.value;
+          });
+        }
+      });
+
+      // Контрольные кнопки playground
+      document.getElementById('toggleColors').addEventListener('click', () => {
+        colorsList.appendChild(createColorItem());
+      });
+
+      document.getElementById('toggleSymbols').addEventListener('click', () => {
+        symbolsList.appendChild(createSymbolItem());
+      });
+
+      document.getElementById('resetPreview').addEventListener('click', () => {
+        location.reload();
+      });
+
+      // Кнопка запуска снегопада (визуальная обратная связь)
+      document.getElementById('startSnow').addEventListener('click', function() {
+        this.innerHTML = '<i class="fas fa-check-circle"></i><span>Снегопад запущен!</span>';
+        this.style.background = 'linear-gradient(135deg, #66bb6a, #2e7d32)';
+        
+        setTimeout(() => {
+          this.innerHTML = '<i class="fas fa-play-circle"></i><span>Запустить снегопад!</span>';
+          this.style.background = 'linear-gradient(135deg, #ff6b6b, #c62828)';
+        }, 2000);
+      });
+
+      // Toggle для auto-start
+      const autoStartCheckbox = document.getElementById('autoStart');
+      const toggleSwitch = autoStartCheckbox.nextElementSibling;
+      
+      toggleSwitch.addEventListener('click', () => {
+        autoStartCheckbox.checked = !autoStartCheckbox.checked;
+      });
+    });
+  </script>
+</body>
+</html>
