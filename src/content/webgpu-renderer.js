@@ -65,6 +65,10 @@ export class WebGPURenderer {
     this.resizeObserver = null;
     this.lastTimestamp = 0;
     this.backgroundMonitor = null;
+    
+    // Флаги для отслеживания изменений буферов
+    this.uniformBufferNeedsUpdate = true;
+    this.instanceBufferNeedsUpdate = true;
   }
 
   /**
@@ -74,7 +78,8 @@ export class WebGPURenderer {
   async init() {
     if (!navigator.gpu) return false;
 
-    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
+    // Note: powerPreference option is currently ignored on Windows (https://crbug.com/369219127)
+    const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) return false;
 
     try {
@@ -338,6 +343,9 @@ export class WebGPURenderer {
       size: this.instanceData.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
     });
+    
+    // Отмечаем, что буфер нужно обновить при первом рендере
+    this.instanceBufferNeedsUpdate = true;
   }
 
   _nextSentenceIndex(sentenceCount) {
@@ -483,7 +491,7 @@ export class WebGPURenderer {
       this.canvas.height = height;
       this.uniformArray[0] = width;
       this.uniformArray[1] = height;
-      this.device?.queue.writeBuffer(this.uniformBuffer, 0, this.uniformArray);
+      this.uniformBufferNeedsUpdate = true;
       this.context?.configure({
         device: this.device,
         format: navigator.gpu.getPreferredCanvasFormat(),
@@ -505,9 +513,7 @@ export class WebGPURenderer {
     const glowStrength = this.backgroundMonitor.calculateGlowStrength();
     if (this.uniformArray[5] === glowStrength) return;
     this.uniformArray[5] = glowStrength;
-    if (this.uniformBuffer && this.device) {
-      this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformArray);
-    }
+    this.uniformBufferNeedsUpdate = true;
   }
 
   /**
@@ -539,6 +545,7 @@ export class WebGPURenderer {
     const strideFloats = 14;
     const glyphCount = this.glyphAtlas.count || 0;
     const sentenceCount = this.sentenceAtlas.count || 0;
+    let hasChanges = false;
 
     this.instances.forEach((flake, idx) => {
       flake.phase += flake.freq * delta;
@@ -574,7 +581,14 @@ export class WebGPURenderer {
       this.instanceData[base + 12] = flake.glyphIndex;
       const monoFlag = this.glyphMonotoneFlags?.[flake.glyphIndex] ? 1 : 0;
       this.instanceData[base + 13] = monoFlag;
+      
+      hasChanges = true;
     });
+    
+    // Отмечаем, что буфер экземпляров нужно обновить
+    if (hasChanges) {
+      this.instanceBufferNeedsUpdate = true;
+    }
   }
 
   /**
@@ -583,14 +597,23 @@ export class WebGPURenderer {
   render() {
     if (!this.device || !this.context) return;
 
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformArray);
-    this.device.queue.writeBuffer(
-      this.instanceBuffer,
-      0,
-      this.instanceData.buffer,
-      0,
-      this.instanceData.byteLength
-    );
+    // Обновляем буфер uniform только если требуется
+    if (this.uniformBufferNeedsUpdate) {
+      this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformArray);
+      this.uniformBufferNeedsUpdate = false;
+    }
+    
+    // Обновляем буфер экземпляров только если требуется
+    if (this.instanceBufferNeedsUpdate) {
+      this.device.queue.writeBuffer(
+        this.instanceBuffer,
+        0,
+        this.instanceData.buffer,
+        0,
+        this.instanceData.byteLength
+      );
+      this.instanceBufferNeedsUpdate = false;
+    }
 
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
