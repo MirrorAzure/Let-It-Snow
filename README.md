@@ -20,16 +20,20 @@ pnpm install
 
 ### 🎨 Playground - Quick Testing with Hot Reload
 
-**Quick way to test animations WITHOUT installing the extension:**
+**Quick way to test animations and popup UI WITHOUT installing the extension:**
 
 ```bash
 pnpm run playground
 ```
 
-✅ Loads source code from `src/` with HMR support  
-✅ Hot reload on any changes  
+✅ Snow animation playground with HMR for `src/content/`  
+✅ Popup UI playground with HMR for `src/popup/`  
 ✅ Full WebGPU/Fallback2D functionality  
 ✅ All parameters configurable via UI  
+
+Open:
+- Snow animation: `http://localhost:5173/playground/`
+- Popup UI: `http://localhost:5173/playground/popup-playground.html`
 
 **[Learn more about Playground →](./playground/README.md)**
 
@@ -43,14 +47,17 @@ This starts the Vite development server for extension building.
 ```bash
 pnpm run build
 ```
-This creates an optimized build in the `dist` folder.
+This builds for all browsers and outputs:
+- Unpacked builds in `dist/chrome`, `dist/firefox`, `dist/edge`
+- Packaged artifacts in `builds/` (ZIPs for Chrome/Firefox and CRX for Edge)
 
-### Build and pack
+### Packaging (optional)
 ```bash
-pnpm run build && pnpm run pack
+pnpm run pack:chrome
+pnpm run pack:firefox
+pnpm run pack:edge
 ```
-
-Serves the `playground/` page for quickly testing the content script. Load the extension in your browser, open `http://localhost:4177`, and use the controls to start/stop snow, tweak parameters, and flip light/dark backgrounds.
+Use these if you want to regenerate specific artifacts after a build.
 
 ### Load the extension in Chrome
 
@@ -58,7 +65,7 @@ Serves the `playground/` page for quickly testing the content script. Load the e
 2. Open Chrome and go to `chrome://extensions/`
 3. Enable "Developer mode" (toggle in top right)
 4. Click "Load unpacked"
-5. Select the `dist` folder from your project
+5. Select the `dist/chrome` folder from your project
 
 ## Architecture Diagram
   
@@ -114,6 +121,8 @@ src/
 - **Customizable snowflakes**: Adjust count, size, and falling speed
 - **Color selection**: Choose multiple colors for snowflakes
 - **Symbol customization**: Use different characters as snowflakes
+- **GIF support**: Add GIFs by URL or local file upload
+- **About tab**: Version, authors, repository, and tech stack in popup
 - **Settings persistence**: All settings are automatically saved
 - **Multi-language support**: English and Russian translations
 
@@ -130,6 +139,7 @@ This extension uses Vite with the CRXJS plugin for building Chrome extensions. T
 - Icons need to be placed in `src/icons/` directory (16px, 48px, 128px)
 - The dist folder is generated during build and should not be committed to git
 - Use `pnpm` commands instead of `npm` for consistency
+- `activeTab` permission removed from manifests
 
 ## Browser Support
 
