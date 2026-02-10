@@ -2,12 +2,28 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import archiver from 'archiver';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, '..');
 const distDir = path.join(rootDir, 'dist');
 const buildsDir = path.join(rootDir, 'builds');
 const srcDir = path.join(rootDir, 'src');
+
+// Функция для создания zip-архива
+function createZip(sourceDir, outputPath) {
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(outputPath);
+    const archive = archiver('zip', { zlib: { level: 9 } });
+
+    output.on('close', () => resolve());
+    archive.on('error', (err) => reject(err));
+
+    archive.pipe(output);
+    archive.directory(sourceDir, false);
+    archive.finalize();
+  });
+}
 
 // Убедимся, что папка builds существует
 if (!fs.existsSync(buildsDir)) {
@@ -18,6 +34,7 @@ const browsers = ['chrome', 'firefox', 'edge'];
 
 console.log('🏗️  Начинаем сборку расширения для всех браузеров...\n');
 
+(async () => {
 try {
   // Очищаем папку dist
   if (fs.existsSync(distDir)) {
@@ -67,26 +84,30 @@ try {
   fs.writeFileSync(path.join(srcDir, 'manifest.json'), originalManifest);
   console.log('\n✓ Оригинальный manifest восстановлен\n');
 
-  // Упаковываем для Chrome и Edge (CRX)
+  // Упаковываем для Chrome и Edge
   console.log('📦 Упаковываем сборки...');
 
-  try {
-    execSync('pnpm pack:chrome', { cwd: rootDir, stdio: 'pipe' });
-    console.log('   ✓ Chrome: let-it-snow-chrome.crx');
-  } catch (error) {
-    console.warn('   ⚠ Chrome CRX:', error.message);
+  // Chrome - создаем zip для Chrome Web Store
+  const chromeDistDir = path.join(distDir, 'chrome');
+  if (fs.existsSync(chromeDistDir)) {
+    try {
+      const chromeZipPath = path.join(buildsDir, 'let-it-snow-chrome.zip');
+      await createZip(chromeDistDir, chromeZipPath);
+      console.log('   ✓ Chrome: let-it-snow-chrome.zip (для Chrome Web Store)');
+    } catch (error) {
+      console.warn('   ⚠ Chrome ZIP:', error.message);
+    }
   }
 
-  // Firefox упаковывается в ZIP (создаем вручную)
+  // Firefox упаковывается в ZIP
   const firefoxDistDir = path.join(distDir, 'firefox');
   if (fs.existsSync(firefoxDistDir)) {
     try {
-      execSync(`cd "${firefoxDistDir}" && zip -r "${path.join(buildsDir, 'let-it-snow-firefox.zip')}" .`, {
-        stdio: 'pipe'
-      });
+      const firefoxZipPath = path.join(buildsDir, 'let-it-snow-firefox.zip');
+      await createZip(firefoxDistDir, firefoxZipPath);
       console.log('   ✓ Firefox: let-it-snow-firefox.zip');
     } catch (error) {
-      console.warn('   ⚠ Firefox ZIP (требуется zip утилита)');
+      console.warn('   ⚠ Firefox ZIP:', error.message);
     }
   }
 
@@ -105,3 +126,4 @@ try {
   console.error('\n❌ Ошибка при сборке:', error.message);
   process.exit(1);
 }
+})();

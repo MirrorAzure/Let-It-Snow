@@ -15,6 +15,7 @@
     "sync-version": "node scripts/sync-version.js",
     "version": "pnpm run sync-version",
     "pack:chrome": "crx3 dist/chrome -o builds/let-it-snow-chrome.crx",
+    "pack:chrome:zip": "cd dist/chrome && zip -r ../../builds/let-it-snow-chrome.zip . && cd ../../",
     "pack:firefox": "cd dist/firefox && zip -r ../../builds/let-it-snow-firefox.zip . && cd ../../",
     "pack:edge": "crx3 dist/edge -o builds/let-it-snow-edge.crx",
     "playground": "node scripts/playground-server.js",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.3.0",
+    "archiver": "^7.0.1",
     "cross-env": "^10.1.0",
     "crx3": "^2.0.0",
     "jsdom": "^28.0.0",
