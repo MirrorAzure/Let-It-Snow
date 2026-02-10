@@ -107,6 +107,9 @@
   "minimumHint": {
     "message": "(минимум 1)"
   },
+  "optionalHint": {
+    "message": "(опционально)"
+  },
   "delete": {
     "message": "Удалить"
   },

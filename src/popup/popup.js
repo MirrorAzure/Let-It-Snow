@@ -20,6 +20,11 @@ import {
  * Инициализация popup при загрузке DOM
  */
 document.addEventListener('DOMContentLoaded', async () => {
+  // Пропускаем инициализацию в playground среде (инициализация будет в popup-playground.js)
+  if (window.__IS_PLAYGROUND__) {
+    return;
+  }
+  
   // Применяем локализацию
   applyLocalization();
 

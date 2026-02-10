@@ -3,8 +3,25 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Устанавливаем флаг тестирования для подавления логов
+if (typeof window !== 'undefined') {
+  window.__TESTING__ = true;
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const popupHtml = fs.readFileSync(path.join(__dirname, '../src/popup/popup.html'), 'utf-8');
+
+// Загружаем локализацию для тестов
+const messagesJson = fs.readFileSync(path.join(__dirname, '../src/_locales/ru/messages.json'), 'utf-8');
+const messages = JSON.parse(messagesJson);
+
+// Преобразуем формат {key: {message: "text"}} в {key: "text"}
+const messageStrings = {};
+Object.entries(messages).forEach(([key, obj]) => {
+  if (obj && obj.message) {
+    messageStrings[key] = obj.message;
+  }
+});
 
 function createChromeMock(overrides = {}) {
   const stored = {
@@ -30,7 +47,7 @@ function createChromeMock(overrides = {}) {
   });
 
   return {
-    i18n: { getMessage: vi.fn((key) => key) },
+    i18n: { getMessage: vi.fn((key) => messageStrings[key] || key) },
     storage: { sync: { get: syncGet, set: syncSet } },
     tabs: {
       query: vi.fn(async () => [{ id: 1, url: 'https://example.com' }]),
@@ -49,6 +66,11 @@ describe('popup UI', () => {
   beforeEach(() => {
     vi.resetModules();
     document.documentElement.innerHTML = popupHtml;
+    // Устанавливаем флаг тестирования в document и global
+    document.__TESTING__ = true;
+    if (typeof global !== 'undefined') {
+      global.__TESTING__ = true;
+    }
     vi.stubGlobal('alert', vi.fn());
     // Удаляем старый chrome объект перед каждым тестом
     delete global.chrome;
@@ -56,6 +78,10 @@ describe('popup UI', () => {
 
   afterEach(() => {
     document.documentElement.innerHTML = '';
+    delete document.__TESTING__;
+    if (typeof global !== 'undefined') {
+      delete global.__TESTING__;
+    }
     vi.unstubAllGlobals();
     delete global.chrome;
   });

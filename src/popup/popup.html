@@ -32,7 +32,7 @@
     <div class="settings-card">
       <div class="card-header">
         <i class="fas fa-snowman"></i>
-        <h2 data-i18n="title" data-i18n="extenstionSettings">Настройки снегопада</h2>
+        <h2 data-i18n="title">Let it snow ❄️</h2>
       </div>
       
       <label class="setting-item toggle-item" data-i18n-title="tooltipAutoStart">
@@ -44,19 +44,19 @@
         <div class="toggle-switch"></div>
       </label>
       
-      <label class="setting-item" data-i18n="snowCount">
+      <label class="setting-item">
         <div class="setting-label">
           <i class="fas fa-snowflake"></i>
-          <span>Количество снежинок</span>
+          <span data-i18n="snowCount">Количество снежинок (1–320):</span>
           <span class="value-display" id="snowmaxValue">80</span>
         </div>
         <input type="range" id="snowmax" min="1" max="320" value="80" class="snow-slider" data-i18n-title="tooltipSnowCount">
       </label>
 
-      <label class="setting-item" data-i18n="fallSpeed">
+      <label class="setting-item">
         <div class="setting-label">
           <i class="fas fa-tachometer-alt"></i>
-          <span>Скорость падения</span>
+          <span data-i18n="fallSpeed">Скорость падения (0.1–3.0):</span>
           <span class="value-display" id="sinkspeedValue">0.4</span>
         </div>
         <input type="range" id="sinkspeed" min="0.1" max="3" step="0.1" value="0.4" class="snow-slider" data-i18n-title="tooltipFallSpeed">
@@ -95,7 +95,7 @@
     <div class="settings-card">
       <div class="card-header">
         <i class="fas fa-star"></i>
-        <h3 data-i18n="symbolsSection">Символы снежинок <span class="hint">(минимум 1)</span></h3>
+        <h3 data-i18n="symbolsSection">Символы снежинок <span class="hint" data-i18n="minimumHint">(минимум 1)</span></h3>
       </div>
       <div id="symbolsList" class="items-list"></div>
       <button id="addSymbol" class="add-button" data-i18n-title="tooltipAddSymbol">
@@ -107,7 +107,7 @@
     <div class="settings-card">
       <div class="card-header">
         <i class="fas fa-star"></i>
-        <h3 data-i18n="sentencesSection">Длинные предложения <span class="hint">(опционально)</span></h3>
+        <h3 data-i18n="sentencesSection">Длинные предложения <span class="hint" data-i18n="optionalHint">(опционально)</span></h3>
       </div>
       <p class="hint" data-i18n="sentencesHint">Добавьте длинные фразы и предложения, которые будут падать вместо отдельных символов.</p>
       <div id="sentencesList" class="items-list"></div>

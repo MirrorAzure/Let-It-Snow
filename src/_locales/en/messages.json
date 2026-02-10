@@ -107,6 +107,9 @@
   "minimumHint": {
     "message": "(at least 1)"
   },
+  "optionalHint": {
+    "message": "(optional)"
+  },
   "delete": {
     "message": "Delete"
   },
