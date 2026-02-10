@@ -253,7 +253,7 @@ async function initPlayground() {
   // Загружаем версию расширения
   const versionElement = document.getElementById('versionNumber');
   if (versionElement) {
-    versionElement.textContent = '1.6.1';
+    versionElement.textContent = '1.6.2';
   }
 
   const colorsList = document.getElementById('colorsList');
