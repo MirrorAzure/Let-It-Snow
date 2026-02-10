@@ -62,6 +62,9 @@
   "gifCount": {
     "message": "GIF amount"
   },
+  "sentenceCount": {
+    "message": "Text snowflakes amount"
+  },
   "gifPlaceholder": {
     "message": "https://example.com/snow.gif"
   },
@@ -190,6 +193,9 @@
   },
   "tooltipGifCount": {
     "message": "How many GIFs will fall"
+  },
+  "tooltipSentenceCount": {
+    "message": "How many text snowflakes will fall"
   },
   "tooltipStartSnow": {
     "message": "Start snowfall on the active tab"

@@ -22,6 +22,7 @@ const els = {
   snowmaxsize: document.getElementById('snowmaxsize'),
   gifs: document.getElementById('gifs'),
   gifCount: document.getElementById('gifCount'),
+  sentenceCount: document.getElementById('sentenceCount'),
   colorsList: document.getElementById('colors-list'),
   colorText: document.getElementById('color-text'),
   colorPicker: document.getElementById('color-picker'),
@@ -43,6 +44,7 @@ const defaults = {
   colors: ['#ffffff', '#b7e0ff', '#7dd3fc'],
   symbols: ['❄', '✺', '✴'],
   sentences: [],
+  sentenceCount: 0,
   gifs: [],
   gifCount: 0
 };
@@ -169,6 +171,7 @@ function getConfigFromForm() {
     snowcolor: state.colors.slice(0, 12),
     snowletters: state.symbols.slice(0, 12),
     snowsentences: state.sentences.slice(0, 12),
+    sentenceCount: Math.max(0, Math.min(80, Number(els.sentenceCount.value) || defaults.sentenceCount)),
     gifUrls: toLines(els.gifs.value).slice(0, 10),
     gifCount: Math.max(0, Math.min(200, Number(els.gifCount.value) || defaults.gifCount))
   };
@@ -203,6 +206,7 @@ function resetForm() {
   els.snowminsize.value = defaults.snowminsize;
   els.snowmaxsize.value = defaults.snowmaxsize;
   els.gifCount.value = defaults.gifCount;
+  els.sentenceCount.value = defaults.sentenceCount;
   els.gifs.value = defaults.gifs.join('\n');
   state.colors = [...defaults.colors];
   state.symbols = [...defaults.symbols];

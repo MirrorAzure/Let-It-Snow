@@ -278,6 +278,7 @@ async function initPlayground() {
   setupSlider('snowminsize', 'minsizeValue');
   setupSlider('snowmaxsize', 'maxsizeValue');
   setupSlider('gifCount', 'gifCountValue');
+  setupSlider('sentenceCount', 'sentenceCountValue');
 
   // Создание нового элемента цвета
   const createColorItem = () => {

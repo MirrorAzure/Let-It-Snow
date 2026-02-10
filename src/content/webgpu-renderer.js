@@ -260,7 +260,7 @@ export class WebGPURenderer {
    * Настройка instance данных (снежинок)
    */
   setupInstances() {
-    const { snowmax, snowminsize, snowmaxsize, sinkspeed, snowcolor, snowletters, snowsentences } = this.config;
+    const { snowmax, snowminsize, snowmaxsize, sinkspeed, snowcolor, snowletters, snowsentences, sentenceCount } = this.config;
 
     const sizeRange = snowmaxsize - snowminsize;
     const hasGlyphs = snowletters && snowletters.length > 0;
@@ -270,8 +270,11 @@ export class WebGPURenderer {
     
     // Определяем количество глифов и предложений
     const glyphCount = effectiveHasGlyphs ? (hasGlyphs ? snowletters.length : 1) : 0;
-    const sentenceCount = hasSentences ? snowsentences.length : 0;
-    const totalCount = glyphCount + sentenceCount || 1;
+    const sentencePoolCount = hasSentences ? snowsentences.length : 0;
+    const totalCount = glyphCount + sentencePoolCount || 1;
+    
+    // Количество текстовых снежинок ограничено настройкой sentenceCount
+    const maxSentenceInstances = hasSentences ? Math.min(sentenceCount || 0, snowmax) : 0;
 
     this.sentenceQueue = hasSentences ? snowsentences : [];
     this.sentenceCursor = 0;
@@ -283,31 +286,22 @@ export class WebGPURenderer {
       : [1];
 
     this.instances = new Array(Math.max(1, snowmax)).fill(null).map((_, idx) => {
-      // Выбираем случайно между глифами и предложениями
+      // Выбираем между глифами и предложениями на основе sentenceCount
       let glyphIndex;
       let isSentence = false;
       let sentenceIndex = 0;
 
-      if (!hasSentences) {
-        // Только глифы
-        glyphIndex = idx % glyphCount;
-      } else if (!effectiveHasGlyphs) {
-        // Только предложения
+      if (hasSentences && idx < maxSentenceInstances) {
+        // Первые sentenceCount снежинок - это предложения
         isSentence = true;
-        sentenceIndex = this._nextSentenceIndex(sentenceCount);
-        glyphIndex = sentenceIndex;
+        sentenceIndex = this._nextSentenceIndex(sentencePoolCount);
+        glyphIndex = glyphCount + sentenceIndex;
+      } else if (effectiveHasGlyphs) {
+        // Остальные - глифы
+        glyphIndex = (idx - maxSentenceInstances) % glyphCount;
       } else {
-        // Микс глифов и предложений
-        const randomChoice = Math.random();
-        if (randomChoice < 0.5) {
-          // Выбираем глиф
-          glyphIndex = idx % glyphCount;
-        } else {
-          // Выбираем предложение
-          isSentence = true;
-          sentenceIndex = this._nextSentenceIndex(sentenceCount);
-          glyphIndex = glyphCount + sentenceIndex;
-        }
+        // Если нет глифов, используем дефолтный
+        glyphIndex = 0;
       }
 
       // Предложения должны быть больше, чтобы текст не был сжат

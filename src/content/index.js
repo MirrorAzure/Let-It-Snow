@@ -25,6 +25,7 @@ const DEFAULT_CONFIG = {
   snowcolor: ['#ffffff'],
   snowletters: ['❄'],
   snowsentences: [],
+  sentenceCount: 0,
   gifUrls: [],
   gifCount: 0
 };
@@ -312,6 +313,7 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
         'colors',
         'symbols',
         'sentences',
+        'sentenceCount',
         'gifs',
         'gifCount'
       ]);
@@ -325,6 +327,7 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
           snowcolor: stored.colors || ['#ffffff'],
           snowletters: stored.symbols || ['❄'],
           snowsentences: stored.sentences || [],
+          sentenceCount: stored.sentenceCount || 0,
           gifUrls: stored.gifs || [],
           gifCount: stored.gifCount || 0
         };

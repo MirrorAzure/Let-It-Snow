@@ -31,6 +31,7 @@ export const DEFAULT_SETTINGS = {
   colors: ['#ffffff', '#4fc3f7', '#bbdefb', '#e1f5fe'],
   symbols: ['❄', '❅', '❆', '＊', '⋅', '✦'],
   sentences: [],
+  sentenceCount: 0,
   gifs: [],
   gifCount: 0,
   autoStart: false

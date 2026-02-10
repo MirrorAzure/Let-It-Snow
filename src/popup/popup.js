@@ -69,6 +69,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     colorsList: document.getElementById('colorsList'),
     symbolsList: document.getElementById('symbolsList'),
     sentencesList: document.getElementById('sentencesList'),
+    sentenceCount: document.getElementById('sentenceCount'),
+    sentenceCountValue: document.getElementById('sentenceCountValue'),
     startSnow: document.getElementById('startSnow'),
     addColor: document.getElementById('addColor'),
     addSymbol: document.getElementById('addSymbol'),
@@ -112,6 +114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       colors: colors.length > 0 ? colors : ['#ffffff'],
       symbols: symbols.length > 0 ? symbols : ['❄'],
       sentences: sentences,
+      sentenceCount: parseInt(elements.sentenceCount.value) || 0,
       gifs,
       gifCount: parseInt(elements.gifCount.value) || 0,
       autoStart: elements.autoStart.checked
@@ -127,6 +130,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     'colors',
     'symbols',
     'sentences',
+    'sentenceCount',
     'autoStart',
     'gifs',
     'gifCount'
@@ -146,6 +150,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.autoStart.checked = config.autoStart || false;
   elements.gifCount.value = config.gifCount || 0;
   elements.gifCountValue.textContent = config.gifCount || 0;
+  elements.sentenceCount.value = config.sentenceCount || 0;
+  elements.sentenceCountValue.textContent = config.sentenceCount || 0;
 
   // Очищаем списки и заполняем сохраненными значениями
   elements.colorsList.innerHTML = '';
@@ -234,6 +240,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   );
 
   setupSliderListener(elements.gifCount, elements.gifCountValue, saveAllSettings);
+  
+  setupSliderListener(elements.sentenceCount, elements.sentenceCountValue, saveAllSettings);
 
   // Слайдер минимального размера
   elements.snowminsize.addEventListener('input', () => {
@@ -298,6 +306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       snowcolor: colors,
       snowletters: symbols.length > 0 ? symbols : ['❄'],
       snowsentences: sentences,
+      sentenceCount: parseInt(elements.sentenceCount.value) || 0,
       gifUrls: gifs,
       gifCount: gifs.length > 0 ? parseInt(elements.gifCount.value) || 0 : 0
     };

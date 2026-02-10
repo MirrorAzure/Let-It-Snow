@@ -33,37 +33,35 @@ export class Fallback2DRenderer {
 
     if (!this.ctx) return false;
 
-    const { snowmax, snowminsize, snowmaxsize, sinkspeed, snowcolor, snowletters, snowsentences } = this.config;
+    const { snowmax, snowminsize, snowmaxsize, sinkspeed, snowcolor, snowletters, snowsentences, sentenceCount } = this.config;
 
     const sizeRange = snowmaxsize - snowminsize;
     
     const hasGlyphs = snowletters && snowletters.length > 0;
     const hasSentences = snowsentences && snowsentences.length > 0;
+    
+    // Количество текстовых снежинок ограничено настройкой sentenceCount
+    const maxSentenceInstances = hasSentences ? Math.min(sentenceCount || 0, snowmax) : 0;
 
     this.sentenceQueue = hasSentences ? snowsentences : [];
     this.sentenceCursor = 0;
 
-    // Создаем снежинки - микс глифов и предложений
+    // Создаем снежинки - контролируемое количество предложений + глифы
     this.flakes = new Array(Math.max(1, snowmax)).fill(null).map((_, idx) => {
-      // Выбираем случайно между глифами и предложениями
+      // Выбираем между глифами и предложениями на основе sentenceCount
       let textItem;
       let isSentence = false;
       
-      if (!hasSentences) {
-        // Только глифы
-        textItem = hasGlyphs ? snowletters[idx % snowletters.length] : '❄';
-      } else if (!hasGlyphs) {
-        // Только предложения
+      if (hasSentences && idx < maxSentenceInstances) {
+        // Первые sentenceCount снежинок - это предложения
         textItem = this._nextSentence();
         isSentence = true;
+      } else if (hasGlyphs) {
+        // Остальные - глифы
+        textItem = snowletters[(idx - maxSentenceInstances) % snowletters.length];
       } else {
-        // Микс: 50/50 шанс между глифами и предложениями
-        if (Math.random() < 0.5) {
-          textItem = snowletters[idx % snowletters.length];
-        } else {
-          textItem = this._nextSentence();
-          isSentence = true;
-        }
+        // Если нет глифов, используем дефолтный
+        textItem = '❄';
       }
       
       // Предложения должны быть больше

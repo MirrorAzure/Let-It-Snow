@@ -31,6 +31,7 @@ function createChromeMock(overrides = {}) {
     snowmaxsize: 40,
     colors: ['#ffffff'],
     symbols: ['❄'],
+    sentenceCount: 0,
     ...overrides
   };
 
@@ -121,6 +122,7 @@ describe('popup UI', () => {
         snowcolor: ['#111111', '#222222'],
         snowletters: ['❄', '*'],
         snowsentences: [],
+        sentenceCount: 0,
         gifUrls: [],
         gifCount: 0
       }
