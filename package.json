@@ -1,6 +1,6 @@
 {
   "name": "let-it-snow",
-  "version": "1.6.3",
+  "version": "1.6.4",
   "description": "A magical snowfall extension for web pages",
   "type": "module",
   "scripts": {
