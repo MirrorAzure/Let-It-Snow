@@ -27,7 +27,9 @@ async function startServer() {
   await server.listen();
   console.log(`\n✓ Playground running at http://localhost:${port}`);
   console.log('✓ Hot Module Replacement (HMR) enabled');
-  console.log('✓ Changes to src/content/index.js will hot reload\n');
+  console.log('✓ Snow Animation: http://localhost:' + port + '/playground/');
+  console.log('✓ Popup UI: http://localhost:' + port + '/playground/popup-playground.html');
+  console.log('✓ Changes to src/content/ and src/popup/ will hot reload\n');
 }
 
 startServer().catch(console.error);

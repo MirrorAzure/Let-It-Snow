@@ -15,13 +15,27 @@
       <p class="subtitle" data-i18n="extenstionDescription">Настройте волшебный снегопад на любой странице</p>
     </div>
 
+    <!-- Tabs Navigation -->
+    <div class="tabs-navigation">
+      <button class="tab-button active" data-tab="settings" data-i18n-title="tooltipTabSettings">
+        <i class="fas fa-cog"></i>
+        <span data-i18n="settingsTab">Настройки</span>
+      </button>
+      <button class="tab-button" data-tab="about" data-i18n-title="tooltipTabAbout">
+        <i class="fas fa-info-circle"></i>
+        <span data-i18n="aboutTab">О расширении</span>
+      </button>
+    </div>
+
+    <!-- Settings Tab Content -->
+    <div class="tab-content active" id="settings-tab">
     <div class="settings-card">
       <div class="card-header">
         <i class="fas fa-snowman"></i>
         <h2 data-i18n="title" data-i18n="extenstionSettings">Настройки снегопада</h2>
       </div>
       
-      <label class="setting-item toggle-item">
+      <label class="setting-item toggle-item" data-i18n-title="tooltipAutoStart">
         <div class="setting-label">
           <i class="fas fa-power-off"></i>
           <span data-i18n="autoStart">Авто старт</span>
@@ -36,7 +50,7 @@
           <span>Количество снежинок</span>
           <span class="value-display" id="snowmaxValue">80</span>
         </div>
-        <input type="range" id="snowmax" min="1" max="320" value="80" class="snow-slider">
+        <input type="range" id="snowmax" min="1" max="320" value="80" class="snow-slider" data-i18n-title="tooltipSnowCount">
       </label>
 
       <label class="setting-item" data-i18n="fallSpeed">
@@ -45,7 +59,7 @@
           <span>Скорость падения</span>
           <span class="value-display" id="sinkspeedValue">0.4</span>
         </div>
-        <input type="range" id="sinkspeed" min="0.1" max="3" step="0.1" value="0.4" class="snow-slider">
+        <input type="range" id="sinkspeed" min="0.1" max="3" step="0.1" value="0.4" class="snow-slider" data-i18n-title="tooltipFallSpeed">
       </label>
 
       <div class="setting-item">
@@ -59,8 +73,8 @@
             <span data-i18n="max"><i class="fas fa-snowflake large-icon"></i> Макс: <span id="maxsizeValue">40</span><span data-i18n="px">px</span></span>
           </div>
           <div class="dual-sliders">
-            <input type="range" id="snowminsize" min="1" max="100" value="15" class="snow-slider">
-            <input type="range" id="snowmaxsize" min="1" max="100" value="40" class="snow-slider">
+            <input type="range" id="snowminsize" min="1" max="100" value="15" class="snow-slider" data-i18n-title="tooltipSnowMinSize">
+            <input type="range" id="snowmaxsize" min="1" max="100" value="40" class="snow-slider" data-i18n-title="tooltipSnowMaxSize">
           </div>
         </div>
       </div>
@@ -72,7 +86,7 @@
         <h3 data-i18n="colorsSection">Цвета снежинок <span class="hint" data-i18n="minimumHint">(минимум 1)</span></h3>
       </div>
       <div id="colorsList" class="items-list"></div>
-      <button id="addColor" class="add-button">
+      <button id="addColor" class="add-button" data-i18n-title="tooltipAddColor">
         <i class="fas fa-plus-circle"></i>
         <span data-i18n="addColor">Добавить цвет</span>
       </button>
@@ -84,7 +98,7 @@
         <h3 data-i18n="symbolsSection">Символы снежинок <span class="hint">(минимум 1)</span></h3>
       </div>
       <div id="symbolsList" class="items-list"></div>
-      <button id="addSymbol" class="add-button">
+      <button id="addSymbol" class="add-button" data-i18n-title="tooltipAddSymbol">
         <i class="fas fa-plus-circle"></i>
         <span data-i18n="addSymbol">Добавить символ</span>
       </button>
@@ -97,7 +111,7 @@
       </div>
       <p class="hint" data-i18n="sentencesHint">Добавьте длинные фразы и предложения, которые будут падать вместо отдельных символов.</p>
       <div id="sentencesList" class="items-list"></div>
-      <button id="addSentence" class="add-button">
+      <button id="addSentence" class="add-button" data-i18n-title="tooltipAddSentence">
         <i class="fas fa-plus-circle"></i>
         <span data-i18n="addSentence">Добавить предложение</span>
       </button>
@@ -115,17 +129,111 @@
           <span data-i18n="gifCount">Количество GIF</span>
           <span class="value-display" id="gifCountValue">0</span>
         </div>
-        <input type="range" id="gifCount" min="0" max="80" value="0" class="snow-slider">
+        <input type="range" id="gifCount" min="0" max="80" value="0" class="snow-slider" data-i18n-title="tooltipGifCount">
       </label>
       <div id="gifsList" class="items-list"></div>
-      <button id="addGif" class="add-button">
+      <button id="addGif" class="add-button" data-i18n-title="tooltipAddGif">
         <i class="fas fa-plus-circle"></i>
         <span data-i18n="addGif">Добавить GIF</span>
       </button>
     </div>
 
+    </div><!-- End Settings Tab -->
+
+    <!-- About Tab Content -->
+    <div class="tab-content" id="about-tab">
+      <div class="settings-card about-card">
+        <div class="card-header">
+          <i class="fas fa-snowflake"></i>
+          <h2 data-i18n="aboutExtension">О расширении</h2>
+        </div>
+        
+        <div class="about-content">
+          <div class="about-section">
+            <h3><i class="fas fa-code"></i> <span data-i18n="extensionName">Новогодний снегопад</span></h3>
+            <p class="version-info">
+              <span data-i18n="version">Версия:</span> <span id="versionNumber">1.6.1</span>
+            </p>
+            <p class="description-text" data-i18n="aboutDescription">
+              Красивое настраиваемое расширение для создания волшебного снегопада на любой веб-странице. 
+              Настройте цвета, символы, скорость падения и наслаждайтесь праздничной атмосферой!
+            </p>
+          </div>
+
+          <div class="about-section">
+            <h3><i class="fas fa-users"></i> <span data-i18n="authors">Авторы</span></h3>
+            <div class="authors-list">
+              <div class="author-item">
+                <i class="fas fa-user-circle author-icon"></i>
+                <div class="author-details">
+                  <p class="author-name">Sergey Vyaznikov</p>
+                  <a href="https://github.com/MirrorAzure" target="_blank" class="author-github">
+                    <i class="fab fa-github"></i> @MirrorAzure
+                  </a>
+                </div>
+              </div>
+              <div class="author-item">
+                <i class="fas fa-user-circle author-icon"></i>
+                <div class="author-details">
+                  <p class="author-name">Pavel Kotlyarov</p>
+                  <a href="https://github.com/PavelKotDRM" target="_blank" class="author-github">
+                    <i class="fab fa-github"></i> @PavelKotDRM
+                  </a>
+                </div>
+              </div>
+            </div>
+            <p class="author-info" data-i18n="authorDescription">
+              Создано с любовью для создания праздничного настроения
+            </p>
+          </div>
+
+          <div class="about-section">
+            <h3><i class="fas fa-code-branch"></i> <span data-i18n="repository">Репозиторий</span></h3>
+            <p class="repo-info" data-i18n="repoDescription">
+              Исходный код доступен на GitHub
+            </p>
+            <a href="https://github.com/MirrorAzure/Let-It-Snow" target="_blank" class="repo-link">
+              <i class="fab fa-github"></i>
+              <span>github.com/MirrorAzure/Let-It-Snow</span>
+              <i class="fas fa-external-link-alt"></i>
+            </a>
+          </div>
+
+          <div class="about-section">
+            <h3><i class="fas fa-gavel"></i> <span data-i18n="license">Лицензия</span></h3>
+            <p class="license-info">
+              <span data-i18n="licenseType">MIT License</span>
+              <br>
+              <span class="license-year">© 2026 Mirror Azure, Pavel Kotlyarov</span>
+            </p>
+          </div>
+
+          <div class="about-section tech-stack">
+            <h3><i class="fas fa-tools"></i> <span data-i18n="technologies">Технологии</span></h3>
+            <div class="tech-badges">
+              <span class="tech-badge">
+                <i class="fas fa-cube"></i> WebGPU
+              </span>
+              <span class="tech-badge">
+                <i class="fab fa-js"></i> JavaScript
+              </span>
+              <span class="tech-badge">
+                <i class="fab fa-html5"></i> HTML5
+              </span>
+              <span class="tech-badge">
+                <i class="fab fa-css3-alt"></i> CSS3
+              </span>
+              <span class="tech-badge">
+                <i class="fas fa-canvas"></i> Canvas 2D
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div><!-- End About Tab -->
+
     <div class="footer">
-      <button id="startSnow" class="big-btn">
+      <button id="startSnow" class="big-btn" data-i18n-title="tooltipStartSnow">
         <i class="fas fa-play-circle"></i>
         <span data-i18n="startButton">Запустить снегопад!</span>
       </button>

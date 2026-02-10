@@ -16,8 +16,8 @@ export function createColorItem(color, container, onSave) {
   const div = document.createElement('div');
   div.className = 'item';
   div.innerHTML = `
-    <input type="color" value="${color}">
-    <input type="text" class="color-text" value="${color}">
+    <input type="color" value="${color}" title="${t('tooltipColorPicker')}">
+    <input type="text" class="color-text" value="${color}" title="${t('tooltipColorHex')}">
     <button type="button" title="${t('delete')}"><i class="fas fa-trash"></i></button>
   `;
 
@@ -66,7 +66,7 @@ export function createSymbolItem(symbol, container, onSave) {
   div.className = 'item';
   div.innerHTML = `
     <div class="symbol-preview">${symbol}</div>
-    <input type="text" value="${symbol}" placeholder="${t('placeholderSymbol')}">
+    <input type="text" value="${symbol}" placeholder="${t('placeholderSymbol')}" title="${t('tooltipSymbolInput')}">
     <button type="button" title="${t('delete')}"><i class="fas fa-trash"></i></button>
   `;
 
@@ -117,7 +117,7 @@ export function createSentenceItem(sentence, container, onSave) {
   const div = document.createElement('div');
   div.className = 'item sentence-item';
   div.innerHTML = `
-    <input type="text" class="sentence-text" value="${sentence}" placeholder="${t('placeholderSentence', 'Введите предложение...')}">
+    <input type="text" class="sentence-text" value="${sentence}" placeholder="${t('placeholderSentence', 'Введите предложение...')}" title="${t('tooltipSentenceInput')}">
     <button type="button" title="${t('delete')}"><i class="fas fa-trash"></i></button>
   `;
 
@@ -143,7 +143,7 @@ export function createSentenceItem(sentence, container, onSave) {
 
 /**
  * Создает элемент GIF URL
- * @param {string} url - URL GIF изображения
+ * @param {string} url - URL GIF изображения или Data URL
  * @param {HTMLElement} container - Контейнер для добавления элемента
  * @param {Function} onSave - Callback для сохранения
  * @returns {HTMLElement}
@@ -152,18 +152,72 @@ export function createGifItem(url, container, onSave) {
   const div = document.createElement('div');
   div.className = 'item gif-item';
   div.innerHTML = `
-    <div class="gif-preview"><img src="${url}" alt="GIF preview"></div>
-    <input type="url" class="gif-url" value="${url}" placeholder="${t('gifPlaceholder')}">
-    <button type="button" title="${t('delete')}"><i class="fas fa-trash"></i></button>
+    <div class="gif-preview">
+      ${url ? `<img src="${url}" alt="GIF preview">` : '<div class="gif-placeholder"><i class="fas fa-image"></i></div>'}
+    </div>
+    <div class="gif-controls">
+      <div class="gif-buttons">
+        <input type="file" accept="image/gif" class="gif-file-input" style="display: none;">
+        <button type="button" class="gif-file-btn" title="${t('gifChooseFile')}">
+          <i class="fas fa-folder-open"></i>
+        </button>
+        <button type="button" class="delete-btn" title="${t('delete')}"><i class="fas fa-trash"></i></button>
+      </div>
+      <div class="gif-url-row">
+        <span class="gif-url-label">${t('gifFromUrl')}</span>
+        <input type="url" class="gif-url" value="${url}" placeholder="${t('gifPlaceholder')}" title="${t('tooltipGifUrlInput')}">
+      </div>
+    </div>
   `;
 
-  const preview = div.querySelector('.gif-preview img');
+  const previewContainer = div.querySelector('.gif-preview');
   const urlInput = div.querySelector('.gif-url');
-  const deleteBtn = div.querySelector('button');
+  const fileInput = div.querySelector('.gif-file-input');
+  const fileBtn = div.querySelector('.gif-file-btn');
+  const deleteBtn = div.querySelector('.delete-btn');
+
+  // Функция обновления превью
+  const updatePreview = (src) => {
+    if (src) {
+      previewContainer.innerHTML = `<img src="${src}" alt="GIF preview">`;
+    } else {
+      previewContainer.innerHTML = '<div class="gif-placeholder"><i class="fas fa-image"></i></div>';
+    }
+  };
+
+  // Открытие диалога выбора файла
+  fileBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    fileInput.click();
+  });
+
+  // Обработка выбора файла
+  fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (file && file.type === 'image/gif') {
+      try {
+        // Конвертируем файл в Data URL (base64)
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const dataUrl = event.target.result;
+          urlInput.value = dataUrl;
+          updatePreview(dataUrl);
+          onSave();
+        };
+        reader.readAsDataURL(file);
+      } catch (error) {
+        console.error('Ошибка чтения файла:', error);
+        alert('Не удалось загрузить файл. Попробуйте другой GIF.');
+      }
+    } else {
+      alert('Пожалуйста, выберите файл формата GIF.');
+    }
+  });
 
   // Обновление превью при изменении URL
   urlInput.addEventListener('input', () => {
-    preview.src = urlInput.value;
+    updatePreview(urlInput.value);
     onSave();
   });
 

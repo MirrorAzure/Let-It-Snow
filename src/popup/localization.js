@@ -38,6 +38,12 @@ export function applyLocalization() {
     }
   });
 
+  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-title');
+    const message = t(key);
+    el.setAttribute('title', message);
+  });
+
   // Применяем placeholder'ы к текстовым полям
   document.querySelectorAll('input[type="text"]').forEach((input) => {
     if (input.closest('#symbolsList')) {

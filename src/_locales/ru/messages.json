@@ -65,6 +65,12 @@
   "gifPlaceholder": {
     "message": "https://example.com/snow.gif"
   },
+  "gifChooseFile": {
+    "message": "Выбрать файл"
+  },
+  "gifFromUrl": {
+    "message": "или введите URL"
+  },
   "placeholderSymbol": {
     "message": "Символ или HTML-код"
   },
@@ -103,5 +109,101 @@
   },
   "delete": {
     "message": "Удалить"
+  },
+  "settingsTab": {
+    "message": "Настройки"
+  },
+  "aboutTab": {
+    "message": "О расширении"
+  },
+  "aboutExtension": {
+    "message": "О расширении"
+  },
+  "extensionName": {
+    "message": "Новогодний снегопад"
+  },
+  "version": {
+    "message": "Версия:"
+  },
+  "aboutDescription": {
+    "message": "Красивое настраиваемое расширение для создания волшебного снегопада на любой веб-странице. Настройте цвета, символы, скорость падения и наслаждайтесь праздничной атмосферой!"
+  },
+  "author": {
+    "message": "Автор"
+  },
+  "authors": {
+    "message": "Авторы"
+  },
+  "authorDescription": {
+    "message": "Создано с любовью для создания праздничного настроения"
+  },
+  "repository": {
+    "message": "Репозиторий"
+  },
+  "repoDescription": {
+    "message": "Исходный код доступен на GitHub"
+  },
+  "license": {
+    "message": "Лицензия"
+  },
+  "licenseType": {
+    "message": "MIT License"
+  },
+  "technologies": {
+    "message": "Технологии"
+  },
+  "tooltipTabSettings": {
+    "message": "Открыть настройки"
+  },
+  "tooltipTabAbout": {
+    "message": "Открыть информацию о расширении"
+  },
+  "tooltipAutoStart": {
+    "message": "Автоматически запускать снегопад"
+  },
+  "tooltipSnowCount": {
+    "message": "Настроить количество снежинок"
+  },
+  "tooltipFallSpeed": {
+    "message": "Настроить скорость падения"
+  },
+  "tooltipSnowMinSize": {
+    "message": "Минимальный размер снежинок"
+  },
+  "tooltipSnowMaxSize": {
+    "message": "Максимальный размер снежинок"
+  },
+  "tooltipAddColor": {
+    "message": "Добавить новый цвет"
+  },
+  "tooltipAddSymbol": {
+    "message": "Добавить новый символ"
+  },
+  "tooltipAddSentence": {
+    "message": "Добавить длинную фразу"
+  },
+  "tooltipAddGif": {
+    "message": "Добавить GIF"
+  },
+  "tooltipGifCount": {
+    "message": "Сколько GIF будет падать"
+  },
+  "tooltipStartSnow": {
+    "message": "Запустить снегопад на активной вкладке"
+  },
+  "tooltipColorPicker": {
+    "message": "Выбрать цвет"
+  },
+  "tooltipColorHex": {
+    "message": "Введите цвет в формате HEX"
+  },
+  "tooltipSymbolInput": {
+    "message": "Введите символ или короткий текст"
+  },
+  "tooltipSentenceInput": {
+    "message": "Введите длинную фразу"
+  },
+  "tooltipGifUrlInput": {
+    "message": "Вставьте URL GIF"
   }
 }

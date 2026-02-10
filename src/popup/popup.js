@@ -23,6 +23,34 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Применяем локализацию
   applyLocalization();
 
+  // Загружаем версию расширения
+  const manifest = chrome.runtime.getManifest();
+  const versionElement = document.getElementById('versionNumber');
+  if (versionElement) {
+    versionElement.textContent = manifest.version;
+  }
+
+  // Инициализация табов
+  const tabButtons = document.querySelectorAll('.tab-button');
+  const tabContents = document.querySelectorAll('.tab-content');
+
+  tabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const targetTab = button.dataset.tab;
+      
+      // Удаляем активный класс у всех кнопок и контента
+      tabButtons.forEach(btn => btn.classList.remove('active'));
+      tabContents.forEach(content => content.classList.remove('active'));
+      
+      // Добавляем активный класс к выбранной вкладке
+      button.classList.add('active');
+      const targetContent = document.getElementById(`${targetTab}-tab`);
+      if (targetContent) {
+        targetContent.classList.add('active');
+      }
+    });
+  });
+
   // Получаем ссылки на все элементы UI
   const elements = {
     snowmax: document.getElementById('snowmax'),

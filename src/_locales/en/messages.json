@@ -65,6 +65,12 @@
   "gifPlaceholder": {
     "message": "https://example.com/snow.gif"
   },
+  "gifChooseFile": {
+    "message": "Choose file"
+  },
+  "gifFromUrl": {
+    "message": "or enter URL"
+  },
   "placeholderSymbol": {
     "message": "Symbol or HTML code"
   },
@@ -103,5 +109,101 @@
   },
   "delete": {
     "message": "Delete"
+  },
+  "settingsTab": {
+    "message": "Settings"
+  },
+  "aboutTab": {
+    "message": "About"
+  },
+  "aboutExtension": {
+    "message": "About Extension"
+  },
+  "extensionName": {
+    "message": "Winter Snowfall"
+  },
+  "version": {
+    "message": "Version:"
+  },
+  "aboutDescription": {
+    "message": "A beautiful customizable extension for creating magical snowfall on any webpage. Customize colors, symbols, falling speed and enjoy the festive atmosphere!"
+  },
+  "author": {
+    "message": "Author"
+  },
+  "authors": {
+    "message": "Authors"
+  },
+  "authorDescription": {
+    "message": "Made with love to create a festive mood"
+  },
+  "repository": {
+    "message": "Repository"
+  },
+  "repoDescription": {
+    "message": "Source code available on GitHub"
+  },
+  "license": {
+    "message": "License"
+  },
+  "licenseType": {
+    "message": "MIT License"
+  },
+  "technologies": {
+    "message": "Technologies"
+  },
+  "tooltipTabSettings": {
+    "message": "Open settings"
+  },
+  "tooltipTabAbout": {
+    "message": "Open extension info"
+  },
+  "tooltipAutoStart": {
+    "message": "Auto-start snowfall"
+  },
+  "tooltipSnowCount": {
+    "message": "Adjust snowflake count"
+  },
+  "tooltipFallSpeed": {
+    "message": "Adjust falling speed"
+  },
+  "tooltipSnowMinSize": {
+    "message": "Minimum snowflake size"
+  },
+  "tooltipSnowMaxSize": {
+    "message": "Maximum snowflake size"
+  },
+  "tooltipAddColor": {
+    "message": "Add a new color"
+  },
+  "tooltipAddSymbol": {
+    "message": "Add a new symbol"
+  },
+  "tooltipAddSentence": {
+    "message": "Add a long phrase"
+  },
+  "tooltipAddGif": {
+    "message": "Add a GIF"
+  },
+  "tooltipGifCount": {
+    "message": "How many GIFs will fall"
+  },
+  "tooltipStartSnow": {
+    "message": "Start snowfall on the active tab"
+  },
+  "tooltipColorPicker": {
+    "message": "Pick a color"
+  },
+  "tooltipColorHex": {
+    "message": "Enter a HEX color"
+  },
+  "tooltipSymbolInput": {
+    "message": "Enter a symbol or short text"
+  },
+  "tooltipSentenceInput": {
+    "message": "Enter a long phrase"
+  },
+  "tooltipGifUrlInput": {
+    "message": "Paste a GIF URL"
   }
 }
