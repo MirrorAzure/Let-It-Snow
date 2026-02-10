@@ -20,7 +20,6 @@
     "default_title": "__MSG_extName__"
   },
   "permissions": [
-    "activeTab",
     "storage",
     "scripting"
   ],
