@@ -38,6 +38,9 @@ function createChromeMock(overrides = {}) {
     },
     scripting: {
       executeScript: vi.fn(async () => {})
+    },
+    runtime: {
+      getManifest: vi.fn(() => ({ version: '1.0.0' }))
     }
   };
 }
@@ -47,6 +50,8 @@ describe('popup UI', () => {
     vi.resetModules();
     document.documentElement.innerHTML = popupHtml;
     vi.stubGlobal('alert', vi.fn());
+    // Удаляем старый chrome объект перед каждым тестом
+    delete global.chrome;
   });
 
   afterEach(() => {
@@ -56,6 +61,7 @@ describe('popup UI', () => {
   });
 
   it('prefills saved settings and sends config on start', async () => {
+    // Устанавливаем мок до импорта модуля
     global.chrome = createChromeMock({
       snowmax: 120,
       sinkspeed: 1.1,
@@ -65,7 +71,8 @@ describe('popup UI', () => {
       symbols: ['❄', '*']
     });
 
-    await import('../src/popup/popup.js');
+    // Динамически импортируем модуль после установки мока
+    await import('../src/popup/popup.js?t=' + Date.now());
     document.dispatchEvent(new Event('DOMContentLoaded'));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -95,9 +102,11 @@ describe('popup UI', () => {
   });
 
   it('saves settings when sliders change', async () => {
+    // Устанавливаем мок до импорта модуля
     global.chrome = createChromeMock();
 
-    await import('../src/popup/popup.js');
+    // Динамически импортируем модуль после установки мока
+    await import('../src/popup/popup.js?t=' + Date.now());
     document.dispatchEvent(new Event('DOMContentLoaded'));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(global.chrome.storage.sync.get).toHaveBeenCalled();
