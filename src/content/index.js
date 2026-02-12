@@ -75,6 +75,15 @@ class SnowWebGPUController {
     this.renderer = null;
     this.gifLayer = null;
     this.isPaused = false;
+    this.mouseX = 0;
+    this.mouseY = 0;
+    this.mousePrevX = 0;
+    this.mousePrevY = 0;
+    this.mouseVelocityX = 0;
+    this.mouseVelocityY = 0;
+    this.lastMouseTime = 0;
+    this.mousePressed = false;
+    this.mouseInteractionEnabled = true;
   }
 
   /**
@@ -127,6 +136,7 @@ class SnowWebGPUController {
     document.documentElement.appendChild(canvas);
 
     this.canvas = canvas;
+    this.setupMouseInteraction();
   }
 
   /**
@@ -181,6 +191,85 @@ class SnowWebGPUController {
   }
 
   /**
+   * Настройка обработчиков событий мыши
+   */
+  setupMouseInteraction() {
+    this.mouseMoveHandler = (e) => {
+      const now = performance.now();
+      const dt = this.lastMouseTime ? (now - this.lastMouseTime) / 1000 : 0.016;
+      
+      this.mousePrevX = this.mouseX;
+      this.mousePrevY = this.mouseY;
+      this.mouseX = e.clientX;
+      this.mouseY = e.clientY;
+      
+      // Вычисляем скорость движения мыши
+      if (dt > 0) {
+        this.mouseVelocityX = (this.mouseX - this.mousePrevX) / dt;
+        this.mouseVelocityY = (this.mouseY - this.mousePrevY) / dt;
+      }
+      
+      this.lastMouseTime = now;
+      
+      if (this.renderer && this.mouseInteractionEnabled) {
+        this.renderer.updateMousePosition?.(this.mouseX, this.mouseY, this.mouseVelocityX, this.mouseVelocityY);
+      }
+    };
+
+    this.mouseDownHandler = (e) => {
+      this.mousePressed = true;
+      if (this.renderer && this.mouseInteractionEnabled) {
+        this.renderer.onMouseDown?.(e.clientX, e.clientY);
+      }
+    };
+
+    this.mouseUpHandler = () => {
+      this.mousePressed = false;
+      if (this.renderer && this.mouseInteractionEnabled) {
+        this.renderer.onMouseUp?.();
+      }
+    };
+
+    this.mouseLeaveHandler = () => {
+      this.mousePressed = false;
+      this.mouseVelocityX = 0;
+      this.mouseVelocityY = 0;
+      if (this.renderer && this.mouseInteractionEnabled) {
+        this.renderer.onMouseLeave?.();
+      }
+    };
+
+    // Отслеживаем события на document, чтобы не блокировать взаимодействие со страницей
+    document.addEventListener('mousemove', this.mouseMoveHandler, { passive: true });
+    document.addEventListener('mousedown', this.mouseDownHandler, { passive: true });
+    document.addEventListener('mouseup', this.mouseUpHandler, { passive: true });
+    document.addEventListener('mouseleave', this.mouseLeaveHandler, { passive: true });
+  }
+
+  /**
+   * Удаление обработчиков событий мыши
+   */
+  removeMouseInteraction() {
+    if (this.mouseMoveHandler) {
+      document.removeEventListener('mousemove', this.mouseMoveHandler);
+    }
+    if (this.mouseDownHandler) {
+      document.removeEventListener('mousedown', this.mouseDownHandler);
+    }
+    if (this.mouseUpHandler) {
+      document.removeEventListener('mouseup', this.mouseUpHandler);
+    }
+    if (this.mouseLeaveHandler) {
+      document.removeEventListener('mouseleave', this.mouseLeaveHandler);
+    }
+
+    this.mouseMoveHandler = null;
+    this.mouseDownHandler = null;
+    this.mouseUpHandler = null;
+    this.mouseLeaveHandler = null;
+  }
+
+  /**
    * Полная очистка и удаление снегопада
    */
   destroy() {
@@ -191,6 +280,7 @@ class SnowWebGPUController {
     }
 
     this.stopGifLayer();
+    this.removeMouseInteraction();
 
     if (this.canvas) {
       this.canvas.remove();

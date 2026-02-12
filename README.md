@@ -75,6 +75,8 @@ Project Architecture:
 - **Web Pages** — web pages where the extension works
 - **Content Script** — main extension script with the snowfall engine
 - **Renderers** — WebGPU (modern) and Fallback 2D (compatibility)
+- **Graphics Layer** — atlas and uniform buffer management for WebGPU
+- **Physics Layer** — simulation, collisions, and mouse interactions
 - **Popup UI** — extension control interface
 - **Settings Manager** — settings management and saving
 - **Localization** — support for English and Russian languages
@@ -92,6 +94,13 @@ src/
 │   ├── fallback-2d-renderer.js  # 2D Canvas fallback
 │   ├── gif-layer.js      # GIF layer support
 │   ├── shader.wgsl       # WebGPU shaders
+│   ├── graphics/
+│   │   ├── atlas-manager.js   # Glyph/sentence atlas handling
+│   │   └── uniform-buffer.js  # Uniform buffer management
+│   ├── physics/
+│   │   ├── simulation-engine.js  # Frame simulation logic
+│   │   ├── collision-handler.js  # Flake collisions
+│   │   └── mouse-handler.js      # Mouse interaction
 │   └── utils/
 │       ├── background-monitor.js  # Background monitoring
 │       ├── color-utils.js         # Color utilities
@@ -122,6 +131,8 @@ src/
 - **Color selection**: Choose multiple colors for snowflakes
 - **Symbol customization**: Use different characters as snowflakes
 - **GIF support**: Add GIFs by URL or local file upload
+- **Mouse interaction**: Push, swirl, and drag snow with pointer movement
+- **Soft collisions**: Snowflakes gently bounce off each other
 - **About tab**: Version, authors, repository, and tech stack in popup
 - **Settings persistence**: All settings are automatically saved
 - **Multi-language support**: English and Russian translations

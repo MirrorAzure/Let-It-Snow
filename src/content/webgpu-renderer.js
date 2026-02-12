@@ -3,9 +3,13 @@
  */
 
 import shaderSource from './shader.wgsl?raw';
-import { createGlyphAtlas, createSentenceAtlas } from './utils/glyph-utils.js';
 import { hexToRgb } from './utils/color-utils.js';
 import { BackgroundMonitor } from './utils/background-monitor.js';
+import { AtlasManager } from './graphics/atlas-manager.js';
+import { UniformBufferManager } from './graphics/uniform-buffer.js';
+import { SimulationEngine } from './physics/simulation-engine.js';
+import { CollisionHandler } from './physics/collision-handler.js';
+import { MouseHandler } from './physics/mouse-handler.js';
 
 /**
  * Класс для рендеринга снега через WebGPU
@@ -17,47 +21,9 @@ export class WebGPURenderer {
     this.context = null;
     this.device = null;
     this.pipeline = null;
-    this.uniformBuffer = null;
-    this.uniformArray = new Float32Array(8);
-    this.uniformArray[5] = 1; // glow enabled by default
-    this.uniformBindGroup = null;
-    
-    // Раздельные атласы для глифов и предложений
-    this.glyphAtlas = {
-      texture: null,
-      sampler: null,
-      size: 64,
-      count: 1,
-      monotoneFlags: [true],
-      isMonotone: true,
-      canvas: null
-    };
-    
-    this.sentenceAtlas = {
-      texture: null,
-      sampler: null,
-      size: 64,
-      count: 0,
-      monotoneFlags: [],
-      isMonotone: false,
-      canvas: null
-    };
-
-    // Дополнительные uniform параметры
-    this.uniformArray[6] = 0; // sentenceCount
-    this.uniformArray[7] = 64; // sentenceSize
-    
-    // Для совместимости (deprecated)
-    this.glyphTexture = null;
-    this.glyphSampler = null;
-    this.glyphSize = 64;
-    this.glyphCount = 1;
-    this.glyphMonotoneFlags = [true];
+    this.instances = [];
     this.instanceBuffer = null;
     this.instanceData = null;
-    this.instances = [];
-    this.sentenceQueue = [];
-    this.sentenceCursor = 0;
     this.quadBuffer = null;
     this.canvasWidth = 0;
     this.canvasHeight = 0;
@@ -66,9 +32,26 @@ export class WebGPURenderer {
     this.lastTimestamp = 0;
     this.backgroundMonitor = null;
     
-    // Флаги для отслеживания изменений буферов
-    this.uniformBufferNeedsUpdate = true;
-    this.instanceBufferNeedsUpdate = true;
+    // Инициализация компонентов
+    this.atlasManager = null;
+    this.uniformBufferManager = null;
+    this.simulationEngine = null;
+    this.collisionHandler = new CollisionHandler(config);
+    this.mouseHandler = new MouseHandler(config);
+
+    this.sentenceCursor = 0;
+
+    // Параметры взаимодействия с мышью
+    this.mouseX = -1000;
+    this.mouseY = -1000;
+    this.mouseVelocityX = 0;
+    this.mouseVelocityY = 0;
+    this.mousePressed = false;
+    this.mouseRadius = config.mouseRadius ?? 100;
+    this.mouseForce = config.mouseForce ?? 300;
+    this.mouseImpulseStrength = config.mouseImpulseStrength ?? 0.5;
+    this.mouseDragThreshold = config.mouseDragThreshold ?? 500;
+    this.mouseDragStrength = config.mouseDragStrength ?? 0.8;
   }
 
   /**
@@ -78,13 +61,17 @@ export class WebGPURenderer {
   async init() {
     if (!navigator.gpu) return false;
 
-    // Note: powerPreference option is currently ignored on Windows (https://crbug.com/369219127)
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) return false;
 
     try {
       this.device = await adapter.requestDevice();
       const format = navigator.gpu.getPreferredCanvasFormat();
+
+      // Инициализация компонентов
+      this.uniformBufferManager = new UniformBufferManager(this.device);
+      this.atlasManager = new AtlasManager(this.device, 64);
+      this.simulationEngine = new SimulationEngine(this.config);
 
       this.setupGeometry();
       await this.setupPipeline(format);
@@ -99,8 +86,19 @@ export class WebGPURenderer {
       });
 
       this.setupInstances();
-      await this.setupGlyphAtlas();
-      this.setupUniforms();
+      await this.atlasManager.initialize(this.config);
+      this.glyphMonotoneFlags = this.atlasManager.getMonotoneFlags();
+      this.uniformBufferManager.setGlyphParams(
+        this.atlasManager.glyphAtlas.count,
+        this.atlasManager.glyphAtlas.size,
+        this.atlasManager.glyphAtlas.isMonotone
+      );
+      this.uniformBufferManager.setSentenceParams(
+        this.atlasManager.sentenceAtlas.count,
+        this.atlasManager.sentenceAtlas.size
+      );
+      this.uniformBufferManager.initialize();
+      this.setupBindGroup();
       this.updateGlowState();
       this.startBackgroundMonitoring();
       this.handleResize();
@@ -257,6 +255,40 @@ export class WebGPURenderer {
   }
 
   /**
+   * Настройка bind группы
+   */
+  setupBindGroup() {
+    const bindGroupLayout = this.pipeline.getBindGroupLayout(0);
+    const entries = [
+      {
+        binding: 0,
+        resource: { buffer: this.uniformBufferManager.buffer }
+      },
+      {
+        binding: 1,
+        resource: this.atlasManager.glyphAtlas.sampler
+      },
+      {
+        binding: 2,
+        resource: this.atlasManager.glyphAtlas.texture.createView()
+      },
+      {
+        binding: 3,
+        resource: this.atlasManager.sentenceAtlas.sampler
+      },
+      {
+        binding: 4,
+        resource: this.atlasManager.sentenceAtlas.texture.createView()
+      }
+    ];
+
+    this.uniformBindGroup = this.device.createBindGroup({
+      layout: bindGroupLayout,
+      entries
+    });
+  }
+
+  /**
    * Настройка instance данных (снежинок)
    */
   setupInstances() {
@@ -266,68 +298,52 @@ export class WebGPURenderer {
     const hasGlyphs = snowletters && snowletters.length > 0;
     const hasSentences = snowsentences && snowsentences.length > 0;
     const useDefaultGlyph = !hasGlyphs && !hasSentences;
-    const effectiveHasGlyphs = hasGlyphs || useDefaultGlyph;
     
-    // Определяем количество глифов и предложений
-    const glyphCount = effectiveHasGlyphs ? (hasGlyphs ? snowletters.length : 1) : 0;
-    const sentencePoolCount = hasSentences ? snowsentences.length : 0;
-    const totalCount = glyphCount + sentencePoolCount || 1;
-    
-    // Количество текстовых снежинок ограничено настройкой sentenceCount
     const maxSentenceInstances = hasSentences ? Math.min(sentenceCount || 0, snowmax) : 0;
 
-    this.sentenceQueue = hasSentences ? snowsentences : [];
-    this.sentenceCursor = 0;
-
-    this.glyphCount = totalCount;
-
-    const seeds = effectiveHasGlyphs
-      ? (hasGlyphs ? snowletters.map((s) => s.charCodeAt(0) || 0) : [1])
-      : [1];
-
     this.instances = new Array(Math.max(1, snowmax)).fill(null).map((_, idx) => {
-      // Выбираем между глифами и предложениями на основе sentenceCount
       let glyphIndex;
       let isSentence = false;
       let sentenceIndex = 0;
 
       if (hasSentences && idx < maxSentenceInstances) {
-        // Первые sentenceCount снежинок - это предложения
         isSentence = true;
-        sentenceIndex = this._nextSentenceIndex(sentencePoolCount);
-        glyphIndex = glyphCount + sentenceIndex;
-      } else if (effectiveHasGlyphs) {
-        // Остальные - глифы
-        glyphIndex = (idx - maxSentenceInstances) % glyphCount;
+        sentenceIndex = 0;
+        glyphIndex = (hasGlyphs ? snowletters.length : 1) + sentenceIndex;
       } else {
-        // Если нет глифов, используем дефолтный
-        glyphIndex = 0;
+        const glyphCount = hasGlyphs ? snowletters.length : (useDefaultGlyph ? 1 : 0);
+        glyphIndex = (idx - maxSentenceInstances) % (glyphCount || 1);
       }
 
-      // Предложения должны быть больше, чтобы текст не был сжат
       const size = isSentence 
         ? Math.max(snowmaxsize * 1.2, 60) + Math.random() * 20
         : snowminsize + Math.random() * sizeRange;
+      
+      const collisionSize = isSentence 
+        ? Math.max(snowminsize, 20) + Math.random() * 15
+        : size;
+      
       const colorHex = snowcolor[Math.floor(Math.random() * snowcolor.length)];
       const color = hexToRgb(colorHex);
       const speed = sinkspeed * (size / 20) * 20;
-      const sway = 10 + Math.random() * 25;
-      const phaseSeed = seeds.length ? seeds[idx % seeds.length] : 1;
 
       return {
         x: Math.random() * window.innerWidth,
         y: -size - Math.random() * window.innerHeight,
         size,
+        collisionSize,
         fallSpeed: speed,
-        phase: Math.random() * Math.PI * 2 + phaseSeed,
+        phase: Math.random() * Math.PI * 2,
         freq: 0.8 + Math.random() * 1.4,
-        sway,
+        sway: 10 + Math.random() * 25,
         rotation: Math.random() * Math.PI * 2,
-        rotationSpeed: (Math.random() - 0.5) * 0.6,
+        rotationSpeed: 0,
         color,
         glyphIndex,
         isSentence,
-        sentenceIndex
+        sentenceIndex,
+        velocityX: 0,
+        velocityY: 0
       };
     });
 
@@ -337,16 +353,6 @@ export class WebGPURenderer {
       size: this.instanceData.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
     });
-    
-    // Отмечаем, что буфер нужно обновить при первом рендере
-    this.instanceBufferNeedsUpdate = true;
-  }
-
-  _nextSentenceIndex(sentenceCount) {
-    if (!sentenceCount) return 0;
-    const index = this.sentenceCursor % sentenceCount;
-    this.sentenceCursor = (this.sentenceCursor + 1) % sentenceCount;
-    return index;
   }
 
   /**
@@ -483,9 +489,7 @@ export class WebGPURenderer {
       this.canvasHeight = height;
       this.canvas.width = width;
       this.canvas.height = height;
-      this.uniformArray[0] = width;
-      this.uniformArray[1] = height;
-      this.uniformBufferNeedsUpdate = true;
+      this.uniformBufferManager?.setCanvasSize(width, height);
       this.context?.configure({
         device: this.device,
         format: navigator.gpu.getPreferredCanvasFormat(),
@@ -505,9 +509,7 @@ export class WebGPURenderer {
   updateGlowState() {
     if (!this.backgroundMonitor) return;
     const glowStrength = this.backgroundMonitor.calculateGlowStrength();
-    if (this.uniformArray[5] === glowStrength) return;
-    this.uniformArray[5] = glowStrength;
-    this.uniformBufferNeedsUpdate = true;
+    this.uniformBufferManager?.setGlowStrength(glowStrength);
   }
 
   /**
@@ -530,6 +532,69 @@ export class WebGPURenderer {
   }
 
   /**
+   * Проверка и обработка коллизий между снежинками
+   */
+  handleCollisions() {
+    if (!this.enableCollisions || this.instances.length < 2) return;
+
+    // Оптимизация: проверяем только близкие пары
+    for (let i = 0; i < this.instances.length; i++) {
+      const flakeA = this.instances[i];
+      
+      // Проверяем только снежинки в радиусе collisionCheckRadius
+      for (let j = i + 1; j < this.instances.length; j++) {
+        const flakeB = this.instances[j];
+        
+        const dx = flakeB.x - flakeA.x;
+        const dy = flakeB.y - flakeA.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // Пропускаем, если снежинки слишком далеко
+        if (distance > this.collisionCheckRadius) continue;
+        
+        // Используем collisionSize для проверки коллизий (соответствует визуальному размеру)
+        const minDistance = (flakeA.collisionSize + flakeB.collisionSize) * 0.5;
+        
+        // Если снежинки пересекаются
+        if (distance < minDistance && distance > 0) {
+          // Нормализованный вектор между снежинками
+          const nx = dx / distance;
+          const ny = dy / distance;
+          
+          // Относительная скорость
+          const dvx = flakeB.velocityX - flakeA.velocityX;
+          const dvy = flakeB.velocityY - flakeA.velocityY;
+          
+          // Скорость сближения
+          const dvn = dvx * nx + dvy * ny;
+          
+          // Если снежинки уже расходятся, не обрабатываем коллизию
+          if (dvn > 0) continue;
+          
+          // Импульс столкновения (упрощенная физика для равных масс)
+          const impulse = dvn * this.collisionDamping;
+          
+          // Применяем импульс к обеим снежинкам
+          flakeA.velocityX += nx * impulse;
+          flakeA.velocityY += ny * impulse;
+          flakeB.velocityX -= nx * impulse;
+          flakeB.velocityY -= ny * impulse;
+          
+          // Разводим снежинки, чтобы они не застревали друг в друге
+          const overlap = minDistance - distance;
+          const separationX = nx * overlap * 0.5;
+          const separationY = ny * overlap * 0.5;
+          
+          flakeA.x -= separationX;
+          flakeA.y -= separationY;
+          flakeB.x += separationX;
+          flakeB.y += separationY;
+        }
+      }
+    }
+  }
+
+  /**
    * Обновление симуляции
    * @param {number} delta - Время с последнего кадра в секундах
    */
@@ -537,12 +602,85 @@ export class WebGPURenderer {
     const width = this.canvasWidth || window.innerWidth;
     const height = this.canvasHeight || window.innerHeight;
     const strideFloats = 14;
-    const glyphCount = this.glyphAtlas.count || 0;
-    const sentenceCount = this.sentenceAtlas.count || 0;
+    const glyphCount = this.atlasManager?.glyphAtlas.count || 0;
+    const sentenceCount = this.atlasManager?.sentenceAtlas.count || 0;
+    const monotoneFlags = this.glyphMonotoneFlags || this.atlasManager?.getMonotoneFlags() || [];
     let hasChanges = false;
 
     this.instances.forEach((flake, idx) => {
+      // Вычисляем скорость движения мыши
+      const mouseSpeed = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
+      const isMouseFast = mouseSpeed > this.mouseDragThreshold;
+      
+      // Применяем физику взаимодействия с мышью
+      const dx = flake.x - this.mouseX;
+      const dy = flake.y - this.mouseY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance < this.mouseRadius && distance > 0) {
+        const influence = 1 - distance / this.mouseRadius;
+        
+        // Если мышь движется быстро - создаем эффект воздушного потока
+        if (isMouseFast) {
+          // Нормализуем вектор скорости мыши
+          const mouseVelMag = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
+          if (mouseVelMag > 0) {
+            const mouseDirX = this.mouseVelocityX / mouseVelMag;
+            const mouseDirY = this.mouseVelocityY / mouseVelMag;
+            
+            // Притягиваем снежинку в сторону движения мыши
+            const dragForce = influence * this.mouseDragStrength * (mouseSpeed / 1000);
+            flake.velocityX += mouseDirX * dragForce * delta * 1000;
+            flake.velocityY += mouseDirY * dragForce * delta * 1000;
+          }
+        } else {
+          // Обычное отталкивание при медленном движении
+          const force = influence * this.mouseForce * delta;
+          const angle = Math.atan2(dy, dx);
+          flake.x += Math.cos(angle) * force;
+          flake.y += Math.sin(angle) * force;
+        }
+        
+        // Передаем импульс от движения мыши
+        const impulseStrength = influence * this.mouseImpulseStrength;
+        flake.velocityX += this.mouseVelocityX * impulseStrength * delta;
+        flake.velocityY += this.mouseVelocityY * impulseStrength * delta;
+        
+        // Вращение снежинки при движении мыши рядом
+        // Направление вращения зависит от того, с какой стороны пролетела мышка
+        const cross = dx * this.mouseVelocityY - dy * this.mouseVelocityX;
+        const rotationDirection = Math.sign(cross); // +1 или -1
+        const rotationForce = influence * mouseSpeed * 0.01 * rotationDirection;
+        flake.rotationSpeed += rotationForce * delta;
+        
+        // При зажатии кнопки мыши - захватываем снежинку
+        if (this.mousePressed && distance < this.mouseRadius * 0.5) {
+          // Позиция снежинки следует за мышью
+          flake.x = this.mouseX;
+          flake.y = this.mouseY;
+          // Обнуляем скорость при захвате
+          flake.velocityX = 0;
+          flake.velocityY = 0;
+        }
+      }
+
+      // Применяем импульс к позиции
+      flake.x += flake.velocityX * delta;
+      flake.y += flake.velocityY * delta;
+      
+      // Затухание импульса (0.95 = 95% сохраняется каждую секунду)
+      const damping = Math.pow(0.95, delta * 60);
+      flake.velocityX *= damping;
+      flake.velocityY *= damping;
+      flake.rotationSpeed *= damping;
+
       flake.phase += flake.freq * delta;
+      
+      // Добавляем собственное вращение снежинки в зависимости от направления качания
+      // Когда снежинка качается в одну сторону, она вращается в эту же сторону
+      const swayRotation = Math.cos(flake.phase) * flake.freq * 0.5;
+      flake.rotationSpeed += swayRotation * delta;
+      
       flake.rotation += flake.rotationSpeed * delta;
       flake.y += flake.fallSpeed * delta;
 
@@ -551,6 +689,10 @@ export class WebGPURenderer {
         flake.y = -flake.size;
         flake.x = Math.random() * width;
         flake.phase = Math.random() * Math.PI * 2;
+        flake.rotation = Math.random() * Math.PI * 2;
+        flake.rotationSpeed = 0;
+        flake.velocityX = 0;
+        flake.velocityY = 0;
 
         if (flake.isSentence && sentenceCount > 0) {
           flake.sentenceIndex = this._nextSentenceIndex(sentenceCount);
@@ -573,11 +715,14 @@ export class WebGPURenderer {
       this.instanceData[base + 10] = flake.color.g;
       this.instanceData[base + 11] = flake.color.b;
       this.instanceData[base + 12] = flake.glyphIndex;
-      const monoFlag = this.glyphMonotoneFlags?.[flake.glyphIndex] ? 1 : 0;
+      const monoFlag = monotoneFlags[flake.glyphIndex] ? 1 : 0;
       this.instanceData[base + 13] = monoFlag;
       
       hasChanges = true;
     });
+    
+    // Обрабатываем коллизии между снежинками
+    this.handleCollisions();
     
     // Отмечаем, что буфер экземпляров нужно обновить
     if (hasChanges) {
@@ -592,10 +737,7 @@ export class WebGPURenderer {
     if (!this.device || !this.context) return;
 
     // Обновляем буфер uniform только если требуется
-    if (this.uniformBufferNeedsUpdate) {
-      this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformArray);
-      this.uniformBufferNeedsUpdate = false;
-    }
+    this.uniformBufferManager?.flush();
     
     // Обновляем буфер экземпляров только если требуется
     if (this.instanceBufferNeedsUpdate) {
@@ -682,23 +824,18 @@ export class WebGPURenderer {
       this.resizeObserver = null;
     }
 
-    if (this.glyphAtlas.texture) {
-      this.glyphAtlas.texture.destroy();
-      this.glyphAtlas.texture = null;
+    if (this.atlasManager) {
+      this.atlasManager.cleanup();
+      this.atlasManager = null;
     }
-    if (this.sentenceAtlas.texture) {
-      this.sentenceAtlas.texture.destroy();
-      this.sentenceAtlas.texture = null;
+    if (this.uniformBufferManager) {
+      this.uniformBufferManager.cleanup();
+      this.uniformBufferManager = null;
     }
-    if (this.glyphTexture) {
-      this.glyphTexture = null;
-    }
-
-    this.glyphSampler = null;
+    this.glyphMonotoneFlags = null;
     this.device = null;
     this.context = null;
     this.pipeline = null;
-    this.uniformBuffer = null;
     this.instanceBuffer = null;
     this.instanceData = null;
     this.instances = [];
@@ -710,16 +847,17 @@ export class WebGPURenderer {
    * @returns {object} Объект с информацией об атласе { atlas, localIndex }
    */
   getAtlasForGlyph(glyphIndex) {
-    if (glyphIndex < this.glyphAtlas.count) {
+    if (!this.atlasManager) return null;
+    if (glyphIndex < this.atlasManager.glyphAtlas.count) {
       return {
-        atlas: this.glyphAtlas,
+        atlas: this.atlasManager.glyphAtlas,
         localIndex: glyphIndex,
         type: 'glyph'
       };
     } else {
       return {
-        atlas: this.sentenceAtlas,
-        localIndex: glyphIndex - this.glyphAtlas.count,
+        atlas: this.atlasManager.sentenceAtlas,
+        localIndex: glyphIndex - this.atlasManager.glyphAtlas.count,
         type: 'sentence'
       };
     }
@@ -730,18 +868,73 @@ export class WebGPURenderer {
    * @returns {object} Статистика по атласам
    */
   getAtlasInfo() {
+    if (!this.atlasManager) return null;
     return {
       glyphs: {
-        count: this.glyphAtlas.count,
-        isMonotone: this.glyphAtlas.isMonotone,
-        hasTexture: !!this.glyphAtlas.texture
+        count: this.atlasManager.glyphAtlas.count,
+        isMonotone: this.atlasManager.glyphAtlas.isMonotone,
+        hasTexture: !!this.atlasManager.glyphAtlas.texture
       },
       sentences: {
-        count: this.sentenceAtlas.count,
-        isMonotone: this.sentenceAtlas.isMonotone,
-        hasTexture: !!this.sentenceAtlas.texture
+        count: this.atlasManager.sentenceAtlas.count,
+        isMonotone: this.atlasManager.sentenceAtlas.isMonotone,
+        hasTexture: !!this.atlasManager.sentenceAtlas.texture
       },
-      total: this.glyphAtlas.count + this.sentenceAtlas.count
+      total: this.atlasManager.glyphAtlas.count + this.atlasManager.sentenceAtlas.count
     };
+  }
+
+  /**
+   * Обновление позиции мыши
+   * @param {number} x - X координата
+   * @param {number} y - Y координата
+   * @param {number} vx - Скорость по X
+   * @param {number} vy - Скорость по Y
+   */
+  updateMousePosition(x, y, vx = 0, vy = 0) {
+    this.mouseX = x;
+    this.mouseY = y;
+    this.mouseVelocityX = vx;
+    this.mouseVelocityY = vy;
+  }
+
+  /**
+   * Обработчик нажатия кнопки мыши
+   * @param {number} x - X координата
+   * @param {number} y - Y координата
+   */
+  onMouseDown(x, y) {
+    this.mousePressed = true;
+    this.mouseX = x;
+    this.mouseY = y;
+  }
+
+  /**
+   * Обработчик отпускания кнопки мыши
+   */
+  onMouseUp() {
+    this.mousePressed = false;
+  }
+
+  /**
+   * Обработчик выхода мыши за пределы canvas
+   */
+  onMouseLeave() {
+    this.mousePressed = false;
+    this.mouseX = -1000;
+    this.mouseY = -1000;
+    this.mouseVelocityX = 0;
+    this.mouseVelocityY = 0;
+  }
+
+  /**
+   * Получить следующий индекс предложения
+   * @private
+   */
+  _nextSentenceIndex(sentenceCount) {
+    if (!sentenceCount) return 0;
+    const index = this.sentenceCursor % sentenceCount;
+    this.sentenceCursor = (this.sentenceCursor + 1) % sentenceCount;
+    return index;
   }
 }

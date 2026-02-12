@@ -19,6 +19,17 @@ graph TB
             Shader["shader.wgsl<br/>GPU shader"]
             GIFLayer["gif-layer.js<br/>GIF overlay support"]
         end
+
+        subgraph Graphics["🧩 Graphics Layer"]
+            AtlasManager["atlas-manager.js<br/>Glyph/sentence atlases"]
+            UniformBuffer["uniform-buffer.js<br/>Uniform buffer manager"]
+        end
+
+        subgraph Physics["🧪 Physics Layer"]
+            SimulationEngine["simulation-engine.js<br/>Frame simulation"]
+            CollisionHandler["collision-handler.js<br/>Soft collisions"]
+            MouseHandler["mouse-handler.js<br/>Mouse interaction"]
+        end
         
         subgraph Utils["🛠️ Utilities"]
             BgMonitor["background-monitor.js<br/>Background detection"]
@@ -59,6 +70,9 @@ graph TB
     MainContent -->|Falls back to| Fallback2D
     MainContent -->|Overlays| GIFLayer
     WebGPU -.->|Uses| Shader
+    WebGPU -->|Uses| Graphics
+    WebGPU -->|Uses| Physics
+    Fallback2D -.->|Uses| Physics
     MainContent -.->|Uses| Utils
     
     PopupMain -->|Manages| Settings
@@ -85,12 +99,16 @@ graph TB
     classDef storage fill:#BD10E0,stroke:#7B0A94,color:#fff
     classDef config fill:#50E3C2,stroke:#2BA68B,color:#000
     classDef utility fill:#B8E986,stroke:#7BA857,color:#000
+    classDef physics fill:#9DD6F9,stroke:#5AAAD4,color:#00324A
+    classDef graphics fill:#F8E71C,stroke:#B8A000,color:#000
     
     class MainContent,WebGPU,Fallback2D primary
     class PopupMain,Settings,UIControllers secondary
     class BrowserStorage storage
     class Manifest,ManifestChrome,ManifestEdge,ManifestFirefox config
     class Utils,BgMonitor,ColorUtils,GlyphUtils,Localization utility
+    class Physics,SimulationEngine,CollisionHandler,MouseHandler physics
+    class Graphics,AtlasManager,UniformBuffer graphics
 ```
 
 ## Основные компоненты
@@ -101,6 +119,15 @@ graph TB
 - **fallback-2d-renderer.js** - резервный Canvas 2D рендерер для браузеров без WebGPU
 - **shader.wgsl** - WGSL шейдер для GPU рендеринга
 - **gif-layer.js** - слой для поддержки GIF-оверлея
+
+#### Graphics Layer
+- **atlas-manager.js** - управление атласами символов и предложений
+- **uniform-buffer.js** - управление uniform буферами для WebGPU
+
+#### Physics Layer
+- **simulation-engine.js** - симуляция движения снежинок
+- **collision-handler.js** - мягкие коллизии между снежинками
+- **mouse-handler.js** - взаимодействие с курсором и жестами мыши
 
 #### Утилиты
 - **background-monitor.js** - мониторинг фона страницы для адаптивного рендеринга
