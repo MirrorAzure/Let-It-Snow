@@ -9,12 +9,17 @@ export class MouseHandler {
     this.mouseY = -1000;
     this.mouseVelocityX = 0;
     this.mouseVelocityY = 0;
-    this.mousePressed = false;
+    this.mouseLeftPressed = false;
+    this.mouseRightPressed = false;
     this.mouseRadius = config.mouseRadius ?? 100;
     this.mouseForce = config.mouseForce ?? 300;
     this.mouseImpulseStrength = config.mouseImpulseStrength ?? 0.5;
     this.mouseDragThreshold = config.mouseDragThreshold ?? 500;
     this.mouseDragStrength = config.mouseDragStrength ?? 0.8;
+    this.mouseBurstDuration = 0.2;
+    this.mouseBurstRadiusMultiplier = 3.5;
+    this.mouseBurstEndTime = 0;
+    this.mouseBurstMode = null;
   }
 
   /**
@@ -36,8 +41,17 @@ export class MouseHandler {
    * @param {number} x - X координата
    * @param {number} y - Y координата
    */
-  onMouseDown(x, y) {
-    this.mousePressed = true;
+  onMouseDown(x, y, button) {
+    if (button === 0) {
+      this.mouseLeftPressed = true;
+      this.mouseBurstMode = 'explode';
+      this.mouseBurstEndTime = performance.now() + this.mouseBurstDuration * 1000;
+    }
+    if (button === 2) {
+      this.mouseRightPressed = true;
+      this.mouseBurstMode = 'suction';
+      this.mouseBurstEndTime = performance.now() + this.mouseBurstDuration * 1000;
+    }
     this.mouseX = x;
     this.mouseY = y;
   }
@@ -45,15 +59,19 @@ export class MouseHandler {
   /**
    * Обработчик отпускания кнопки мыши
    */
-  onMouseUp() {
-    this.mousePressed = false;
+  onMouseUp(button) {
+    if (button === 0) this.mouseLeftPressed = false;
+    if (button === 2) this.mouseRightPressed = false;
   }
 
   /**
    * Обработчик выхода мыши за пределы canvas
    */
   onMouseLeave() {
-    this.mousePressed = false;
+    this.mouseLeftPressed = false;
+    this.mouseRightPressed = false;
+    this.mouseBurstEndTime = 0;
+    this.mouseBurstMode = null;
     this.mouseX = -1000;
     this.mouseY = -1000;
     this.mouseVelocityX = 0;
@@ -70,28 +88,41 @@ export class MouseHandler {
     const dy = flake.y - this.mouseY;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
-    if (!this.mousePressed && flake.isGrabbed) {
+    if (!this.mouseLeftPressed && !this.mouseRightPressed && flake.isGrabbed) {
       flake.isGrabbed = false;
       flake.swayLimit = 1.0;
     }
 
-    if (distance >= this.mouseRadius) return;
+    const now = performance.now();
+    const burstActive = now < this.mouseBurstEndTime;
+    const radius = this.mouseRadius * (burstActive ? this.mouseBurstRadiusMultiplier : 1);
+    if (distance >= radius) return;
 
-    const influence = 1 - distance / this.mouseRadius;
+    const influence = 1 - distance / radius;
     const mouseSpeed = Math.sqrt(
       this.mouseVelocityX * this.mouseVelocityX + 
       this.mouseVelocityY * this.mouseVelocityY
     );
-    const activityFactor = this.mousePressed ? 1 : Math.min(1, mouseSpeed / 60);
-    if (!this.mousePressed && activityFactor === 0) return;
-    const activeInfluence = influence * activityFactor;
+    const activityFactor = mouseSpeed > 0 ? 1 : 0;
+    if (!burstActive && activityFactor === 0) return;
+    const burstFactor = burstActive
+      ? Math.min(1, (this.mouseBurstEndTime - now) / (this.mouseBurstDuration * 1000))
+      : 0;
+    const activeInfluence = influence * Math.max(activityFactor, burstFactor);
     const isMouseFast = mouseSpeed > this.mouseDragThreshold;
 
-    if (this.mousePressed) {
+    if (burstActive && this.mouseBurstMode === 'explode') {
       const safeDistance = Math.max(distance, 0.0001);
       const nx = dx / safeDistance;
       const ny = dy / safeDistance;
-      const pullAccel = activeInfluence * this.mouseForce * 1.2;
+      const burstAccel = activeInfluence * this.mouseForce * 5.0;
+      flake.velocityX = (flake.velocityX ?? 0) + nx * burstAccel * (delta || 0.016);
+      flake.velocityY = (flake.velocityY ?? 0) + ny * burstAccel * (delta || 0.016);
+    } else if (burstActive && this.mouseBurstMode === 'suction') {
+      const safeDistance = Math.max(distance, 0.0001);
+      const nx = dx / safeDistance;
+      const ny = dy / safeDistance;
+      const pullAccel = activeInfluence * this.mouseForce * 5.0;
       flake.velocityX = (flake.velocityX ?? 0) - nx * pullAccel * (delta || 0.016);
       flake.velocityY = (flake.velocityY ?? 0) - ny * pullAccel * (delta || 0.016);
     } else if (isMouseFast) {
@@ -130,7 +161,7 @@ export class MouseHandler {
       flake.rotationSpeed = (flake.rotationSpeed ?? 0) + rotationForce * (delta || 0.016);
     }
     
-    if (!this.mousePressed) {
+    if (!this.mouseLeftPressed && !this.mouseRightPressed) {
       flake.isGrabbed = false;
       flake.swayLimit = 1.0;
     }

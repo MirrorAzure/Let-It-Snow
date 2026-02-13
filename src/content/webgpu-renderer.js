@@ -51,7 +51,12 @@ export class WebGPURenderer {
     this.mouseY = -1000;
     this.mouseVelocityX = 0;
     this.mouseVelocityY = 0;
-    this.mousePressed = false;
+    this.mouseLeftPressed = false;
+    this.mouseRightPressed = false;
+    this.mouseBurstDuration = 0.2;
+    this.mouseBurstRadiusMultiplier = 3.5;
+    this.mouseBurstTimer = 0;
+    this.mouseBurstMode = null;
     this.mouseRadius = config.mouseRadius ?? 100;
     this.mouseForce = config.mouseForce ?? 300;
     this.mouseImpulseStrength = config.mouseImpulseStrength ?? 0.5;
@@ -631,7 +636,7 @@ export class WebGPURenderer {
       const targetWindForce = directionFactor * gustIntensity * this.windStrength;
       const targetWindLift = gustIntensity * 0.3 * this.windStrength;
 
-      const windSmoothFactor = 0.15;
+      const windSmoothFactor = 0.05;
       this.currentWindForce = this.prevWindForce * (1 - windSmoothFactor) + targetWindForce * windSmoothFactor;
       this.currentWindLift = this.prevWindLift * (1 - windSmoothFactor) + targetWindLift * windSmoothFactor;
       this.prevWindForce = this.currentWindForce;
@@ -655,11 +660,19 @@ export class WebGPURenderer {
       this.prevWindLift = 0;
     }
 
+    if (this.mouseBurstTimer > 0) {
+      this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - delta);
+      if (this.mouseBurstTimer === 0) {
+        this.mouseBurstMode = null;
+      }
+    }
+
     this.instances.forEach((flake, idx) => {
       // Вычисляем скорость движения мыши
       const mouseSpeed = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
-      const activityFactor = this.mousePressed ? 1 : Math.min(1, mouseSpeed / 60);
-      const shouldApplyMouse = this.mousePressed || activityFactor > 0;
+      const activityFactor = mouseSpeed > 0 ? 1 : 0;
+      const burstActive = this.mouseBurstTimer > 0;
+      const shouldApplyMouse = burstActive || activityFactor > 0;
       const isMouseFast = mouseSpeed > this.mouseDragThreshold;
 
       // Применяем физику взаимодействия с мышью
@@ -667,16 +680,25 @@ export class WebGPURenderer {
       const dy = flake.y - this.mouseY;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
-      if (distance < this.mouseRadius && distance > 0 && shouldApplyMouse) {
-        const influence = 1 - distance / this.mouseRadius;
-        const activeInfluence = influence * activityFactor;
+      if (distance < (this.mouseRadius * (burstActive ? this.mouseBurstRadiusMultiplier : 1)) && distance > 0 && shouldApplyMouse) {
+        const radius = this.mouseRadius * (burstActive ? this.mouseBurstRadiusMultiplier : 1);
+        const influence = 1 - distance / radius;
+        const burstFactor = burstActive ? Math.min(1, this.mouseBurstTimer / this.mouseBurstDuration) : 0;
+        const activeInfluence = influence * Math.max(activityFactor, burstFactor);
 
-        // При зажатой средней кнопке - затягиваем снежинку к мыши
-        if (this.mousePressed) {
+        // Кратковременный взрыв/втягивание при клике
+        if (burstActive && this.mouseBurstMode === 'explode') {
           const safeDistance = Math.max(distance, 0.0001);
           const nx = dx / safeDistance;
           const ny = dy / safeDistance;
-          const pullAccel = activeInfluence * this.mouseForce * 1.2;
+          const burstAccel = activeInfluence * this.mouseForce * 5.0;
+          flake.velocityX += nx * burstAccel * delta;
+          flake.velocityY += ny * burstAccel * delta;
+        } else if (burstActive && this.mouseBurstMode === 'suction') {
+          const safeDistance = Math.max(distance, 0.0001);
+          const nx = dx / safeDistance;
+          const ny = dy / safeDistance;
+          const pullAccel = activeInfluence * this.mouseForce * 5.0;
           flake.velocityX -= nx * pullAccel * delta;
           flake.velocityY -= ny * pullAccel * delta;
         } else if (isMouseFast) {
@@ -742,17 +764,17 @@ export class WebGPURenderer {
         
         // Горизонтальное воздействие ветра
         if (this.currentWindForce !== 0) {
-          const windAccel = this.currentWindForce * sizeRatio * 8;
+          const windAccel = this.currentWindForce * sizeRatio * 15;
           flake.x += windAccel * delta;
           
           // Раскачивание снежинки при ветре
-          const spinForce = Math.abs(this.currentWindForce) * 2;
+          const spinForce = Math.abs(this.currentWindForce) * 3;
           flake.rotationSpeed += (Math.random() - 0.5) * spinForce * 0.05;
         }
         
         // Вертикальное воздействие ветра (лифт)
         if (this.currentWindLift !== 0) {
-          const liftAccel = -this.currentWindLift * sizeRatio * 25;
+          const liftAccel = -this.currentWindLift * sizeRatio * 35;
           flake.y += liftAccel * delta;
         }
       }
@@ -991,8 +1013,17 @@ export class WebGPURenderer {
    * @param {number} x - X координата
    * @param {number} y - Y координата
    */
-  onMouseDown(x, y) {
-    this.mousePressed = true;
+  onMouseDown(x, y, button) {
+    if (button === 0) {
+      this.mouseLeftPressed = true;
+      this.mouseBurstMode = 'explode';
+      this.mouseBurstTimer = this.mouseBurstDuration;
+    }
+    if (button === 2) {
+      this.mouseRightPressed = true;
+      this.mouseBurstMode = 'suction';
+      this.mouseBurstTimer = this.mouseBurstDuration;
+    }
     this.mouseX = x;
     this.mouseY = y;
   }
@@ -1000,15 +1031,19 @@ export class WebGPURenderer {
   /**
    * Обработчик отпускания кнопки мыши
    */
-  onMouseUp() {
-    this.mousePressed = false;
+  onMouseUp(button) {
+    if (button === 0) this.mouseLeftPressed = false;
+    if (button === 2) this.mouseRightPressed = false;
   }
 
   /**
    * Обработчик выхода мыши за пределы canvas
    */
   onMouseLeave() {
-    this.mousePressed = false;
+    this.mouseLeftPressed = false;
+    this.mouseRightPressed = false;
+    this.mouseBurstTimer = 0;
+    this.mouseBurstMode = null;
     this.mouseX = -1000;
     this.mouseY = -1000;
     this.mouseVelocityX = 0;

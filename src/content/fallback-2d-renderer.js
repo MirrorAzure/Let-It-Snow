@@ -21,12 +21,17 @@ export class Fallback2DRenderer {
     this.mouseY = -1000;
     this.mouseVelocityX = 0;
     this.mouseVelocityY = 0;
-    this.mousePressed = false;
+    this.mouseLeftPressed = false;
+    this.mouseRightPressed = false;
     this.mouseRadius = config.mouseRadius ?? 100;
     this.mouseForce = config.mouseForce ?? 300;
     this.mouseImpulseStrength = config.mouseImpulseStrength ?? 0.5;
     this.mouseDragThreshold = config.mouseDragThreshold ?? 500; // Порог скорости для эффекта затягивания
     this.mouseDragStrength = config.mouseDragStrength ?? 1.0; // Сила затягивания в поток
+    this.mouseBurstDuration = 0.2;
+    this.mouseBurstRadiusMultiplier = 3.5;
+    this.mouseBurstTimer = 0;
+    this.mouseBurstMode = null;
     
     // Параметры коллизий между снежинками
     this.enableCollisions = config.enableCollisions ?? true; // Включить коллизии
@@ -243,7 +248,7 @@ export class Fallback2DRenderer {
         const targetWindForce = directionFactor * gustIntensity * this.windStrength;
         const targetWindLift = gustIntensity * 0.3 * this.windStrength;
 
-        const windSmoothFactor = 0.15;
+        const windSmoothFactor = 0.05;
         this.currentWindForce = this.prevWindForce * (1 - windSmoothFactor) + targetWindForce * windSmoothFactor;
         this.currentWindLift = this.prevWindLift * (1 - windSmoothFactor) + targetWindLift * windSmoothFactor;
         this.prevWindForce = this.currentWindForce;
@@ -267,12 +272,20 @@ export class Fallback2DRenderer {
         this.prevWindLift = 0;
       }
 
+      if (this.mouseBurstTimer > 0) {
+        this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - 0.016);
+        if (this.mouseBurstTimer === 0) {
+          this.mouseBurstMode = null;
+        }
+      }
+
       // ПЕРВЫЙ ПРОХОД: Обновляем физику и позиции для всех снежинок
       this.flakes.forEach((flake) => {
         // Вычисляем скорость движения мыши
         const mouseSpeed = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
-        const activityFactor = this.mousePressed ? 1 : Math.min(1, mouseSpeed / 60);
-        const shouldApplyMouse = this.mousePressed || activityFactor > 0;
+        const activityFactor = mouseSpeed > 0 ? 1 : 0;
+        const burstActive = this.mouseBurstTimer > 0;
+        const shouldApplyMouse = burstActive || activityFactor > 0;
         const isMouseFast = mouseSpeed > this.mouseDragThreshold;
         
         // Применяем физику взаимодействия с мышью
@@ -280,21 +293,30 @@ export class Fallback2DRenderer {
         const dy = flake.y - this.mouseY;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        if (!this.mousePressed && flake.isGrabbed) {
+        if (!this.mouseLeftPressed && !this.mouseRightPressed && flake.isGrabbed) {
           flake.isGrabbed = false;
           flake.swayLimit = 1.0;
         }
         
-        if (distance < this.mouseRadius && shouldApplyMouse) {
-          const influence = 1 - distance / this.mouseRadius;
-          const activeInfluence = influence * activityFactor;
+        if (distance < (this.mouseRadius * (burstActive ? this.mouseBurstRadiusMultiplier : 1)) && shouldApplyMouse) {
+          const radius = this.mouseRadius * (burstActive ? this.mouseBurstRadiusMultiplier : 1);
+          const influence = 1 - distance / radius;
+          const burstFactor = burstActive ? Math.min(1, this.mouseBurstTimer / this.mouseBurstDuration) : 0;
+          const activeInfluence = influence * Math.max(activityFactor, burstFactor);
           
-          // При зажатой средней кнопке - затягиваем снежинку к мыши
-          if (this.mousePressed) {
+          // Кратковременный взрыв/втягивание при клике
+          if (burstActive && this.mouseBurstMode === 'explode') {
             const safeDistance = Math.max(distance, 0.0001);
             const nx = dx / safeDistance;
             const ny = dy / safeDistance;
-            const pullAccel = activeInfluence * this.mouseForce * 1.2;
+            const burstAccel = activeInfluence * this.mouseForce * 5.0;
+            flake.velocityX += nx * burstAccel * 0.016;
+            flake.velocityY += ny * burstAccel * 0.016;
+          } else if (burstActive && this.mouseBurstMode === 'suction') {
+            const safeDistance = Math.max(distance, 0.0001);
+            const nx = dx / safeDistance;
+            const ny = dy / safeDistance;
+            const pullAccel = activeInfluence * this.mouseForce * 5.0;
             flake.velocityX -= nx * pullAccel * 0.016;
             flake.velocityY -= ny * pullAccel * 0.016;
           } else if (isMouseFast) {
@@ -334,7 +356,7 @@ export class Fallback2DRenderer {
           const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
           flake.rotationSpeed = (flake.rotationSpeed || 0) + rotationForce * 0.016;
           
-          if (!this.mousePressed) {
+          if (!this.mouseLeftPressed && !this.mouseRightPressed) {
             if (flake.isGrabbed) {
               flake.grabOffsetX = undefined;
               flake.grabOffsetY = undefined;
@@ -393,18 +415,18 @@ export class Fallback2DRenderer {
             // Горизонтальное воздействие ветра (как ускорение)
             if (this.currentWindForce !== 0) {
               // Сбалансированное воздействие ветра с учетом физики массы
-              const windAccel = this.currentWindForce * sizeRatio * 8;
+              const windAccel = this.currentWindForce * sizeRatio * 15;
               flake.velocityX += windAccel * 0.016;
               
               // Раскачивание снежинки при ветре (имитация вращения от ветра)
-              const spinForce = Math.abs(this.currentWindForce) * 2; // Чем сильнее ветер, тем быстрее вращение
+              const spinForce = Math.abs(this.currentWindForce) * 3; // Чем сильнее ветер, тем быстрее вращение
               flake.rotationSpeed += (Math.random() - 0.5) * spinForce * 0.05;
             }
             
             // Вертикальное воздействие ветра (лифт - сильно влияет на маленькие снежинки)
             if (this.currentWindLift !== 0) {
               // Лифт сильнее влияет на маленькие снежинки (обратная пропорциональность массе)
-              const liftAccel = -this.currentWindLift * sizeRatio * 25;
+              const liftAccel = -this.currentWindLift * sizeRatio * 35;
               flake.velocityY += liftAccel * 0.016;
             }
           }
@@ -575,8 +597,17 @@ export class Fallback2DRenderer {
    * @param {number} x - X координата
    * @param {number} y - Y координата
    */
-  onMouseDown(x, y) {
-    this.mousePressed = true;
+  onMouseDown(x, y, button) {
+    if (button === 0) {
+      this.mouseLeftPressed = true;
+      this.mouseBurstMode = 'explode';
+      this.mouseBurstTimer = this.mouseBurstDuration;
+    }
+    if (button === 2) {
+      this.mouseRightPressed = true;
+      this.mouseBurstMode = 'suction';
+      this.mouseBurstTimer = this.mouseBurstDuration;
+    }
     this.mouseX = x;
     this.mouseY = y;
   }
@@ -584,8 +615,9 @@ export class Fallback2DRenderer {
   /**
    * Обработчик отпускания кнопки мыши
    */
-  onMouseUp() {
-    this.mousePressed = false;
+  onMouseUp(button) {
+    if (button === 0) this.mouseLeftPressed = false;
+    if (button === 2) this.mouseRightPressed = false;
     // Отпускаем все захваченные снежинки
     if (this.flakes) {
       this.flakes.forEach(flake => {
@@ -598,7 +630,10 @@ export class Fallback2DRenderer {
    * Обработчик выхода мыши за пределы canvas
    */
   onMouseLeave() {
-    this.mousePressed = false;
+    this.mouseLeftPressed = false;
+    this.mouseRightPressed = false;
+    this.mouseBurstTimer = 0;
+    this.mouseBurstMode = null;
     this.mouseX = -1000;
     this.mouseY = -1000;
     this.mouseVelocityX = 0;

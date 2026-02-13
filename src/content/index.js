@@ -88,7 +88,9 @@ class SnowWebGPUController {
     this.mouseVelocityX = 0;
     this.mouseVelocityY = 0;
     this.lastMouseTime = 0;
-    this.mousePressed = false;
+    this.mouseIdleTimeoutId = null;
+    this.mouseLeftPressed = false;
+    this.mouseRightPressed = false;
     this.mouseInteractionEnabled = true;
   }
 
@@ -216,6 +218,18 @@ class SnowWebGPUController {
       }
       
       this.lastMouseTime = now;
+
+      if (this.mouseIdleTimeoutId) {
+        clearTimeout(this.mouseIdleTimeoutId);
+      }
+      this.mouseIdleTimeoutId = setTimeout(() => {
+        this.mouseVelocityX = 0;
+        this.mouseVelocityY = 0;
+        this.lastMouseTime = performance.now();
+        if (this.renderer && this.mouseInteractionEnabled) {
+          this.renderer.updateMousePosition?.(this.mouseX, this.mouseY, 0, 0);
+        }
+      }, 32);
       
       if (this.renderer && this.mouseInteractionEnabled) {
         this.renderer.updateMousePosition?.(this.mouseX, this.mouseY, this.mouseVelocityX, this.mouseVelocityY);
@@ -223,25 +237,32 @@ class SnowWebGPUController {
     };
 
     this.mouseDownHandler = (e) => {
-      if (e.button !== 1) return;
-      this.mousePressed = true;
+      if (e.button !== 0 && e.button !== 2) return;
+      if (e.button === 0) this.mouseLeftPressed = true;
+      if (e.button === 2) this.mouseRightPressed = true;
       if (this.renderer && this.mouseInteractionEnabled) {
-        this.renderer.onMouseDown?.(e.clientX, e.clientY);
+        this.renderer.onMouseDown?.(e.clientX, e.clientY, e.button);
       }
     };
 
     this.mouseUpHandler = (e) => {
-      if (e.button !== 1) return;
-      this.mousePressed = false;
+      if (e.button !== 0 && e.button !== 2) return;
+      if (e.button === 0) this.mouseLeftPressed = false;
+      if (e.button === 2) this.mouseRightPressed = false;
       if (this.renderer && this.mouseInteractionEnabled) {
-        this.renderer.onMouseUp?.();
+        this.renderer.onMouseUp?.(e.button);
       }
     };
 
     this.mouseLeaveHandler = () => {
-      this.mousePressed = false;
+      this.mouseLeftPressed = false;
+      this.mouseRightPressed = false;
       this.mouseVelocityX = 0;
       this.mouseVelocityY = 0;
+      if (this.mouseIdleTimeoutId) {
+        clearTimeout(this.mouseIdleTimeoutId);
+        this.mouseIdleTimeoutId = null;
+      }
       if (this.renderer && this.mouseInteractionEnabled) {
         this.renderer.onMouseLeave?.();
       }
