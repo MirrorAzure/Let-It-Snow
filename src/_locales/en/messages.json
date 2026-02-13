@@ -236,6 +236,9 @@
   "windGustFrequency": {
     "message": "Gust frequency (1–10 sec):"
   },
+  "mouseRadius": {
+    "message": "Mouse radius (50–250):"
+  },
   "tooltipWindEnabled": {
     "message": "Enable or disable wind"
   },
@@ -247,5 +250,8 @@
   },
   "tooltipWindGustFrequency": {
     "message": "How often wind changes strength (in seconds)"
+  },
+  "tooltipMouseRadius": {
+    "message": "Mouse interaction radius"
   }
 }

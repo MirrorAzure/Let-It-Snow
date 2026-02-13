@@ -80,6 +80,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     addGif: document.getElementById('addGif'),
     gifCount: document.getElementById('gifCount'),
     gifCountValue: document.getElementById('gifCountValue'),
+    mouseRadius: document.getElementById('mouseRadius'),
+    mouseRadiusValue: document.getElementById('mouseRadiusValue'),
     windEnabled: document.getElementById('windEnabled'),
     windSettings: document.getElementById('windSettings'),
     windDirection: document.getElementById('windDirection'),
@@ -125,6 +127,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       gifs,
       gifCount: parseInt(elements.gifCount.value) || 0,
       autoStart: elements.autoStart.checked,
+      mouseRadius: parseInt(elements.mouseRadius.value),
       windEnabled: elements.windEnabled.checked,
       windDirection: elements.windDirection.value,
       windStrength: parseFloat(elements.windStrength.value),
@@ -145,6 +148,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     'autoStart',
     'gifs',
     'gifCount',
+    'mouseRadius',
     'windEnabled',
     'windDirection',
     'windStrength',
@@ -167,6 +171,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.gifCountValue.textContent = config.gifCount || 0;
   elements.sentenceCount.value = config.sentenceCount || 0;
   elements.sentenceCountValue.textContent = config.sentenceCount || 0;
+  elements.mouseRadius.value = config.mouseRadius || 100;
+  elements.mouseRadiusValue.textContent = config.mouseRadius || 100;
   
   // Устанавливаем значения ветра
   elements.windEnabled.checked = config.windEnabled || false;
@@ -269,6 +275,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   setupSliderListener(elements.sentenceCount, elements.sentenceCountValue, saveAllSettings);
 
+  setupSliderListener(elements.mouseRadius, elements.mouseRadiusValue, saveAllSettings);
+
   // Слайдер минимального размера
   elements.snowminsize.addEventListener('input', () => {
     if (parseInt(elements.snowminsize.value) >= parseInt(elements.snowmaxsize.value)) {
@@ -362,6 +370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       sentenceCount: parseInt(elements.sentenceCount.value) || 0,
       gifUrls: gifs,
       gifCount: gifs.length > 0 ? parseInt(elements.gifCount.value) || 0 : 0,
+      mouseRadius: parseInt(elements.mouseRadius.value),
       windEnabled: elements.windEnabled.checked,
       windDirection: elements.windDirection.value,
       windStrength: parseFloat(elements.windStrength.value),

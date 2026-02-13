@@ -23,6 +23,7 @@ const els = {
   snowmaxsize: document.getElementById('snowmaxsize'),
   gifs: document.getElementById('gifs'),
   gifCount: document.getElementById('gifCount'),
+  mouseRadius: document.getElementById('mouseRadius'),
   sentenceCount: document.getElementById('sentenceCount'),
   colorsList: document.getElementById('colors-list'),
   colorText: document.getElementById('color-text'),
@@ -54,6 +55,7 @@ const defaults = {
   sentenceCount: 0,
   gifs: [],
   gifCount: 0,
+  mouseRadius: 100,
   debugCollisions: false,
   windEnabled: false,
   windDirection: 'left',
@@ -189,6 +191,7 @@ function getConfigFromForm() {
     sentenceCount: Math.max(0, Math.min(80, Number(els.sentenceCount.value) || defaults.sentenceCount)),
     gifUrls: toLines(els.gifs.value).slice(0, 10),
     gifCount: Math.max(0, Math.min(200, Number(els.gifCount.value) || defaults.gifCount)),
+    mouseRadius: Math.max(50, Math.min(250, Number(els.mouseRadius.value) || defaults.mouseRadius)),
     debugCollisions: state.debugCollisions,
     windEnabled: state.windEnabled,
     windDirection: state.windDirection,
@@ -226,6 +229,7 @@ function resetForm() {
   els.snowminsize.value = defaults.snowminsize;
   els.snowmaxsize.value = defaults.snowmaxsize;
   els.gifCount.value = defaults.gifCount;
+  els.mouseRadius.value = defaults.mouseRadius;
   els.sentenceCount.value = defaults.sentenceCount;
   els.gifs.value = defaults.gifs.join('\n');
   els.windEnabled.checked = defaults.windEnabled;

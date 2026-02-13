@@ -22,14 +22,14 @@ export class Fallback2DRenderer {
     this.mouseVelocityX = 0;
     this.mouseVelocityY = 0;
     this.mousePressed = false;
-    this.mouseRadius = 100;
-    this.mouseForce = 300;
-    this.mouseImpulseStrength = 0.5;
-    this.mouseDragThreshold = 500; // Порог скорости для эффекта затягивания
-    this.mouseDragStrength = 0.8; // Сила затягивания в поток
+    this.mouseRadius = config.mouseRadius ?? 100;
+    this.mouseForce = config.mouseForce ?? 300;
+    this.mouseImpulseStrength = config.mouseImpulseStrength ?? 0.5;
+    this.mouseDragThreshold = config.mouseDragThreshold ?? 500; // Порог скорости для эффекта затягивания
+    this.mouseDragStrength = config.mouseDragStrength ?? 1.0; // Сила затягивания в поток
     
     // Параметры коллизий между снежинками
-    this.enableCollisions = true; // Включить коллизии
+    this.enableCollisions = config.enableCollisions ?? true; // Включить коллизии
     this.collisionDamping = 0.7; // Коэффициент упругости столкновений (0-1)
     this.collisionCheckRadius = 200; // Радиус проверки коллизий для оптимизации
     
@@ -40,8 +40,10 @@ export class Fallback2DRenderer {
     this.windGustFrequency = config.windGustFrequency ?? 3;
     this.windTime = 0;
     this.currentWindForce = 0;
-    this.prevWindMagnitude = 0; // Для плавной интерполяции величины ветра
     this.currentWindLift = 0; // Вертикальная составляющая ветра
+    this.prevWindForce = 0;
+    this.prevWindLift = 0;
+    this.windDirectionPhase = Math.random() * Math.PI * 2;
     this.lastWindLogged = false;
     
     console.log('🌬️ Fallback2DRenderer initialized with wind config:', {
@@ -208,90 +210,69 @@ export class Fallback2DRenderer {
       // Обновляем параметры ветра (каждый кадр с фиксированным delta=0.016)
       if (this.windEnabled) {
         this.windTime += 0.016;
-        
-        // Генерируем многослойный турбулентный ветер, более плавный и естественный
-        // Используем суперпозицию волн разных частот для имитации атмосферной турбулентности
-        
-        // Основной цикл (низкая частота - долгосрочные изменения направления)
-        // Используем smoothstep-подобную функцию вместо острого синуса для плавности
-        const baseFreq = this.windGustFrequency * 0.5;
-        const baseTime = (this.windTime / (20 / baseFreq)) % 1.0; // Период колебания
-        const baseWind = Math.sin(baseTime * Math.PI) * 0.6; // Плавный синус (0 -> 1 -> 0)
-        
-        // Среднечастотные порывы (волны среднего размера)
-        // Более мягкие переходы для естественного вида
+
+        // Реалистичный ветер: смесь долгих циклов, порывов и турбулентности
+        const baseFreq = Math.max(0.1, this.windGustFrequency * 0.5);
+        const baseTime = (this.windTime / (20 / baseFreq)) % 1.0;
+        const baseWind = Math.sin(baseTime * Math.PI) * 0.6;
+
         const midFreq = this.windGustFrequency;
         const midTime = (this.windTime / (10 / midFreq)) % 1.0;
         const midWind = Math.sin(midTime * Math.PI * 2) * Math.cos(this.windTime * 0.3) * 0.25;
-        
-        // Мелкая турбулентность (быстрые колебания, но затухающие)
-        // Используем несколько фаз для создания естественного шума
+
         const highFreq1 = Math.sin(this.windTime * 1.7) * Math.exp(-0.1 * (this.windTime % 5)) * 0.06;
         const highFreq2 = Math.sin(this.windTime * 2.9 + Math.cos(this.windTime)) * 0.04;
         const highFreq3 = Math.sin(this.windTime * 4.1) * Math.sin(this.windTime * 0.7) * 0.02;
         const turbulence = highFreq1 + highFreq2 + highFreq3;
-        
-        // Комбинируем все слои для естественного ветра
-        let windMagnitude = baseWind + midWind + turbulence;
-        windMagnitude = Math.max(-1, Math.min(1, windMagnitude));
-        
-        // Плавно интерполируем windForce для более естественного вида
-        // Предыдущее значение: this.prevWindForce (инициализируем если не существует)
-        if (this.prevWindForce === undefined) {
-          this.prevWindForce = 0;
-        }
-        
-        // Рассчитываем вертикальную составляющую ветра (лифт при сильных порывах)
-        // Сильные горизонтальные ветры могут поднимать снежинки
-        const windLift = Math.abs(windMagnitude) * 0.3; // До 30% силы ветра поднимает вверх при макс ветре
-        this.currentWindLift = windLift * this.windStrength;
-        
-        // Плавная интерполяция самого windMagnitude (до определения направления)
-        // Это сохраняет естественные переходы знака для режима random
-        if (this.prevWindMagnitude === undefined) {
-          this.prevWindMagnitude = windMagnitude;
-        }
-        const windSmoothFactor = 0.15;
-        windMagnitude = this.prevWindMagnitude * (1 - windSmoothFactor) + windMagnitude * windSmoothFactor;
-        this.prevWindMagnitude = windMagnitude;
-        
-        // Определяем направление и рассчитываем силу ветра
-        // Ветер должен всегда дуть в одном направлении (left/right) с переменной силой (турбулентностью)
-        // А в режиме random - естественно менять направление
+
+        let gust = baseWind + midWind + turbulence;
+        gust = Math.max(-1, Math.min(1, gust));
+        const gustIntensity = Math.min(1, Math.abs(gust));
+
+        let directionFactor = 1;
         if (this.windDirection === 'left') {
-          // Всегда дует влево, но с переменной силой (турбулентностью)
-          // Используем абсолютное значение windMagnitude для силы + минус для направления
-          this.currentWindForce = -Math.abs(windMagnitude) * this.windStrength;
+          directionFactor = -1;
         } else if (this.windDirection === 'right') {
-          // Всегда дует вправо, но с переменной силой (турбулентностью)
-          this.currentWindForce = Math.abs(windMagnitude) * this.windStrength;
+          directionFactor = 1;
         } else {
-          // 'random' - ветер естественно меняет направление через ноль
-          // windMagnitude плавно проходит через 0, сохраняя свой строгий знак
-          this.currentWindForce = windMagnitude * this.windStrength;
+          const dirTime = this.windTime * 0.12 + this.windDirectionPhase;
+          const dirNoise = Math.sin(dirTime) + Math.sin(dirTime * 0.23 + Math.cos(this.windTime * 0.05)) * 0.35;
+          directionFactor = Math.max(-1, Math.min(1, dirNoise));
         }
-        
-        // Логирование ветра при первом изменении направления
-        if (windMagnitude > 0.5 && !this.lastWindLogged) {
+
+        const targetWindForce = directionFactor * gustIntensity * this.windStrength;
+        const targetWindLift = gustIntensity * 0.3 * this.windStrength;
+
+        const windSmoothFactor = 0.15;
+        this.currentWindForce = this.prevWindForce * (1 - windSmoothFactor) + targetWindForce * windSmoothFactor;
+        this.currentWindLift = this.prevWindLift * (1 - windSmoothFactor) + targetWindLift * windSmoothFactor;
+        this.prevWindForce = this.currentWindForce;
+        this.prevWindLift = this.currentWindLift;
+
+        if (gustIntensity > 0.5 && !this.lastWindLogged) {
           console.log('🌬️ Wind is blowing with turbulence:', {
             direction: this.windDirection,
             strength: this.windStrength,
             force: this.currentWindForce.toFixed(2),
-            turbulence: windMagnitude.toFixed(2)
+            turbulence: gustIntensity.toFixed(2)
           });
           this.lastWindLogged = true;
-        } else if (windMagnitude <= 0.5) {
+        } else if (gustIntensity <= 0.5) {
           this.lastWindLogged = false;
         }
       } else {
         this.currentWindForce = 0;
         this.currentWindLift = 0;
+        this.prevWindForce = 0;
+        this.prevWindLift = 0;
       }
 
       // ПЕРВЫЙ ПРОХОД: Обновляем физику и позиции для всех снежинок
       this.flakes.forEach((flake) => {
         // Вычисляем скорость движения мыши
         const mouseSpeed = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
+        const activityFactor = this.mousePressed ? 1 : Math.min(1, mouseSpeed / 60);
+        const shouldApplyMouse = this.mousePressed || activityFactor > 0;
         const isMouseFast = mouseSpeed > this.mouseDragThreshold;
         
         // Применяем физику взаимодействия с мышью
@@ -304,11 +285,19 @@ export class Fallback2DRenderer {
           flake.swayLimit = 1.0;
         }
         
-        if (distance < this.mouseRadius) {
+        if (distance < this.mouseRadius && shouldApplyMouse) {
           const influence = 1 - distance / this.mouseRadius;
+          const activeInfluence = influence * activityFactor;
           
-          // Если мышь движется быстро - создаем эффект воздушного потока
-          if (isMouseFast) {
+          // При зажатой средней кнопке - затягиваем снежинку к мыши
+          if (this.mousePressed) {
+            const safeDistance = Math.max(distance, 0.0001);
+            const nx = dx / safeDistance;
+            const ny = dy / safeDistance;
+            const pullAccel = activeInfluence * this.mouseForce * 1.2;
+            flake.velocityX -= nx * pullAccel * 0.016;
+            flake.velocityY -= ny * pullAccel * 0.016;
+          } else if (isMouseFast) {
             // Нормализуем вектор скорости мыши
             const mouseVelMag = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
             if (mouseVelMag > 0) {
@@ -316,13 +305,13 @@ export class Fallback2DRenderer {
               const mouseDirY = this.mouseVelocityY / mouseVelMag;
               
               // Притягиваем снежинку в сторону движения мыши
-              const dragForce = influence * this.mouseDragStrength * (mouseSpeed / 1000);
+              const dragForce = activeInfluence * this.mouseDragStrength * (mouseSpeed / 1000);
               flake.velocityX += mouseDirX * dragForce * 16;
               flake.velocityY += mouseDirY * dragForce * 16;
             }
           } else {
             // Обычное отталкивание при медленном движении
-            const force = influence * this.mouseForce;
+            const force = activeInfluence * this.mouseForce;
             const safeDistance = Math.max(distance, 0.0001);
             const nx = dx / safeDistance;
             const ny = dy / safeDistance;
@@ -333,7 +322,7 @@ export class Fallback2DRenderer {
           }
           
           // Передаем импульс от движения мыши
-          const impulseStrength = influence * this.mouseImpulseStrength;
+          const impulseStrength = activeInfluence * this.mouseImpulseStrength;
           flake.velocityX += this.mouseVelocityX * impulseStrength * 0.016;
           flake.velocityY += this.mouseVelocityY * impulseStrength * 0.016;
           
@@ -342,29 +331,10 @@ export class Fallback2DRenderer {
           const mouseSpeed = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
           const cross = dx * this.mouseVelocityY - dy * this.mouseVelocityX;
           const rotationDirection = Math.sign(cross); // +1 или -1
-          const rotationForce = influence * mouseSpeed * 0.01 * rotationDirection;
+          const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
           flake.rotationSpeed = (flake.rotationSpeed || 0) + rotationForce * 0.016;
           
-          // При зажатии кнопки мыши - захватываем снежинку
-          if (this.mousePressed && distance < this.mouseRadius * 0.5) {
-            // Сохраняем смещение снежинки от мыши (если это первый захват)
-            if (!flake.isGrabbed) {
-              flake.grabOffsetX = flake.x - this.mouseX;
-              flake.grabOffsetY = flake.y - this.mouseY;
-            }
-            // Позиция снежинки следует за мышью с сохранением смещения
-            flake.x = this.mouseX + (flake.grabOffsetX ?? 0);
-            flake.y = this.mouseY + (flake.grabOffsetY ?? 0);
-            flake.baseX = flake.x;
-            // Обнуляем скорость при захвате
-            flake.velocityX = 0;
-            flake.velocityY = 0;
-            flake.rotationSpeed = 0;
-            // Отмечаем, что снежинка захвачена
-            flake.isGrabbed = true;
-            flake.swayLimit = 0;
-          } else {
-            // Если мышь отпущена, снимаем флаг захвата и очищаем смещение
+          if (!this.mousePressed) {
             if (flake.isGrabbed) {
               flake.grabOffsetX = undefined;
               flake.grabOffsetY = undefined;

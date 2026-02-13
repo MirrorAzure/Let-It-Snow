@@ -82,20 +82,30 @@ export class MouseHandler {
       this.mouseVelocityX * this.mouseVelocityX + 
       this.mouseVelocityY * this.mouseVelocityY
     );
+    const activityFactor = this.mousePressed ? 1 : Math.min(1, mouseSpeed / 60);
+    if (!this.mousePressed && activityFactor === 0) return;
+    const activeInfluence = influence * activityFactor;
     const isMouseFast = mouseSpeed > this.mouseDragThreshold;
 
-    if (isMouseFast) {
+    if (this.mousePressed) {
+      const safeDistance = Math.max(distance, 0.0001);
+      const nx = dx / safeDistance;
+      const ny = dy / safeDistance;
+      const pullAccel = activeInfluence * this.mouseForce * 1.2;
+      flake.velocityX = (flake.velocityX ?? 0) - nx * pullAccel * (delta || 0.016);
+      flake.velocityY = (flake.velocityY ?? 0) - ny * pullAccel * (delta || 0.016);
+    } else if (isMouseFast) {
       // Эффект воздушного потока при быстром движении мыши
       const mouseVelMag = Math.max(0.001, mouseSpeed);
       const mouseDirX = this.mouseVelocityX / mouseVelMag;
       const mouseDirY = this.mouseVelocityY / mouseVelMag;
       
-      const dragForce = influence * this.mouseDragStrength * (mouseSpeed / 1000);
+      const dragForce = activeInfluence * this.mouseDragStrength * (mouseSpeed / 1000);
       flake.velocityX = (flake.velocityX ?? 0) + mouseDirX * dragForce * delta * 1000;
       flake.velocityY = (flake.velocityY ?? 0) + mouseDirY * dragForce * delta * 1000;
     } else {
       // Обычное отталкивание при медленном движении
-      const force = influence * this.mouseForce;
+      const force = activeInfluence * this.mouseForce;
       const safeDistance = Math.max(distance, 0.0001);
       const nx = dx / safeDistance;
       const ny = dy / safeDistance;
@@ -107,29 +117,20 @@ export class MouseHandler {
     }
     
     // Передаем импульс от движения мыши
-    const impulseStrength = influence * this.mouseImpulseStrength;
+    const impulseStrength = activeInfluence * this.mouseImpulseStrength;
     flake.velocityX = (flake.velocityX ?? 0) + this.mouseVelocityX * impulseStrength * (delta || 0.016);
     flake.velocityY = (flake.velocityY ?? 0) + this.mouseVelocityY * impulseStrength * (delta || 0.016);
     
     // Вращение снежинки при движении мыши рядом
     const cross = dx * this.mouseVelocityY - dy * this.mouseVelocityX;
     const rotationDirection = Math.sign(cross) || 0;
-    const rotationForce = influence * mouseSpeed * 0.01 * rotationDirection;
+    const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
     
     if (flake.rotationSpeed !== undefined) {
       flake.rotationSpeed = (flake.rotationSpeed ?? 0) + rotationForce * (delta || 0.016);
     }
     
-    // При зажатии кнопки мыши - захватываем снежинку
-    if (this.mousePressed && distance < this.mouseRadius * 0.5) {
-      flake.x = this.mouseX;
-      flake.y = this.mouseY;
-      flake.velocityX = 0;
-      flake.velocityY = 0;
-      flake.rotationSpeed = 0;
-      flake.isGrabbed = true;
-      flake.swayLimit = 0;
-    } else if (!this.mousePressed) {
+    if (!this.mousePressed) {
       flake.isGrabbed = false;
       flake.swayLimit = 1.0;
     }

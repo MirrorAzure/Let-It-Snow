@@ -29,6 +29,7 @@ const DEFAULT_CONFIG = {
   gifUrls: [],
   gifCount: 0,
   debugCollisions: false,
+  mouseRadius: 100,
   windEnabled: false,
   windDirection: 'left',
   windStrength: 0.5,
@@ -222,13 +223,15 @@ class SnowWebGPUController {
     };
 
     this.mouseDownHandler = (e) => {
+      if (e.button !== 1) return;
       this.mousePressed = true;
       if (this.renderer && this.mouseInteractionEnabled) {
         this.renderer.onMouseDown?.(e.clientX, e.clientY);
       }
     };
 
-    this.mouseUpHandler = () => {
+    this.mouseUpHandler = (e) => {
+      if (e.button !== 1) return;
       this.mousePressed = false;
       if (this.renderer && this.mouseInteractionEnabled) {
         this.renderer.onMouseUp?.();
@@ -410,7 +413,12 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
         'sentences',
         'sentenceCount',
         'gifs',
-        'gifCount'
+        'gifCount',
+        'mouseRadius',
+        'windEnabled',
+        'windDirection',
+        'windStrength',
+        'windGustFrequency'
       ]);
 
       if (stored.autoStart) {
@@ -424,7 +432,12 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
           snowsentences: stored.sentences || [],
           sentenceCount: stored.sentenceCount || 0,
           gifUrls: stored.gifs || [],
-          gifCount: stored.gifCount || 0
+          gifCount: stored.gifCount || 0,
+          mouseRadius: stored.mouseRadius || 100,
+          windEnabled: stored.windEnabled || false,
+          windDirection: stored.windDirection || 'left',
+          windStrength: stored.windStrength || 0.5,
+          windGustFrequency: stored.windGustFrequency || 3
         };
         startSnow(config).catch((err) => console.error(err));
       }
