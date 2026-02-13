@@ -41,6 +41,11 @@ export class WebGPURenderer {
 
     this.sentenceCursor = 0;
 
+    // Параметры коллизий
+    this.enableCollisions = config.enableCollisions ?? true;
+    this.collisionCheckRadius = config.collisionCheckRadius ?? 600;
+    this.collisionDamping = config.collisionDamping ?? 0.7;
+
     // Параметры взаимодействия с мышью
     this.mouseX = -1000;
     this.mouseY = -1000;
@@ -531,68 +536,6 @@ export class WebGPURenderer {
     }
   }
 
-  /**
-   * Проверка и обработка коллизий между снежинками
-   */
-  handleCollisions() {
-    if (!this.enableCollisions || this.instances.length < 2) return;
-
-    // Оптимизация: проверяем только близкие пары
-    for (let i = 0; i < this.instances.length; i++) {
-      const flakeA = this.instances[i];
-      
-      // Проверяем только снежинки в радиусе collisionCheckRadius
-      for (let j = i + 1; j < this.instances.length; j++) {
-        const flakeB = this.instances[j];
-        
-        const dx = flakeB.x - flakeA.x;
-        const dy = flakeB.y - flakeA.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        // Пропускаем, если снежинки слишком далеко
-        if (distance > this.collisionCheckRadius) continue;
-        
-        // Используем collisionSize для проверки коллизий (соответствует визуальному размеру)
-        const minDistance = (flakeA.collisionSize + flakeB.collisionSize) * 0.5;
-        
-        // Если снежинки пересекаются
-        if (distance < minDistance && distance > 0) {
-          // Нормализованный вектор между снежинками
-          const nx = dx / distance;
-          const ny = dy / distance;
-          
-          // Относительная скорость
-          const dvx = flakeB.velocityX - flakeA.velocityX;
-          const dvy = flakeB.velocityY - flakeA.velocityY;
-          
-          // Скорость сближения
-          const dvn = dvx * nx + dvy * ny;
-          
-          // Если снежинки уже расходятся, не обрабатываем коллизию
-          if (dvn > 0) continue;
-          
-          // Импульс столкновения (упрощенная физика для равных масс)
-          const impulse = dvn * this.collisionDamping;
-          
-          // Применяем импульс к обеим снежинкам
-          flakeA.velocityX += nx * impulse;
-          flakeA.velocityY += ny * impulse;
-          flakeB.velocityX -= nx * impulse;
-          flakeB.velocityY -= ny * impulse;
-          
-          // Разводим снежинки, чтобы они не застревали друг в друге
-          const overlap = minDistance - distance;
-          const separationX = nx * overlap * 0.5;
-          const separationY = ny * overlap * 0.5;
-          
-          flakeA.x -= separationX;
-          flakeA.y -= separationY;
-          flakeB.x += separationX;
-          flakeB.y += separationY;
-        }
-      }
-    }
-  }
 
   /**
    * Обновление симуляции
@@ -793,7 +736,9 @@ export class WebGPURenderer {
     });
     
     // Обрабатываем коллизии между снежинками
-    this.handleCollisions();
+    if (this.collisionHandler) {
+      this.collisionHandler.handleCollisions(this.instances, delta);
+    }
     
     // Обрабатываем края экрана как порталы (wrapping)
     this.instances.forEach((flake) => {
