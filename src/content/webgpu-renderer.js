@@ -41,17 +41,53 @@ export class WebGPURenderer {
 
     this.sentenceCursor = 0;
 
+    // Параметры коллизий
+    this.enableCollisions = config.enableCollisions ?? true;
+    this.collisionCheckRadius = config.collisionCheckRadius ?? 600;
+    this.collisionDamping = config.collisionDamping ?? 0.7;
+    this.debugCollisions = config.debugCollisions ?? false;
+    
+    // Debug overlay canvas для визуализации коллизий
+    this.debugCanvas = null;
+    this.debugCtx = null;
+
     // Параметры взаимодействия с мышью
     this.mouseX = -1000;
     this.mouseY = -1000;
     this.mouseVelocityX = 0;
     this.mouseVelocityY = 0;
-    this.mousePressed = false;
+    this.mouseLeftPressed = false;
+    this.mouseRightPressed = false;
+    this.mouseBurstDuration = 0.2;
+    this.mouseBurstRadiusMultiplier = 3.5;
+    this.mouseBurstTimer = 0;
+    this.mouseBurstMode = null;
     this.mouseRadius = config.mouseRadius ?? 100;
     this.mouseForce = config.mouseForce ?? 300;
     this.mouseImpulseStrength = config.mouseImpulseStrength ?? 0.5;
     this.mouseDragThreshold = config.mouseDragThreshold ?? 500;
     this.mouseDragStrength = config.mouseDragStrength ?? 0.8;
+
+    // Параметры ветра
+    this.windEnabled = config.windEnabled ?? false;
+    this.windDirection = config.windDirection ?? 'left';
+    this.windStrength = config.windStrength ?? 0.5;
+    this.windGustFrequency = config.windGustFrequency ?? 3;
+    this.windTime = 0;
+    this.currentWindForce = 0;
+    this.currentWindLift = 0;
+    this.prevWindForce = 0;
+    this.prevWindLift = 0;
+    this.windDirectionPhase = Math.random() * Math.PI * 2;
+    this.lastWindLogged = false;
+  }
+
+  /**
+   * Геттер для совместимости с GifLayer
+   * @returns {Array} Массив снежинок
+   */
+  get flakes() {
+    return this.instances;
   }
 
   /**
@@ -102,6 +138,11 @@ export class WebGPURenderer {
       this.updateGlowState();
       this.startBackgroundMonitoring();
       this.handleResize();
+      
+      // Настройка debug canvas если включен
+      if (this.debugCollisions) {
+        this.setupDebugCanvas();
+      }
 
       return true;
     } catch (error) {
@@ -301,7 +342,9 @@ export class WebGPURenderer {
     
     const maxSentenceInstances = hasSentences ? Math.min(sentenceCount || 0, snowmax) : 0;
 
-    this.instances = new Array(Math.max(1, snowmax)).fill(null).map((_, idx) => {
+    this.instances = [];
+
+    for (let idx = 0; idx < Math.max(1, snowmax); idx++) {
       let glyphIndex;
       let isSentence = false;
       let sentenceIndex = 0;
@@ -326,9 +369,11 @@ export class WebGPURenderer {
       const colorHex = snowcolor[Math.floor(Math.random() * snowcolor.length)];
       const color = hexToRgb(colorHex);
       const speed = sinkspeed * (size / 20) * 20;
+      const spawnX = this._findSafeSpawnX(size);
+      const initialRotation = Math.random() * Math.PI * 2; // Случайный начальный угол для разнообразия
 
-      return {
-        x: Math.random() * window.innerWidth,
+      this.instances.push({
+        x: spawnX,
         y: -size - Math.random() * window.innerHeight,
         size,
         collisionSize,
@@ -336,16 +381,17 @@ export class WebGPURenderer {
         phase: Math.random() * Math.PI * 2,
         freq: 0.8 + Math.random() * 1.4,
         sway: 10 + Math.random() * 25,
-        rotation: Math.random() * Math.PI * 2,
+        rotation: initialRotation,
         rotationSpeed: 0,
+        cumulativeSpin: initialRotation,
         color,
         glyphIndex,
         isSentence,
         sentenceIndex,
         velocityX: 0,
         velocityY: 0
-      };
-    });
+      });
+    }
 
     const strideFloats = 14;
     this.instanceData = new Float32Array(this.instances.length * strideFloats);
@@ -353,6 +399,35 @@ export class WebGPURenderer {
       size: this.instanceData.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
     });
+  }
+
+  /**
+   * Найти безопасную позицию спауна по X, чтобы избежать перекрытий
+   * @private
+   */
+  _findSafeSpawnX(newSize) {
+    const width = window.innerWidth;
+    const minCollisionDistance = newSize;
+    const attempts = 20;
+
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const x = Math.random() * width;
+      let isSafe = true;
+
+      for (const flake of this.instances) {
+        if (!flake) continue;
+        const dx = x - (flake.x ?? 0);
+        const minDistance = minCollisionDistance + (flake.collisionSize ?? flake.size ?? 20);
+        if (Math.abs(dx) < minDistance * 0.5) {
+          isSafe = false;
+          break;
+        }
+      }
+
+      if (isSafe) return x;
+    }
+
+    return Math.random() * width;
   }
 
   /**
@@ -496,11 +571,100 @@ export class WebGPURenderer {
         alphaMode: 'premultiplied',
         size: { width, height }
       });
+      
+      // Обновляем debug canvas если включен
+      if (this.debugCollisions) {
+        this.setupDebugCanvas();
+      }
     };
 
     resize();
     this.resizeObserver = new ResizeObserver(resize);
     this.resizeObserver.observe(document.documentElement);
+  }
+
+  /**
+   * Настройка debug canvas для визуализации коллизий
+   */
+  setupDebugCanvas() {
+    if (!this.debugCollisions) {
+      if (this.debugCanvas) {
+        this.debugCanvas.remove();
+        this.debugCanvas = null;
+        this.debugCtx = null;
+      }
+      return;
+    }
+
+    if (!this.debugCanvas) {
+      this.debugCanvas = document.createElement('canvas');
+      this.debugCanvas.id = 'let-it-snow-debug-canvas';
+      this.debugCanvas.style.position = 'fixed';
+      this.debugCanvas.style.top = '0';
+      this.debugCanvas.style.left = '0';
+      this.debugCanvas.style.width = '100vw';
+      this.debugCanvas.style.height = '100vh';
+      this.debugCanvas.style.pointerEvents = 'none';
+      this.debugCanvas.style.zIndex = '2147483647'; // Поверх всего
+      document.documentElement.appendChild(this.debugCanvas);
+      this.debugCtx = this.debugCanvas.getContext('2d');
+    }
+
+    const ratio = window.devicePixelRatio || 1;
+    this.debugCanvas.width = Math.floor(window.innerWidth * ratio);
+    this.debugCanvas.height = Math.floor(window.innerHeight * ratio);
+  }
+
+  /**
+   * Отрисовка debug информации о коллизиях
+   */
+  renderDebugCollisions() {
+    if (!this.debugCollisions || !this.debugCtx || !this.debugCanvas) return;
+
+    const ctx = this.debugCtx;
+    const ratio = window.devicePixelRatio || 1;
+    ctx.clearRect(0, 0, this.debugCanvas.width, this.debugCanvas.height);
+
+    this.instances.forEach((flake) => {
+      const x = flake.x * ratio;
+      const y = flake.y * ratio;
+      const collisionRadius = (flake.collisionSize ?? flake.size ?? 20) * 0.5 * ratio;
+
+      ctx.save();
+
+      // Рисуем границу коллизии
+      ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, collisionRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Рисуем центр
+      ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Рисуем вектор скорости
+      if (flake.velocityX || flake.velocityY) {
+        const velScale = 0.5;
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.7)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + flake.velocityX * velScale * ratio, y + flake.velocityY * velScale * ratio);
+        ctx.stroke();
+      }
+
+      // Показываем rotationSpeed
+      if (flake.rotationSpeed && Math.abs(flake.rotationSpeed) > 0.001) {
+        ctx.fillStyle = 'rgba(255, 255, 0, 0.9)';
+        ctx.font = '10px monospace';
+        ctx.fillText(`ω: ${flake.rotationSpeed.toFixed(3)}`, x + collisionRadius + 5, y);
+      }
+
+      ctx.restore();
+    });
   }
 
   /**
@@ -531,68 +695,6 @@ export class WebGPURenderer {
     }
   }
 
-  /**
-   * Проверка и обработка коллизий между снежинками
-   */
-  handleCollisions() {
-    if (!this.enableCollisions || this.instances.length < 2) return;
-
-    // Оптимизация: проверяем только близкие пары
-    for (let i = 0; i < this.instances.length; i++) {
-      const flakeA = this.instances[i];
-      
-      // Проверяем только снежинки в радиусе collisionCheckRadius
-      for (let j = i + 1; j < this.instances.length; j++) {
-        const flakeB = this.instances[j];
-        
-        const dx = flakeB.x - flakeA.x;
-        const dy = flakeB.y - flakeA.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        // Пропускаем, если снежинки слишком далеко
-        if (distance > this.collisionCheckRadius) continue;
-        
-        // Используем collisionSize для проверки коллизий (соответствует визуальному размеру)
-        const minDistance = (flakeA.collisionSize + flakeB.collisionSize) * 0.5;
-        
-        // Если снежинки пересекаются
-        if (distance < minDistance && distance > 0) {
-          // Нормализованный вектор между снежинками
-          const nx = dx / distance;
-          const ny = dy / distance;
-          
-          // Относительная скорость
-          const dvx = flakeB.velocityX - flakeA.velocityX;
-          const dvy = flakeB.velocityY - flakeA.velocityY;
-          
-          // Скорость сближения
-          const dvn = dvx * nx + dvy * ny;
-          
-          // Если снежинки уже расходятся, не обрабатываем коллизию
-          if (dvn > 0) continue;
-          
-          // Импульс столкновения (упрощенная физика для равных масс)
-          const impulse = dvn * this.collisionDamping;
-          
-          // Применяем импульс к обеим снежинкам
-          flakeA.velocityX += nx * impulse;
-          flakeA.velocityY += ny * impulse;
-          flakeB.velocityX -= nx * impulse;
-          flakeB.velocityY -= ny * impulse;
-          
-          // Разводим снежинки, чтобы они не застревали друг в друге
-          const overlap = minDistance - distance;
-          const separationX = nx * overlap * 0.5;
-          const separationY = ny * overlap * 0.5;
-          
-          flakeA.x -= separationX;
-          flakeA.y -= separationY;
-          flakeB.x += separationX;
-          flakeB.y += separationY;
-        }
-      }
-    }
-  }
 
   /**
    * Обновление симуляции
@@ -607,21 +709,108 @@ export class WebGPURenderer {
     const monotoneFlags = this.glyphMonotoneFlags || this.atlasManager?.getMonotoneFlags() || [];
     let hasChanges = false;
 
+    // Обновляем параметры ветра
+    if (this.windEnabled) {
+      this.windTime += delta;
+
+      // Реалистичный ветер: смесь долгих циклов, порывов и турбулентности
+      const baseFreq = Math.max(0.1, this.windGustFrequency * 0.5);
+      const baseTime = (this.windTime / (20 / baseFreq)) % 1.0;
+      const baseWind = Math.sin(baseTime * Math.PI) * 0.6;
+
+      const midFreq = this.windGustFrequency;
+      const midTime = (this.windTime / (10 / midFreq)) % 1.0;
+      const midWind = Math.sin(midTime * Math.PI * 2) * Math.cos(this.windTime * 0.3) * 0.25;
+
+      const highFreq1 = Math.sin(this.windTime * 1.7) * Math.exp(-0.1 * (this.windTime % 5)) * 0.06;
+      const highFreq2 = Math.sin(this.windTime * 2.9 + Math.cos(this.windTime)) * 0.04;
+      const highFreq3 = Math.sin(this.windTime * 4.1) * Math.sin(this.windTime * 0.7) * 0.02;
+      const turbulence = highFreq1 + highFreq2 + highFreq3;
+
+      let gust = baseWind + midWind + turbulence;
+      gust = Math.max(-1, Math.min(1, gust));
+      const gustIntensity = Math.min(1, Math.abs(gust));
+
+      let directionFactor = 1;
+      if (this.windDirection === 'left') {
+        directionFactor = -1;
+      } else if (this.windDirection === 'right') {
+        directionFactor = 1;
+      } else {
+        const dirTime = this.windTime * 0.12 + this.windDirectionPhase;
+        const dirNoise = Math.sin(dirTime) + Math.sin(dirTime * 0.23 + Math.cos(this.windTime * 0.05)) * 0.35;
+        directionFactor = Math.max(-1, Math.min(1, dirNoise));
+      }
+
+      const targetWindForce = directionFactor * gustIntensity * this.windStrength;
+      const targetWindLift = gustIntensity * 0.3 * this.windStrength;
+
+      const windSmoothFactor = 0.05;
+      this.currentWindForce = this.prevWindForce * (1 - windSmoothFactor) + targetWindForce * windSmoothFactor;
+      this.currentWindLift = this.prevWindLift * (1 - windSmoothFactor) + targetWindLift * windSmoothFactor;
+      this.prevWindForce = this.currentWindForce;
+      this.prevWindLift = this.currentWindLift;
+
+      if (gustIntensity > 0.5 && !this.lastWindLogged) {
+        console.log('🌬️ Wind is blowing with turbulence:', {
+          direction: this.windDirection,
+          strength: this.windStrength,
+          force: this.currentWindForce.toFixed(2),
+          turbulence: gustIntensity.toFixed(2)
+        });
+        this.lastWindLogged = true;
+      } else if (gustIntensity <= 0.5) {
+        this.lastWindLogged = false;
+      }
+    } else {
+      this.currentWindForce = 0;
+      this.currentWindLift = 0;
+      this.prevWindForce = 0;
+      this.prevWindLift = 0;
+    }
+
+    if (this.mouseBurstTimer > 0) {
+      this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - delta);
+      if (this.mouseBurstTimer === 0) {
+        this.mouseBurstMode = null;
+      }
+    }
+
     this.instances.forEach((flake, idx) => {
       // Вычисляем скорость движения мыши
       const mouseSpeed = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
+      const activityFactor = mouseSpeed > 0 ? 1 : 0;
+      const burstActive = this.mouseBurstTimer > 0;
+      const shouldApplyMouse = burstActive || activityFactor > 0;
       const isMouseFast = mouseSpeed > this.mouseDragThreshold;
-      
+
       // Применяем физику взаимодействия с мышью
       const dx = flake.x - this.mouseX;
       const dy = flake.y - this.mouseY;
       const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      if (distance < this.mouseRadius && distance > 0) {
-        const influence = 1 - distance / this.mouseRadius;
-        
-        // Если мышь движется быстро - создаем эффект воздушного потока
-        if (isMouseFast) {
+
+      if (distance < (this.mouseRadius * (burstActive ? this.mouseBurstRadiusMultiplier : 1)) && distance > 0 && shouldApplyMouse) {
+        const radius = this.mouseRadius * (burstActive ? this.mouseBurstRadiusMultiplier : 1);
+        const influence = 1 - distance / radius;
+        const burstFactor = burstActive ? Math.min(1, this.mouseBurstTimer / this.mouseBurstDuration) : 0;
+        const activeInfluence = influence * Math.max(activityFactor, burstFactor);
+
+        // Кратковременный взрыв/втягивание при клике
+        if (burstActive && this.mouseBurstMode === 'explode') {
+          const safeDistance = Math.max(distance, 0.0001);
+          const nx = dx / safeDistance;
+          const ny = dy / safeDistance;
+          const burstAccel = activeInfluence * this.mouseForce * 10.0;
+          flake.velocityX += nx * burstAccel * delta;
+          flake.velocityY += ny * burstAccel * delta;
+        } else if (burstActive && this.mouseBurstMode === 'suction') {
+          const safeDistance = Math.max(distance, 0.0001);
+          const nx = dx / safeDistance;
+          const ny = dy / safeDistance;
+          const pullAccel = activeInfluence * this.mouseForce * 10.0;
+          flake.velocityX -= nx * pullAccel * delta;
+          flake.velocityY -= ny * pullAccel * delta;
+        } else if (isMouseFast) {
           // Нормализуем вектор скорости мыши
           const mouseVelMag = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
           if (mouseVelMag > 0) {
@@ -629,67 +818,91 @@ export class WebGPURenderer {
             const mouseDirY = this.mouseVelocityY / mouseVelMag;
             
             // Притягиваем снежинку в сторону движения мыши
-            const dragForce = influence * this.mouseDragStrength * (mouseSpeed / 1000);
+            const dragForce = activeInfluence * this.mouseDragStrength * (mouseSpeed / 1000);
             flake.velocityX += mouseDirX * dragForce * delta * 1000;
             flake.velocityY += mouseDirY * dragForce * delta * 1000;
           }
         } else {
           // Обычное отталкивание при медленном движении
-          const force = influence * this.mouseForce * delta;
+          const force = activeInfluence * this.mouseForce * delta;
           const angle = Math.atan2(dy, dx);
           flake.x += Math.cos(angle) * force;
           flake.y += Math.sin(angle) * force;
         }
         
         // Передаем импульс от движения мыши
-        const impulseStrength = influence * this.mouseImpulseStrength;
+        const impulseStrength = activeInfluence * this.mouseImpulseStrength;
         flake.velocityX += this.mouseVelocityX * impulseStrength * delta;
         flake.velocityY += this.mouseVelocityY * impulseStrength * delta;
         
         // Вращение снежинки при движении мыши рядом
         // Направление вращения зависит от того, с какой стороны пролетела мышка
+      // Применяем вращение только если скорость мыши выше порога (> 10 пиксели/сек)
+      // Это предотвращает вращение от дрожания мыши
+      if (mouseSpeed > 10) {
         const cross = dx * this.mouseVelocityY - dy * this.mouseVelocityX;
         const rotationDirection = Math.sign(cross); // +1 или -1
-        const rotationForce = influence * mouseSpeed * 0.01 * rotationDirection;
+        const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
         flake.rotationSpeed += rotationForce * delta;
-        
-        // При зажатии кнопки мыши - захватываем снежинку
-        if (this.mousePressed && distance < this.mouseRadius * 0.5) {
-          // Позиция снежинки следует за мышью
-          flake.x = this.mouseX;
-          flake.y = this.mouseY;
-          // Обнуляем скорость при захвате
-          flake.velocityX = 0;
-          flake.velocityY = 0;
-        }
+      }
       }
 
       // Применяем импульс к позиции
       flake.x += flake.velocityX * delta;
       flake.y += flake.velocityY * delta;
       
-      // Затухание импульса (0.95 = 95% сохраняется каждую секунду)
-      const damping = Math.pow(0.95, delta * 60);
+      // Затухание импульса (0.98 = 98% сохраняется каждую секунду)
+      const damping = Math.pow(0.98, delta * 60);
       flake.velocityX *= damping;
       flake.velocityY *= damping;
       flake.rotationSpeed *= damping;
+      
+      // Обнулить очень малые значения вращения, чтобы избежать численных погрешностей
+      if (Math.abs(flake.rotationSpeed) < 0.0001) {
+        flake.rotationSpeed = 0;
+      }
 
       flake.phase += flake.freq * delta;
       
-      // Добавляем собственное вращение снежинки в зависимости от направления качания
-      // Когда снежинка качается в одну сторону, она вращается в эту же сторону
-      const swayRotation = Math.cos(flake.phase) * flake.freq * 0.5;
-      flake.rotationSpeed += swayRotation * delta;
+      // Обрабатываем вращение снежинки
+      flake.cumulativeSpin = (flake.cumulativeSpin ?? 0) + (flake.rotationSpeed ?? 0) * delta;
       
-      flake.rotation += flake.rotationSpeed * delta;
+      // Качание как маятник: добавляем визуальный наклон к ротации
+      const maxSwingAngle = 0.35;
+      const swingAngle = Math.sin(flake.phase) * maxSwingAngle * (flake.swayLimit ?? 1.0);
+      
+      // Финальная ротация = постоянное кручение + качание маятника
+      flake.rotation = flake.cumulativeSpin + swingAngle;
+      
       flake.y += flake.fallSpeed * delta;
+
+      // Применяем ветер как горизонтальное и вертикальное воздействие
+      if ((this.currentWindForce !== 0 || this.currentWindLift !== 0)) {
+        // Площадь поперечного сечения пропорциональна размеру
+        // Маленькие объекты поддаются ветру сильнее
+        const sizeRatio = Math.sqrt(flake.size / 20);
+        
+        // Горизонтальное воздействие ветра
+        if (this.currentWindForce !== 0) {
+          const windAccel = this.currentWindForce * sizeRatio * 40;
+          flake.x += windAccel * delta;
+        }
+        
+        // Вертикальное воздействие ветра (лифт)
+        if (this.currentWindLift !== 0) {
+          const liftAccel = -this.currentWindLift * sizeRatio * 70;
+          flake.y += liftAccel * delta;
+        }
+      }
 
       // Сброс позиции если снежинка вышла за экран
       if (flake.y - flake.size > height) {
         flake.y = -flake.size;
         flake.x = Math.random() * width;
         flake.phase = Math.random() * Math.PI * 2;
-        flake.rotation = Math.random() * Math.PI * 2;
+        const newRotation = Math.random() * Math.PI * 2; // Новый случайный угол (но скорость = 0)
+        flake.rotation = newRotation;
+        flake.cumulativeSpin = newRotation;
         flake.rotationSpeed = 0;
         flake.velocityX = 0;
         flake.velocityY = 0;
@@ -700,7 +913,27 @@ export class WebGPURenderer {
         }
       }
 
-      // Запись данных в буфер
+      hasChanges = true;
+    });
+    
+    // Обрабатываем коллизии между снежинками
+    if (this.collisionHandler) {
+      this.collisionHandler.handleCollisions(this.instances, delta);
+    }
+    
+    // Обрабатываем края экрана как порталы (wrapping)
+    this.instances.forEach((flake) => {
+      const collisionRadius = (flake.size ?? 20) * 0.5;
+      
+      if (flake.x + collisionRadius < 0) {
+        flake.x = width + collisionRadius;
+      } else if (flake.x - collisionRadius > width) {
+        flake.x = -collisionRadius;
+      }
+    });
+    
+    // Записываем финальные данные в буфер
+    this.instances.forEach((flake, idx) => {
       const base = idx * strideFloats;
       this.instanceData[base + 0] = flake.x;
       this.instanceData[base + 1] = flake.y;
@@ -717,12 +950,7 @@ export class WebGPURenderer {
       this.instanceData[base + 12] = flake.glyphIndex;
       const monoFlag = monotoneFlags[flake.glyphIndex] ? 1 : 0;
       this.instanceData[base + 13] = monoFlag;
-      
-      hasChanges = true;
     });
-    
-    // Обрабатываем коллизии между снежинками
-    this.handleCollisions();
     
     // Отмечаем, что буфер экземпляров нужно обновить
     if (hasChanges) {
@@ -771,6 +999,9 @@ export class WebGPURenderer {
     pass.end();
 
     this.device.queue.submit([encoder.finish()]);
+    
+    // Отрисовка debug информации
+    this.renderDebugCollisions();
   }
 
   /**
@@ -822,6 +1053,13 @@ export class WebGPURenderer {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
+    }
+    
+    // Очистка debug canvas
+    if (this.debugCanvas) {
+      this.debugCanvas.remove();
+      this.debugCanvas = null;
+      this.debugCtx = null;
     }
 
     if (this.atlasManager) {
@@ -903,8 +1141,17 @@ export class WebGPURenderer {
    * @param {number} x - X координата
    * @param {number} y - Y координата
    */
-  onMouseDown(x, y) {
-    this.mousePressed = true;
+  onMouseDown(x, y, button) {
+    if (button === 0) {
+      this.mouseLeftPressed = true;
+      this.mouseBurstMode = 'explode';
+      this.mouseBurstTimer = this.mouseBurstDuration;
+    }
+    if (button === 2) {
+      this.mouseRightPressed = true;
+      this.mouseBurstMode = 'suction';
+      this.mouseBurstTimer = this.mouseBurstDuration;
+    }
     this.mouseX = x;
     this.mouseY = y;
   }
@@ -912,15 +1159,19 @@ export class WebGPURenderer {
   /**
    * Обработчик отпускания кнопки мыши
    */
-  onMouseUp() {
-    this.mousePressed = false;
+  onMouseUp(button) {
+    if (button === 0) this.mouseLeftPressed = false;
+    if (button === 2) this.mouseRightPressed = false;
   }
 
   /**
    * Обработчик выхода мыши за пределы canvas
    */
   onMouseLeave() {
-    this.mousePressed = false;
+    this.mouseLeftPressed = false;
+    this.mouseRightPressed = false;
+    this.mouseBurstTimer = 0;
+    this.mouseBurstMode = null;
     this.mouseX = -1000;
     this.mouseY = -1000;
     this.mouseVelocityX = 0;

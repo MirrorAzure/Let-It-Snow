@@ -983,6 +983,62 @@ button:active {
   color: #4fc3f7;
 }
 
+/* Wind settings styling */
+.wind-settings-group {
+  background: rgba(79, 195, 247, 0.1);
+  border-left: 3px solid #4fc3f7;
+  padding: 12px;
+  margin: 12px 0;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.wind-settings-group.visible {
+  display: block;
+  animation: slideDown 0.3s ease;
+}
+
+.snow-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(79, 195, 247, 0.4);
+  border-radius: 6px;
+  background: rgba(10, 20, 40, 0.6);
+  color: #ffffff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-sizing: border-box;
+}
+
+.snow-select:hover {
+  border-color: #4fc3f7;
+  background: rgba(10, 20, 40, 0.8);
+}
+
+.snow-select:focus {
+  outline: none;
+  border-color: #4fc3f7;
+  box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.2);
+}
+
+.snow-select option {
+  background: #0a1428;
+  color: #ffffff;
+  padding: 8px;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 420px) {
   body {
     width: 100%;

@@ -16,12 +16,14 @@ const els = {
   light: document.getElementById('light-btn'),
   dark: document.getElementById('dark-btn'),
   reset: document.getElementById('reset-btn'),
+  debug: document.getElementById('debug-btn'),
   snowmax: document.getElementById('snowmax'),
   sinkspeed: document.getElementById('sinkspeed'),
   snowminsize: document.getElementById('snowminsize'),
   snowmaxsize: document.getElementById('snowmaxsize'),
   gifs: document.getElementById('gifs'),
   gifCount: document.getElementById('gifCount'),
+  mouseRadius: document.getElementById('mouseRadius'),
   sentenceCount: document.getElementById('sentenceCount'),
   colorsList: document.getElementById('colors-list'),
   colorText: document.getElementById('color-text'),
@@ -33,7 +35,13 @@ const els = {
   sentencesList: document.getElementById('sentences-list'),
   sentenceInput: document.getElementById('sentence-input'),
   addSentence: document.getElementById('add-sentence'),
-  status: document.getElementById('status')
+  status: document.getElementById('status'),
+  windEnabled: document.getElementById('windEnabled'),
+  windLeft: document.getElementById('wind-left'),
+  windRight: document.getElementById('wind-right'),
+  windRandom: document.getElementById('wind-random'),
+  windStrength: document.getElementById('windStrength'),
+  windGustFrequency: document.getElementById('windGustFrequency')
 };
 
 const defaults = {
@@ -46,13 +54,22 @@ const defaults = {
   sentences: [],
   sentenceCount: 0,
   gifs: [],
-  gifCount: 0
+  gifCount: 0,
+  mouseRadius: 100,
+  debugCollisions: false,
+  windEnabled: false,
+  windDirection: 'left',
+  windStrength: 0.5,
+  windGustFrequency: 3
 };
 
 const state = {
   colors: [...defaults.colors],
   symbols: [...defaults.symbols],
   sentences: [...defaults.sentences],
+  debugCollisions: defaults.debugCollisions,
+  windEnabled: defaults.windEnabled,
+  windDirection: defaults.windDirection,
   ready: false,
   pingAttempts: 0
 };
@@ -173,7 +190,13 @@ function getConfigFromForm() {
     snowsentences: state.sentences.slice(0, 12),
     sentenceCount: Math.max(0, Math.min(80, Number(els.sentenceCount.value) || defaults.sentenceCount)),
     gifUrls: toLines(els.gifs.value).slice(0, 10),
-    gifCount: Math.max(0, Math.min(200, Number(els.gifCount.value) || defaults.gifCount))
+    gifCount: Math.max(0, Math.min(200, Number(els.gifCount.value) || defaults.gifCount)),
+    mouseRadius: Math.max(50, Math.min(250, Number(els.mouseRadius.value) || defaults.mouseRadius)),
+    debugCollisions: state.debugCollisions,
+    windEnabled: state.windEnabled,
+    windDirection: state.windDirection,
+    windStrength: Math.max(0, Number(els.windStrength.value) || defaults.windStrength),
+    windGustFrequency: Math.max(0.5, Number(els.windGustFrequency.value) || defaults.windGustFrequency)
   };
 }
 
@@ -206,14 +229,35 @@ function resetForm() {
   els.snowminsize.value = defaults.snowminsize;
   els.snowmaxsize.value = defaults.snowmaxsize;
   els.gifCount.value = defaults.gifCount;
+  els.mouseRadius.value = defaults.mouseRadius;
   els.sentenceCount.value = defaults.sentenceCount;
   els.gifs.value = defaults.gifs.join('\n');
+  els.windEnabled.checked = defaults.windEnabled;
+  els.windStrength.value = defaults.windStrength;
+  els.windGustFrequency.value = defaults.windGustFrequency;
   state.colors = [...defaults.colors];
   state.symbols = [...defaults.symbols];
   state.sentences = [...defaults.sentences];
+  state.debugCollisions = defaults.debugCollisions;
+  state.windEnabled = defaults.windEnabled;
+  state.windDirection = defaults.windDirection;
+  updateWindButtons();
   renderColors();
   renderSymbols();
   renderSentences();
+  updateDebugButton();
+}
+
+function updateDebugButton() {
+  const isDebugEnabled = state.debugCollisions;
+  els.debug.classList.toggle('active', isDebugEnabled);
+  els.debug.textContent = isDebugEnabled ? '✓ Debug ON' : 'Debug';
+}
+
+function updateWindButtons() {
+  els.windLeft.classList.toggle('active', state.windDirection === 'left');
+  els.windRight.classList.toggle('active', state.windDirection === 'right');
+  els.windRandom.classList.toggle('active', state.windDirection === 'random');
 }
 
 els.start.addEventListener('click', async () => {
@@ -226,6 +270,11 @@ els.stop.addEventListener('click', () => {
 els.light.addEventListener('click', () => setTheme('light'));
 els.dark.addEventListener('click', () => setTheme('dark'));
 els.reset.addEventListener('click', () => resetForm());
+els.debug.addEventListener('click', () => {
+  state.debugCollisions = !state.debugCollisions;
+  updateDebugButton();
+  console.log(`%c🔧 Collision debug ${state.debugCollisions ? 'enabled' : 'disabled'}`, 'color: #ffd43b; font-weight: bold;');
+});
 
 els.addColor.addEventListener('click', () => {
   addColor(els.colorText.value || els.colorPicker.value);
@@ -275,6 +324,25 @@ els.sentenceInput.addEventListener('keydown', (e) => {
     addSentence(els.sentenceInput.value);
     els.sentenceInput.value = '';
   }
+});
+
+els.windEnabled.addEventListener('change', (e) => {
+  state.windEnabled = e.target.checked;
+});
+
+els.windLeft.addEventListener('click', () => {
+  state.windDirection = 'left';
+  updateWindButtons();
+});
+
+els.windRight.addEventListener('click', () => {
+  state.windDirection = 'right';
+  updateWindButtons();
+});
+
+els.windRandom.addEventListener('click', () => {
+  state.windDirection = 'random';
+  updateWindButtons();
 });
 
 window.addEventListener('message', (event) => {

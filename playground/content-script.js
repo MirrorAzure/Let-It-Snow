@@ -10,8 +10,14 @@ import { startSnow as startSnowOriginal, stopSnow as stopSnowOriginal } from '..
  * @param {Object} config - Snow configuration
  */
 export async function startSnow(config = {}) {
+  console.log('🎿 Playground: Starting snow with config:', config);
+  if (config.windEnabled) {
+    console.log('  🌬️ Wind is ENABLED - direction:', config.windDirection, 'strength:', config.windStrength);
+  } else {
+    console.log('  🌬️ Wind is DISABLED');
+  }
   await startSnowOriginal(config);
-  console.log('✓ Snow started with config:', config);
+  console.log('✓ Snow started');
 }
 
 /**

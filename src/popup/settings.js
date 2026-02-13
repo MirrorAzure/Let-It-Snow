@@ -34,5 +34,10 @@ export const DEFAULT_SETTINGS = {
   sentenceCount: 0,
   gifs: [],
   gifCount: 0,
-  autoStart: false
+  autoStart: false,
+  mouseRadius: 100,
+  windEnabled: false,
+  windDirection: 'left', // 'left', 'right', 'random'
+  windStrength: 0.5, // 0-1
+  windGustFrequency: 3 // Частота порывов в секундах
 };

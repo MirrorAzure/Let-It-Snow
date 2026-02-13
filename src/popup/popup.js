@@ -79,7 +79,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     gifsList: document.getElementById('gifsList'),
     addGif: document.getElementById('addGif'),
     gifCount: document.getElementById('gifCount'),
-    gifCountValue: document.getElementById('gifCountValue')
+    gifCountValue: document.getElementById('gifCountValue'),
+    mouseRadius: document.getElementById('mouseRadius'),
+    mouseRadiusValue: document.getElementById('mouseRadiusValue'),
+    windEnabled: document.getElementById('windEnabled'),
+    windSettings: document.getElementById('windSettings'),
+    windDirection: document.getElementById('windDirection'),
+    windStrength: document.getElementById('windStrength'),
+    windStrengthValue: document.getElementById('windStrengthValue'),
+    windGustFrequency: document.getElementById('windGustFrequency'),
+    windGustFrequencyValue: document.getElementById('windGustFrequencyValue')
   };
 
   /**
@@ -117,7 +126,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       sentenceCount: parseInt(elements.sentenceCount.value) || 0,
       gifs,
       gifCount: parseInt(elements.gifCount.value) || 0,
-      autoStart: elements.autoStart.checked
+      autoStart: elements.autoStart.checked,
+      mouseRadius: parseInt(elements.mouseRadius.value),
+      windEnabled: elements.windEnabled.checked,
+      windDirection: elements.windDirection.value,
+      windStrength: parseFloat(elements.windStrength.value),
+      windGustFrequency: parseFloat(elements.windGustFrequency.value)
     });
   };
 
@@ -133,7 +147,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     'sentenceCount',
     'autoStart',
     'gifs',
-    'gifCount'
+    'gifCount',
+    'mouseRadius',
+    'windEnabled',
+    'windDirection',
+    'windStrength',
+    'windGustFrequency'
   ]);
 
   const config = { ...DEFAULT_SETTINGS, ...saved };
@@ -152,6 +171,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.gifCountValue.textContent = config.gifCount || 0;
   elements.sentenceCount.value = config.sentenceCount || 0;
   elements.sentenceCountValue.textContent = config.sentenceCount || 0;
+  elements.mouseRadius.value = config.mouseRadius || 100;
+  elements.mouseRadiusValue.textContent = config.mouseRadius || 100;
+  
+  // Устанавливаем значения ветра
+  elements.windEnabled.checked = config.windEnabled || false;
+  elements.windDirection.value = config.windDirection || 'left';
+  elements.windStrength.value = config.windStrength || 0.5;
+  elements.windStrengthValue.textContent = (config.windStrength || 0.5).toFixed(1);
+  elements.windGustFrequency.value = config.windGustFrequency || 3;
+  elements.windGustFrequencyValue.textContent = (config.windGustFrequency || 3).toFixed(1);
+  
+  // Показываем/скрываем блок настроек ветра
+  elements.windSettings.style.display = elements.windEnabled.checked ? 'block' : 'none';
 
   // Очищаем списки и заполняем сохраненными значениями
   elements.colorsList.innerHTML = '';
@@ -243,6 +275,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   setupSliderListener(elements.sentenceCount, elements.sentenceCountValue, saveAllSettings);
 
+  setupSliderListener(elements.mouseRadius, elements.mouseRadiusValue, saveAllSettings);
+
   // Слайдер минимального размера
   elements.snowminsize.addEventListener('input', () => {
     if (parseInt(elements.snowminsize.value) >= parseInt(elements.snowmaxsize.value)) {
@@ -262,6 +296,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.maxsizeValue.textContent = elements.snowmaxsize.value;
     saveAllSettings();
   });
+
+  // Включение/отключение ветра
+  elements.windEnabled.addEventListener('change', () => {
+    elements.windSettings.style.display = elements.windEnabled.checked ? 'block' : 'none';
+    saveAllSettings();
+  });
+
+  // Направление ветра
+  elements.windDirection.addEventListener('change', () => {
+    saveAllSettings();
+  });
+
+  // Сила ветра
+  setupSliderListener(
+    elements.windStrength,
+    elements.windStrengthValue,
+    saveAllSettings,
+    (val) => parseFloat(val).toFixed(1)
+  );
+
+  // Частота порывов ветра
+  setupSliderListener(
+    elements.windGustFrequency,
+    elements.windGustFrequencyValue,
+    saveAllSettings,
+    (val) => parseFloat(val).toFixed(1)
+  );
 
   /**
    * Запуск снегопада на активной вкладке
@@ -308,7 +369,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       snowsentences: sentences,
       sentenceCount: parseInt(elements.sentenceCount.value) || 0,
       gifUrls: gifs,
-      gifCount: gifs.length > 0 ? parseInt(elements.gifCount.value) || 0 : 0
+      gifCount: gifs.length > 0 ? parseInt(elements.gifCount.value) || 0 : 0,
+      mouseRadius: parseInt(elements.mouseRadius.value),
+      windEnabled: elements.windEnabled.checked,
+      windDirection: elements.windDirection.value,
+      windStrength: parseFloat(elements.windStrength.value),
+      windGustFrequency: parseFloat(elements.windGustFrequency.value)
     };
 
     // UI анимация кнопки

@@ -214,5 +214,44 @@
   },
   "tooltipGifUrlInput": {
     "message": "Вставьте URL GIF"
+  },
+  "windEnabled": {
+    "message": "Включить ветер"
+  },
+  "windDirection": {
+    "message": "Направление ветра:"
+  },
+  "windLeft": {
+    "message": "←  Влево"
+  },
+  "windRight": {
+    "message": "→  Вправо"
+  },
+  "windRandom": {
+    "message": "⟷  Случайно"
+  },
+  "windStrength": {
+    "message": "Сила ветра (0.1–2.0):"
+  },
+  "windGustFrequency": {
+    "message": "Частота порывов (1–10 сек):"
+  },
+  "mouseRadius": {
+    "message": "Радиус мыши (50–250):"
+  },
+  "tooltipWindEnabled": {
+    "message": "Включить или отключить ветер"
+  },
+  "tooltipWindDirection": {
+    "message": "Выберите направление ветра"
+  },
+  "tooltipWindStrength": {
+    "message": "Сила воздействия ветра на снежинки"
+  },
+  "tooltipWindGustFrequency": {
+    "message": "Как часто ветер меняет силу (в секундах)"
+  },
+  "tooltipMouseRadius": {
+    "message": "Радиус зоны взаимодействия с мышью"
   }
 }
