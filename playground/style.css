@@ -171,6 +171,13 @@ textarea { resize: vertical; min-height: 84px; }
 .btn.ghost { background: transparent; }
 .btn.small { padding: 8px 12px; font-size: 14px; }
 
+.btn.active {
+  background: rgba(255, 193, 7, 0.2);
+  border-color: rgba(255, 193, 7, 0.4);
+  color: #ffc107;
+  font-weight: 600;
+}
+
 .segmented {
   display: inline-flex;
   background: rgba(255, 255, 255, 0.08);

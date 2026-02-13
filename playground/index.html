@@ -39,7 +39,10 @@
     <section class="panel">
       <div class="panel-header">
         <h2>Snow settings</h2>
-        <button id="reset-btn" class="btn ghost small">Reset defaults</button>
+        <div class="segmented" role="group" aria-label="Snow controls">
+          <button id="reset-btn" class="btn ghost small">Reset defaults</button>
+          <button id="debug-btn" class="btn ghost small" title="Show collision debug info in console">Debug</button>
+        </div>
       </div>
       <div class="grid">
         <label class="field">
@@ -104,6 +107,38 @@
           <span>GIF count</span>
           <input id="gifCount" type="number" min="0" max="200" value="0" />
           <small>How many GIF flakes to spawn.</small>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Wind</h2>
+      </div>
+      <div class="grid">
+        <label class="field">
+          <input id="windEnabled" type="checkbox" />
+          <span>Enable wind</span>
+          <small>Apply wind force to snow flakes.</small>
+        </label>
+        <label class="field">
+          <span>Direction</span>
+          <div class="segmented" role="group" aria-label="Wind direction">
+            <button id="wind-left" class="segmented-btn active">Left</button>
+            <button id="wind-right" class="segmented-btn">Right</button>
+            <button id="wind-random" class="segmented-btn">Random</button>
+          </div>
+          <small>Direction of wind force.</small>
+        </label>
+        <label class="field">
+          <span>Strength</span>
+          <input id="windStrength" type="number" step="0.1" min="0" max="5" value="0.5" />
+          <small>Force magnitude (0-5).</small>
+        </label>
+        <label class="field">
+          <span>Gust frequency</span>
+          <input id="windGustFrequency" type="number" step="0.5" min="0.5" max="10" value="3" />
+          <small>Time in seconds between wind changes.</small>
         </label>
       </div>
     </section>

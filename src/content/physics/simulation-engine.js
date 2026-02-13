@@ -40,24 +40,52 @@ export class SimulationEngine {
         mouseHandler.applyMouseEffect(flake, delta);
       }
 
+      const isGrabbed = !!flake.isGrabbed;
+
       // Применяем импульс к позиции
-      flake.x += (flake.velocityX ?? 0) * delta;
-      flake.y += (flake.velocityY ?? 0) * delta;
+      if (!isGrabbed) {
+        flake.x += (flake.velocityX ?? 0) * delta;
+        flake.y += (flake.velocityY ?? 0) * delta;
+      } else {
+        flake.velocityX = 0;
+        flake.velocityY = 0;
+        flake.rotationSpeed = 0;
+      }
       
-      // Затухание импульса (0.95 = 95% сохраняется каждую секунду)
-      const damping = Math.pow(0.95, delta * 60);
+      // Затухание импульса (0.92 = 92% сохраняется каждую секунду, быстрое затухание энергии столкновений)
+      const damping = Math.pow(0.92, delta * 60);
       flake.velocityX = (flake.velocityX ?? 0) * damping;
       flake.velocityY = (flake.velocityY ?? 0) * damping;
       flake.rotationSpeed = (flake.rotationSpeed ?? 0) * damping;
 
-      flake.phase = (flake.phase ?? 0) + (flake.freq ?? 0) * delta;
+      // Обрабатываем коллизии со стенками экрана (только левая и правая)
+      const collisionRadius = (flake.collisionSize ?? flake.size ?? 20) * 0.5;
       
-      // Собственное вращение снежинки
-      const swayRotation = Math.cos(flake.phase) * (flake.freq ?? 0) * 0.5;
-      flake.rotationSpeed = (flake.rotationSpeed ?? 0) + swayRotation * delta;
-      
-      flake.rotation = (flake.rotation ?? 0) + (flake.rotationSpeed ?? 0) * delta;
-      flake.y += (flake.fallSpeed ?? 0) * delta;
+      // Левая и правая стены
+      if (flake.x - collisionRadius < 0) {
+        flake.x = collisionRadius;
+        flake.velocityX *= -0.95; // Отскок с небольшим трением об стену
+      } else if (flake.x + collisionRadius > width) {
+        flake.x = width - collisionRadius;
+        flake.velocityX *= -0.95; // Отскок с небольшим трением об стену
+      }
+
+      if (!isGrabbed) {
+        flake.phase = (flake.phase ?? 0) + (flake.freq ?? 0) * delta;
+        
+        // Качание как маятник: добавляем визуальный наклон к ротации
+        // maxSwingAngle ~0.35 радиан = ~20 градусов
+        const maxSwingAngle = 0.35;
+        const swingAngle = Math.sin(flake.phase) * maxSwingAngle * ((flake.swayLimit ?? 1.0));
+        
+        // Собственное кручение снежинки
+        flake.cumulativeSpin = (flake.cumulativeSpin ?? 0) + (flake.rotationSpeed ?? 0) * delta;
+        
+        // Финальная ротация = постоянное кручение + качание маятника
+        flake.rotation = flake.cumulativeSpin + swingAngle;
+        
+        flake.y += (flake.fallSpeed ?? 0) * delta;
+      }
 
       // Сброс позиции если снежинка вышла за экран
       if (flake.y - flake.size > height) {
@@ -99,7 +127,7 @@ export class SimulationEngine {
     
     // Обрабатываем коллизии между снежинками
     if (collisionHandler) {
-      collisionHandler.handleCollisions(this.instances);
+      collisionHandler.handleCollisions(this.instances, delta);
     }
     
     return hasChanges;

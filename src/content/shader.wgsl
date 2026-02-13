@@ -54,8 +54,8 @@ fn vs(
   @location(4) iFall: f32,            // Скорость падения (не используется в VS)
   @location(5) iPhase: f32,           // Фаза колебания
   @location(6) iFreq: f32,            // Частота колебания (не используется в VS)
-  @location(7) iSway: f32,            // Амплитуда качания
-  @location(8) iRot: f32,             // Текущий угол вращения
+  @location(7) iSway: f32,            // Амплитуда качания (информация, используется в логике коллизий)
+  @location(8) iRot: f32,             // Текущий угол вращения (включает качание маятника)
   @location(9) iRotSpeed: f32,        // Скорость вращения (не используется в VS)
   @location(10) iColor: vec3<f32>,   // Цвет снежинки
   @location(11) iGlyph: f32,          // Индекс глифа в атласе
@@ -71,11 +71,9 @@ fn vs(
   let s = sin(iRot);
   let rotated = vec2<f32>(local.x * c - local.y * s, local.x * s + local.y * c);
   
-  // Добавляем горизонтальное качание
-  let sway = sin(iPhase) * iSway;
-  
-  // Итоговая мировая позиция снежинки
-  let world = vec2<f32>(iPos.x + rotated.x + sway, iPos.y + rotated.y);
+  // Качание маятника теперь реализуется через ротацию (iRot содержит свингAngle)
+  // Горизонтальное смещение больше не применяется - только визуальный наклон
+  let world = vec2<f32>(iPos.x + rotated.x, iPos.y + rotated.y);
   
   // Конвертация в clip space координаты [-1, 1]
   let clip = vec2<f32>(

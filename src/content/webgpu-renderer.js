@@ -607,6 +607,72 @@ export class WebGPURenderer {
     const monotoneFlags = this.glyphMonotoneFlags || this.atlasManager?.getMonotoneFlags() || [];
     let hasChanges = false;
 
+    // Обновляем параметры ветра
+    if (this.windEnabled) {
+      this.windTime += delta;
+      
+      // Генерируем многослойный турбулентный ветер, более плавный и естественный
+      // Используем суперпозицию волн разных частот для имитации атмосферной турбулентности
+      
+      // Основной цикл (низкая частота - долгосрочные изменения направления)
+      const baseFreq = this.windGustFrequency * 0.5;
+      const baseTime = (this.windTime / (20 / baseFreq)) % 1.0;
+      const baseWind = Math.sin(baseTime * Math.PI) * 0.6;
+      
+      // Среднечастотные порывы (волны среднего размера)
+      const midFreq = this.windGustFrequency;
+      const midTime = (this.windTime / (10 / midFreq)) % 1.0;
+      const midWind = Math.sin(midTime * Math.PI * 2) * Math.cos(this.windTime * 0.3) * 0.25;
+      
+      // Мелкая турбулентность (быстрые колебания, но затухающие)
+      const highFreq1 = Math.sin(this.windTime * 1.7) * Math.exp(-0.1 * (this.windTime % 5)) * 0.06;
+      const highFreq2 = Math.sin(this.windTime * 2.9 + Math.cos(this.windTime)) * 0.04;
+      const highFreq3 = Math.sin(this.windTime * 4.1) * Math.sin(this.windTime * 0.7) * 0.02;
+      const turbulence = highFreq1 + highFreq2 + highFreq3;
+      
+      // Комбинируем все слои для естественного ветра
+      let windMagnitude = baseWind + midWind + turbulence;
+      windMagnitude = Math.max(-1, Math.min(1, windMagnitude));
+      
+      // Плавно интерполируем windMagnitude
+      if (this.prevWindMagnitude === undefined) {
+        this.prevWindMagnitude = windMagnitude;
+      }
+      const windSmoothFactor = 0.15;
+      windMagnitude = this.prevWindMagnitude * (1 - windSmoothFactor) + windMagnitude * windSmoothFactor;
+      this.prevWindMagnitude = windMagnitude;
+      
+      // Рассчитываем вертикальную составляющую ветра (лифт при сильных порывах)
+      const windLift = Math.abs(windMagnitude) * 0.3;
+      this.currentWindLift = windLift * this.windStrength;
+      
+      // Рассчитываем направление и силу ветра
+      if (this.windDirection === 'left') {
+        this.currentWindForce = -Math.abs(windMagnitude) * this.windStrength;
+      } else if (this.windDirection === 'right') {
+        this.currentWindForce = Math.abs(windMagnitude) * this.windStrength;
+      } else {
+        // 'random' - ветер естественно меняет направление через ноль
+        this.currentWindForce = windMagnitude * this.windStrength;
+      }
+      
+      // Логирование ветра при первом изменении направления
+      if (windMagnitude > 0.5 && !this.lastWindLogged) {
+        console.log('🌬️ Wind is blowing with turbulence:', {
+          direction: this.windDirection,
+          strength: this.windStrength,
+          force: this.currentWindForce.toFixed(2),
+          turbulence: windMagnitude.toFixed(2)
+        });
+        this.lastWindLogged = true;
+      } else if (windMagnitude <= 0.5) {
+        this.lastWindLogged = false;
+      }
+    } else {
+      this.currentWindForce = 0;
+      this.currentWindLift = 0;
+    }
+
     this.instances.forEach((flake, idx) => {
       // Вычисляем скорость движения мыши
       const mouseSpeed = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
@@ -684,6 +750,29 @@ export class WebGPURenderer {
       flake.rotation += flake.rotationSpeed * delta;
       flake.y += flake.fallSpeed * delta;
 
+      // Применяем ветер как горизонтальное и вертикальное воздействие
+      if ((this.currentWindForce !== 0 || this.currentWindLift !== 0)) {
+        // Площадь поперечного сечения пропорциональна размеру
+        // Маленькие объекты поддаются ветру сильнее
+        const sizeRatio = Math.sqrt(flake.size / 20);
+        
+        // Горизонтальное воздействие ветра
+        if (this.currentWindForce !== 0) {
+          const windAccel = this.currentWindForce * sizeRatio * 8;
+          flake.x += windAccel * delta;
+          
+          // Раскачивание снежинки при ветре
+          const spinForce = Math.abs(this.currentWindForce) * 2;
+          flake.rotationSpeed += (Math.random() - 0.5) * spinForce * 0.05;
+        }
+        
+        // Вертикальное воздействие ветра (лифт)
+        if (this.currentWindLift !== 0) {
+          const liftAccel = -this.currentWindLift * sizeRatio * 25;
+          flake.y += liftAccel * delta;
+        }
+      }
+
       // Сброс позиции если снежинка вышла за экран
       if (flake.y - flake.size > height) {
         flake.y = -flake.size;
@@ -700,7 +789,25 @@ export class WebGPURenderer {
         }
       }
 
-      // Запись данных в буфер
+      hasChanges = true;
+    });
+    
+    // Обрабатываем коллизии между снежинками
+    this.handleCollisions();
+    
+    // Обрабатываем края экрана как порталы (wrapping)
+    this.instances.forEach((flake) => {
+      const collisionRadius = (flake.size ?? 20) * 0.5;
+      
+      if (flake.x + collisionRadius < 0) {
+        flake.x = width + collisionRadius;
+      } else if (flake.x - collisionRadius > width) {
+        flake.x = -collisionRadius;
+      }
+    });
+    
+    // Записываем финальные данные в буфер
+    this.instances.forEach((flake, idx) => {
       const base = idx * strideFloats;
       this.instanceData[base + 0] = flake.x;
       this.instanceData[base + 1] = flake.y;
@@ -717,12 +824,7 @@ export class WebGPURenderer {
       this.instanceData[base + 12] = flake.glyphIndex;
       const monoFlag = monotoneFlags[flake.glyphIndex] ? 1 : 0;
       this.instanceData[base + 13] = monoFlag;
-      
-      hasChanges = true;
     });
-    
-    // Обрабатываем коллизии между снежинками
-    this.handleCollisions();
     
     // Отмечаем, что буфер экземпляров нужно обновить
     if (hasChanges) {

@@ -12,19 +12,19 @@ pnpm install
 pnpm run playground
 ```
 
-Откроется браузер на `http://localhost:5173/playground/`
+Откроется браузер на `http://localhost:5127/playground/`
 
 ## Доступные playground
 
 ### 🎄 Snow Animation Playground (`index.html`)
 Тестирование анимации снегопада с горячей перезагрузкой.
 
-Откройте: `http://localhost:5173/playground/`
+Откройте: `http://localhost:5127/playground/`
 
 ### 🎨 Popup UI Playground (`popup-playground.html`)
 Визуализация и тестирование внешнего вида popup меню расширения с горячей перезагрузкой.
 
-Откройте: `http://localhost:5173/playground/popup-playground.html`
+Откройте: `http://localhost:5127/playground/popup-playground.html`
 
 **🔥 Hot Module Replacement:** Изменения в `src/popup/*.css` и `src/popup/*.js` автоматически обновляются!
 
@@ -86,7 +86,7 @@ playground/
 При изменении внешнего вида или логики popup меню в `src/popup/`:
 
 1. Запустите `pnpm run playground`
-2. Откройте `http://localhost:5173/playground/popup-playground.html`
+2. Откройте `http://localhost:5127/playground/popup-playground.html`
 3. Измените код в `src/popup/` (CSS или JS)
 4. Изменения применятся автоматически!
 4. Настраивайте параметры через UI playground

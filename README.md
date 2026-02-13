@@ -133,9 +133,16 @@ src/
 - **GIF support**: Add GIFs by URL or local file upload
 - **Mouse interaction**: Push, swirl, and drag snow with pointer movement
 - **Soft collisions**: Snowflakes gently bounce off each other
+- **Wind effects**: Physically accurate wind simulation with turbulence
+  - Multi-layer wind turbulence (low, medium, high frequencies)
+  - Wind applies as force/acceleration (not just displacement)
+  - Size-dependent wind resistance (smaller flakes affected more)
+  - Vertical lift effect during strong winds
 - **About tab**: Version, authors, repository, and tech stack in popup
 - **Settings persistence**: All settings are automatically saved
 - **Multi-language support**: English and Russian translations
+
+[**Learn more about wind physics improvements →**](./WIND_PHYSICS_IMPROVEMENTS.md)
 
 ## Building with Vite
 

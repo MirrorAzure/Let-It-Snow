@@ -70,7 +70,12 @@ export class MouseHandler {
     const dy = flake.y - this.mouseY;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
-    if (distance >= this.mouseRadius || distance === 0) return;
+    if (!this.mousePressed && flake.isGrabbed) {
+      flake.isGrabbed = false;
+      flake.swayLimit = 1.0;
+    }
+
+    if (distance >= this.mouseRadius) return;
 
     const influence = 1 - distance / this.mouseRadius;
     const mouseSpeed = Math.sqrt(
@@ -90,10 +95,15 @@ export class MouseHandler {
       flake.velocityY = (flake.velocityY ?? 0) + mouseDirY * dragForce * delta * 1000;
     } else {
       // Обычное отталкивание при медленном движении
-      const force = influence * this.mouseForce * (delta || 0.016);
-      const angle = Math.atan2(dy, dx);
-      flake.x += Math.cos(angle) * force;
-      flake.y += Math.sin(angle) * force;
+      const force = influence * this.mouseForce;
+      const safeDistance = Math.max(distance, 0.0001);
+      const nx = dx / safeDistance;
+      const ny = dy / safeDistance;
+      const verticalBias = ny < 0 ? 0.35 : 1.0;
+      const accel = force * (delta || 0.016);
+      
+      flake.velocityX = (flake.velocityX ?? 0) + nx * accel;
+      flake.velocityY = (flake.velocityY ?? 0) + ny * accel * verticalBias;
     }
     
     // Передаем импульс от движения мыши
@@ -116,6 +126,12 @@ export class MouseHandler {
       flake.y = this.mouseY;
       flake.velocityX = 0;
       flake.velocityY = 0;
+      flake.rotationSpeed = 0;
+      flake.isGrabbed = true;
+      flake.swayLimit = 0;
+    } else if (!this.mousePressed) {
+      flake.isGrabbed = false;
+      flake.swayLimit = 1.0;
     }
   }
 

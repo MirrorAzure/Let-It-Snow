@@ -32,6 +32,10 @@ function createChromeMock(overrides = {}) {
     colors: ['#ffffff'],
     symbols: ['❄'],
     sentenceCount: 0,
+    windEnabled: false,
+    windDirection: 'left',
+    windStrength: 0.5,
+    windGustFrequency: 3,
     ...overrides
   };
 
@@ -124,7 +128,11 @@ describe('popup UI', () => {
         snowsentences: [],
         sentenceCount: 0,
         gifUrls: [],
-        gifCount: 0
+        gifCount: 0,
+        windEnabled: false,
+        windDirection: 'left',
+        windStrength: 0.5,
+        windGustFrequency: 3
       }
     });
   });

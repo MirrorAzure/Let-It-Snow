@@ -27,7 +27,12 @@ const DEFAULT_CONFIG = {
   snowsentences: [],
   sentenceCount: 0,
   gifUrls: [],
-  gifCount: 0
+  gifCount: 0,
+  debugCollisions: false,
+  windEnabled: false,
+  windDirection: 'left',
+  windStrength: 0.5,
+  windGustFrequency: 3
 };
 
 const SENTENCE_CELL_SIZE = 64;
