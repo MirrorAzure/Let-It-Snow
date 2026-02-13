@@ -45,6 +45,11 @@ export class WebGPURenderer {
     this.enableCollisions = config.enableCollisions ?? true;
     this.collisionCheckRadius = config.collisionCheckRadius ?? 600;
     this.collisionDamping = config.collisionDamping ?? 0.7;
+    this.debugCollisions = config.debugCollisions ?? false;
+    
+    // Debug overlay canvas для визуализации коллизий
+    this.debugCanvas = null;
+    this.debugCtx = null;
 
     // Параметры взаимодействия с мышью
     this.mouseX = -1000;
@@ -75,6 +80,14 @@ export class WebGPURenderer {
     this.prevWindLift = 0;
     this.windDirectionPhase = Math.random() * Math.PI * 2;
     this.lastWindLogged = false;
+  }
+
+  /**
+   * Геттер для совместимости с GifLayer
+   * @returns {Array} Массив снежинок
+   */
+  get flakes() {
+    return this.instances;
   }
 
   /**
@@ -125,6 +138,11 @@ export class WebGPURenderer {
       this.updateGlowState();
       this.startBackgroundMonitoring();
       this.handleResize();
+      
+      // Настройка debug canvas если включен
+      if (this.debugCollisions) {
+        this.setupDebugCanvas();
+      }
 
       return true;
     } catch (error) {
@@ -352,6 +370,7 @@ export class WebGPURenderer {
       const color = hexToRgb(colorHex);
       const speed = sinkspeed * (size / 20) * 20;
       const spawnX = this._findSafeSpawnX(size);
+      const initialRotation = Math.random() * Math.PI * 2; // Случайный начальный угол для разнообразия
 
       this.instances.push({
         x: spawnX,
@@ -362,8 +381,9 @@ export class WebGPURenderer {
         phase: Math.random() * Math.PI * 2,
         freq: 0.8 + Math.random() * 1.4,
         sway: 10 + Math.random() * 25,
-        rotation: Math.random() * Math.PI * 2,
+        rotation: initialRotation,
         rotationSpeed: 0,
+        cumulativeSpin: initialRotation,
         color,
         glyphIndex,
         isSentence,
@@ -551,11 +571,100 @@ export class WebGPURenderer {
         alphaMode: 'premultiplied',
         size: { width, height }
       });
+      
+      // Обновляем debug canvas если включен
+      if (this.debugCollisions) {
+        this.setupDebugCanvas();
+      }
     };
 
     resize();
     this.resizeObserver = new ResizeObserver(resize);
     this.resizeObserver.observe(document.documentElement);
+  }
+
+  /**
+   * Настройка debug canvas для визуализации коллизий
+   */
+  setupDebugCanvas() {
+    if (!this.debugCollisions) {
+      if (this.debugCanvas) {
+        this.debugCanvas.remove();
+        this.debugCanvas = null;
+        this.debugCtx = null;
+      }
+      return;
+    }
+
+    if (!this.debugCanvas) {
+      this.debugCanvas = document.createElement('canvas');
+      this.debugCanvas.id = 'let-it-snow-debug-canvas';
+      this.debugCanvas.style.position = 'fixed';
+      this.debugCanvas.style.top = '0';
+      this.debugCanvas.style.left = '0';
+      this.debugCanvas.style.width = '100vw';
+      this.debugCanvas.style.height = '100vh';
+      this.debugCanvas.style.pointerEvents = 'none';
+      this.debugCanvas.style.zIndex = '2147483647'; // Поверх всего
+      document.documentElement.appendChild(this.debugCanvas);
+      this.debugCtx = this.debugCanvas.getContext('2d');
+    }
+
+    const ratio = window.devicePixelRatio || 1;
+    this.debugCanvas.width = Math.floor(window.innerWidth * ratio);
+    this.debugCanvas.height = Math.floor(window.innerHeight * ratio);
+  }
+
+  /**
+   * Отрисовка debug информации о коллизиях
+   */
+  renderDebugCollisions() {
+    if (!this.debugCollisions || !this.debugCtx || !this.debugCanvas) return;
+
+    const ctx = this.debugCtx;
+    const ratio = window.devicePixelRatio || 1;
+    ctx.clearRect(0, 0, this.debugCanvas.width, this.debugCanvas.height);
+
+    this.instances.forEach((flake) => {
+      const x = flake.x * ratio;
+      const y = flake.y * ratio;
+      const collisionRadius = (flake.collisionSize ?? flake.size ?? 20) * 0.5 * ratio;
+
+      ctx.save();
+
+      // Рисуем границу коллизии
+      ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, collisionRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Рисуем центр
+      ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Рисуем вектор скорости
+      if (flake.velocityX || flake.velocityY) {
+        const velScale = 0.5;
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.7)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + flake.velocityX * velScale * ratio, y + flake.velocityY * velScale * ratio);
+        ctx.stroke();
+      }
+
+      // Показываем rotationSpeed
+      if (flake.rotationSpeed && Math.abs(flake.rotationSpeed) > 0.001) {
+        ctx.fillStyle = 'rgba(255, 255, 0, 0.9)';
+        ctx.font = '10px monospace';
+        ctx.fillText(`ω: ${flake.rotationSpeed.toFixed(3)}`, x + collisionRadius + 5, y);
+      }
+
+      ctx.restore();
+    });
   }
 
   /**
@@ -691,14 +800,14 @@ export class WebGPURenderer {
           const safeDistance = Math.max(distance, 0.0001);
           const nx = dx / safeDistance;
           const ny = dy / safeDistance;
-          const burstAccel = activeInfluence * this.mouseForce * 5.0;
+          const burstAccel = activeInfluence * this.mouseForce * 10.0;
           flake.velocityX += nx * burstAccel * delta;
           flake.velocityY += ny * burstAccel * delta;
         } else if (burstActive && this.mouseBurstMode === 'suction') {
           const safeDistance = Math.max(distance, 0.0001);
           const nx = dx / safeDistance;
           const ny = dy / safeDistance;
-          const pullAccel = activeInfluence * this.mouseForce * 5.0;
+          const pullAccel = activeInfluence * this.mouseForce * 10.0;
           flake.velocityX -= nx * pullAccel * delta;
           flake.velocityY -= ny * pullAccel * delta;
         } else if (isMouseFast) {
@@ -728,32 +837,43 @@ export class WebGPURenderer {
         
         // Вращение снежинки при движении мыши рядом
         // Направление вращения зависит от того, с какой стороны пролетела мышка
+      // Применяем вращение только если скорость мыши выше порога (> 10 пиксели/сек)
+      // Это предотвращает вращение от дрожания мыши
+      if (mouseSpeed > 10) {
         const cross = dx * this.mouseVelocityY - dy * this.mouseVelocityX;
         const rotationDirection = Math.sign(cross); // +1 или -1
         const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
         flake.rotationSpeed += rotationForce * delta;
-        
-        // Захват отключен, используем только затягивание
+      }
       }
 
       // Применяем импульс к позиции
       flake.x += flake.velocityX * delta;
       flake.y += flake.velocityY * delta;
       
-      // Затухание импульса (0.95 = 95% сохраняется каждую секунду)
-      const damping = Math.pow(0.95, delta * 60);
+      // Затухание импульса (0.98 = 98% сохраняется каждую секунду)
+      const damping = Math.pow(0.98, delta * 60);
       flake.velocityX *= damping;
       flake.velocityY *= damping;
       flake.rotationSpeed *= damping;
+      
+      // Обнулить очень малые значения вращения, чтобы избежать численных погрешностей
+      if (Math.abs(flake.rotationSpeed) < 0.0001) {
+        flake.rotationSpeed = 0;
+      }
 
       flake.phase += flake.freq * delta;
       
-      // Добавляем собственное вращение снежинки в зависимости от направления качания
-      // Когда снежинка качается в одну сторону, она вращается в эту же сторону
-      const swayRotation = Math.cos(flake.phase) * flake.freq * 0.5;
-      flake.rotationSpeed += swayRotation * delta;
+      // Обрабатываем вращение снежинки
+      flake.cumulativeSpin = (flake.cumulativeSpin ?? 0) + (flake.rotationSpeed ?? 0) * delta;
       
-      flake.rotation += flake.rotationSpeed * delta;
+      // Качание как маятник: добавляем визуальный наклон к ротации
+      const maxSwingAngle = 0.35;
+      const swingAngle = Math.sin(flake.phase) * maxSwingAngle * (flake.swayLimit ?? 1.0);
+      
+      // Финальная ротация = постоянное кручение + качание маятника
+      flake.rotation = flake.cumulativeSpin + swingAngle;
+      
       flake.y += flake.fallSpeed * delta;
 
       // Применяем ветер как горизонтальное и вертикальное воздействие
@@ -764,17 +884,13 @@ export class WebGPURenderer {
         
         // Горизонтальное воздействие ветра
         if (this.currentWindForce !== 0) {
-          const windAccel = this.currentWindForce * sizeRatio * 15;
+          const windAccel = this.currentWindForce * sizeRatio * 40;
           flake.x += windAccel * delta;
-          
-          // Раскачивание снежинки при ветре
-          const spinForce = Math.abs(this.currentWindForce) * 3;
-          flake.rotationSpeed += (Math.random() - 0.5) * spinForce * 0.05;
         }
         
         // Вертикальное воздействие ветра (лифт)
         if (this.currentWindLift !== 0) {
-          const liftAccel = -this.currentWindLift * sizeRatio * 35;
+          const liftAccel = -this.currentWindLift * sizeRatio * 70;
           flake.y += liftAccel * delta;
         }
       }
@@ -784,7 +900,9 @@ export class WebGPURenderer {
         flake.y = -flake.size;
         flake.x = Math.random() * width;
         flake.phase = Math.random() * Math.PI * 2;
-        flake.rotation = Math.random() * Math.PI * 2;
+        const newRotation = Math.random() * Math.PI * 2; // Новый случайный угол (но скорость = 0)
+        flake.rotation = newRotation;
+        flake.cumulativeSpin = newRotation;
         flake.rotationSpeed = 0;
         flake.velocityX = 0;
         flake.velocityY = 0;
@@ -881,6 +999,9 @@ export class WebGPURenderer {
     pass.end();
 
     this.device.queue.submit([encoder.finish()]);
+    
+    // Отрисовка debug информации
+    this.renderDebugCollisions();
   }
 
   /**
@@ -932,6 +1053,13 @@ export class WebGPURenderer {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
+    }
+    
+    // Очистка debug canvas
+    if (this.debugCanvas) {
+      this.debugCanvas.remove();
+      this.debugCanvas = null;
+      this.debugCtx = null;
     }
 
     if (this.atlasManager) {

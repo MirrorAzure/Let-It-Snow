@@ -52,11 +52,16 @@ export class SimulationEngine {
         flake.rotationSpeed = 0;
       }
       
-      // Затухание импульса (0.92 = 92% сохраняется каждую секунду, быстрое затухание энергии столкновений)
-      const damping = Math.pow(0.92, delta * 60);
+      // Затухание импульса (0.98 = 98% сохраняется каждую секунду, медленное затухание энергии столкновений)
+      const damping = Math.pow(0.98, delta * 60);
       flake.velocityX = (flake.velocityX ?? 0) * damping;
       flake.velocityY = (flake.velocityY ?? 0) * damping;
       flake.rotationSpeed = (flake.rotationSpeed ?? 0) * damping;
+      
+      // Обнулить очень малые значения вращения, чтобы избежать численных погрешностей
+      if (Math.abs(flake.rotationSpeed) < 0.0001) {
+        flake.rotationSpeed = 0;
+      }
 
       // Обрабатываем коллизии со стенками экрана (только левая и правая)
       const collisionRadius = (flake.collisionSize ?? flake.size ?? 20) * 0.5;
@@ -92,7 +97,9 @@ export class SimulationEngine {
         flake.y = -flake.size;
         flake.x = Math.random() * width;
         flake.phase = Math.random() * Math.PI * 2;
-        flake.rotation = Math.random() * Math.PI * 2;
+        const newRotation = Math.random() * Math.PI * 2;
+        flake.rotation = newRotation;
+        flake.cumulativeSpin = newRotation;
         flake.rotationSpeed = 0;
         flake.velocityX = 0;
         flake.velocityY = 0;

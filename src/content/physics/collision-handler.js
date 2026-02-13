@@ -34,12 +34,15 @@ export class CollisionHandler {
    * @param {number} delta - Время до следующего кадра в секундах
    */
   handleCollisions(flakes, delta = 0.016) {
-    if (!this.enableCollisions || !flakes || flakes.length < 2) return;
+    if (!this.enableCollisions || !flakes) return;
 
     // Сбрасываем ограничения покачивания перед новой проверкой
     flakes.forEach(flake => {
       flake.swayLimit = flake.isGrabbed ? 0 : 1.0; // 1.0 = без ограничений
     });
+
+    // Если меньше 2 снежинок, коллизий не будет, но swayLimit уже сброшен
+    if (flakes.length < 2) return;
 
     // Оптимизация: проверяем только близкие пары
     for (let i = 0; i < flakes.length; i++) {
@@ -188,23 +191,62 @@ export class CollisionHandler {
       const oldVelBy = flakeB.velocityY;
       
       // Коэффициент восстановления (elasticity) для упругого столкновения
-      // Использование 0.95-1.05 обеспечивает контролируемый отскок без взрыва
+      // Использование 0.95 обеспечивает контролируемый отскок с небольшой потерей энергии
       const restitution = 0.95;
       // Для равных масс импульс делится поровну
       const mass = 1.0;
       const impulse = -(1 + restitution) * dvn / (2 * mass);
       
-      // Масштаб импульса для контролируемого отскока
-      // 1.1 означает небольшое усиление без взрывного эффекта
-      const impulseScale = 1.1;
-      
+      // Убрано усиление impulseScale, чтобы предотвратить накопление энергии при повторных столкновениях
       // Ограничиваем максимальный импульс чтобы избежать взрывных столкновений
       const maxImpulse = 3.0;
-      const clampedImpulse = Math.max(-maxImpulse, Math.min(maxImpulse, impulse * impulseScale));
-      flakeA.velocityX -= clampedImpulse * nx;
-      flakeA.velocityY -= clampedImpulse * ny;
-      flakeB.velocityX += clampedImpulse * nx;
-      flakeB.velocityY += clampedImpulse * ny;
+      const clampedImpulse = Math.max(-maxImpulse, Math.min(maxImpulse, impulse));
+      
+      // Применяем damping с небольшой асимметрией для реалистичности
+      // (неидеальные столкновения, шероховатость поверхности и т.д.)
+      const dampingA = this.collisionDamping * (1 + (Math.random() - 0.5) * 0.05);
+      const dampingB = this.collisionDamping * (1 + (Math.random() - 0.5) * 0.05);
+      
+      flakeA.velocityX -= clampedImpulse * nx * dampingA;
+      flakeA.velocityY -= clampedImpulse * ny * dampingA;
+      flakeB.velocityX += clampedImpulse * nx * dampingB;
+      flakeB.velocityY += clampedImpulse * ny * dampingB;
+      
+      // Применяем вращательный момент при столкновении
+      // Тангенциальный вектор (перпендикулярный к линии столкновения)
+      const tx = -ny;
+      const ty = nx;
+      
+      // Тангенциальная компонента относительной скорости
+      const dvt = dvx * tx + dvy * ty;
+      
+      // Вращательный момент пропорционален тангенциальной скорости
+      // Применяем вращение только при значительном столкновении:
+      // - Тангенциальная скорость > 5.0 пикселей/сек
+      // - Скорость сближения достаточна (dvn < -5.0) - исключаем статический контакт и расхождение
+      // Это предотвращает накопление вращения от:
+      // 1. Слабых касаний соседних снежинок
+      // 2. Постоянного контакта при качании
+      // 3. Циклических микро-столкновений
+      if (Math.abs(dvt) > 5.0 && dvn < -5.0) {
+        const rotationImpulse = dvt * 0.01;
+        
+        // Дополнительная проверка: игнорируем совсем слабые импульсы
+        if (Math.abs(rotationImpulse) > 0.001) {
+          // Ограничиваем максимальную скорость вращения для предотвращения накопления
+          const maxRotationSpeed = 2.0; // радиан/сек
+          
+          // Применяем вращение к обеим снежинкам в противоположных направлениях
+          if (flakeA.rotationSpeed !== undefined) {
+            const newRotationA = flakeA.rotationSpeed + rotationImpulse;
+            flakeA.rotationSpeed = Math.max(-maxRotationSpeed, Math.min(maxRotationSpeed, newRotationA));
+          }
+          if (flakeB.rotationSpeed !== undefined) {
+            const newRotationB = flakeB.rotationSpeed - rotationImpulse;
+            flakeB.rotationSpeed = Math.max(-maxRotationSpeed, Math.min(maxRotationSpeed, newRotationB));
+          }
+        }
+      }
       
       // DEBUG: Логирование изменения скорости после столкновения
       if (this.debugCollisions) {

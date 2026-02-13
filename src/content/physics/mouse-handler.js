@@ -115,14 +115,14 @@ export class MouseHandler {
       const safeDistance = Math.max(distance, 0.0001);
       const nx = dx / safeDistance;
       const ny = dy / safeDistance;
-      const burstAccel = activeInfluence * this.mouseForce * 5.0;
+      const burstAccel = activeInfluence * this.mouseForce * 10.0;
       flake.velocityX = (flake.velocityX ?? 0) + nx * burstAccel * (delta || 0.016);
       flake.velocityY = (flake.velocityY ?? 0) + ny * burstAccel * (delta || 0.016);
     } else if (burstActive && this.mouseBurstMode === 'suction') {
       const safeDistance = Math.max(distance, 0.0001);
       const nx = dx / safeDistance;
       const ny = dy / safeDistance;
-      const pullAccel = activeInfluence * this.mouseForce * 5.0;
+      const pullAccel = activeInfluence * this.mouseForce * 10.0;
       flake.velocityX = (flake.velocityX ?? 0) - nx * pullAccel * (delta || 0.016);
       flake.velocityY = (flake.velocityY ?? 0) - ny * pullAccel * (delta || 0.016);
     } else if (isMouseFast) {
@@ -155,10 +155,13 @@ export class MouseHandler {
     // Вращение снежинки при движении мыши рядом
     const cross = dx * this.mouseVelocityY - dy * this.mouseVelocityX;
     const rotationDirection = Math.sign(cross) || 0;
-    const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
-    
-    if (flake.rotationSpeed !== undefined) {
-      flake.rotationSpeed = (flake.rotationSpeed ?? 0) + rotationForce * (delta || 0.016);
+    // Применяем вращение только если скорость мыши выше порога (> 10 пиксели/сек)
+    // Это предотвращает вращение от дрожания мыши
+    if (mouseSpeed > 10) {
+      const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
+      if (flake.rotationSpeed !== undefined) {
+        flake.rotationSpeed = (flake.rotationSpeed ?? 0) + rotationForce * (delta || 0.016);
+      }
     }
     
     if (!this.mouseLeftPressed && !this.mouseRightPressed) {

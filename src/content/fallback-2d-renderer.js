@@ -37,6 +37,7 @@ export class Fallback2DRenderer {
     this.enableCollisions = config.enableCollisions ?? true; // Включить коллизии
     this.collisionDamping = 0.7; // Коэффициент упругости столкновений (0-1)
     this.collisionCheckRadius = 200; // Радиус проверки коллизий для оптимизации
+    this.debugCollisions = config.debugCollisions ?? false; // Визуализация коллизий
     
     // Параметры ветра
     this.windEnabled = config.windEnabled ?? false;
@@ -158,6 +159,7 @@ export class Fallback2DRenderer {
       
       // Используем функцию поиска безопасной позиции спауна
       const x = this._findSafeSpawnX(size);
+      const initialRotation = Math.random() * Math.PI * 2; // Случайный начальный угол для разнообразия
       
       this.flakes.push({
         x,
@@ -173,6 +175,7 @@ export class Fallback2DRenderer {
         char: textItem,
         isSentence,
         rotationSpeed: 0,
+        cumulativeSpin: initialRotation,
         velocityX: 0,
         velocityY: 0,
         isGrabbed: false
@@ -188,8 +191,8 @@ export class Fallback2DRenderer {
   handleCollisions() {
     if (!this.collisionHandler || !this.enableCollisions) return;
     
-    // Вызываем обработчик коллизий с предиктивной проверкой (0.016 ≈ 60 FPS)
-    this.collisionHandler.handleCollisions(this.flakes, 0.016);
+    // Вызываем обработчик коллизий с предиктивной проверкой (0.03 ≈ 60 FPS)
+    this.collisionHandler.handleCollisions(this.flakes, 0.03);
   }
 
   /**
@@ -227,7 +230,7 @@ export class Fallback2DRenderer {
 
         const highFreq1 = Math.sin(this.windTime * 1.7) * Math.exp(-0.1 * (this.windTime % 5)) * 0.06;
         const highFreq2 = Math.sin(this.windTime * 2.9 + Math.cos(this.windTime)) * 0.04;
-        const highFreq3 = Math.sin(this.windTime * 4.1) * Math.sin(this.windTime * 0.7) * 0.02;
+        const highFreq3 = Math.sin(this.windTime * 4.1) * Math.sin(this.windTime * 0.7) * 0.018; // значение 0.016 приводит к вращению
         const turbulence = highFreq1 + highFreq2 + highFreq3;
 
         let gust = baseWind + midWind + turbulence;
@@ -273,7 +276,7 @@ export class Fallback2DRenderer {
       }
 
       if (this.mouseBurstTimer > 0) {
-        this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - 0.016);
+        this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - 0.03);
         if (this.mouseBurstTimer === 0) {
           this.mouseBurstMode = null;
         }
@@ -309,16 +312,16 @@ export class Fallback2DRenderer {
             const safeDistance = Math.max(distance, 0.0001);
             const nx = dx / safeDistance;
             const ny = dy / safeDistance;
-            const burstAccel = activeInfluence * this.mouseForce * 5.0;
-            flake.velocityX += nx * burstAccel * 0.016;
-            flake.velocityY += ny * burstAccel * 0.016;
+            const burstAccel = activeInfluence * this.mouseForce * 10.0;
+            flake.velocityX += nx * burstAccel * 0.018; // значение 0.016 приводит к вращению
+            flake.velocityY += ny * burstAccel * 0.018; // значение 0.016 приводит к вращению
           } else if (burstActive && this.mouseBurstMode === 'suction') {
             const safeDistance = Math.max(distance, 0.0001);
             const nx = dx / safeDistance;
             const ny = dy / safeDistance;
-            const pullAccel = activeInfluence * this.mouseForce * 5.0;
-            flake.velocityX -= nx * pullAccel * 0.016;
-            flake.velocityY -= ny * pullAccel * 0.016;
+            const pullAccel = activeInfluence * this.mouseForce * 10.0;
+            flake.velocityX -= nx * pullAccel * 0.018; // значение 0.016 приводит к вращению
+            flake.velocityY -= ny * pullAccel * 0.018; // значение 0.016 приводит к вращению
           } else if (isMouseFast) {
             // Нормализуем вектор скорости мыши
             const mouseVelMag = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
@@ -338,23 +341,27 @@ export class Fallback2DRenderer {
             const nx = dx / safeDistance;
             const ny = dy / safeDistance;
             const verticalBias = ny < 0 ? 0.35 : 1.0;
-            const accel = force * 0.016;
+            const accel = force * 0.018; // значение 0.016 приводит к вращению
             flake.velocityX += nx * accel;
             flake.velocityY += ny * accel * verticalBias;
           }
           
           // Передаем импульс от движения мыши
           const impulseStrength = activeInfluence * this.mouseImpulseStrength;
-          flake.velocityX += this.mouseVelocityX * impulseStrength * 0.016;
-          flake.velocityY += this.mouseVelocityY * impulseStrength * 0.016;
+          flake.velocityX += this.mouseVelocityX * impulseStrength * 0.018; // значение 0.016 приводит к вращению
+          flake.velocityY += this.mouseVelocityY * impulseStrength * 0.018; // значение 0.016 приводит к вращению
           
           // Вращение снежинки при движении мыши рядом
           // Направление вращения зависит от того, с какой стороны пролетела мышка
           const mouseSpeed = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
-          const cross = dx * this.mouseVelocityY - dy * this.mouseVelocityX;
-          const rotationDirection = Math.sign(cross); // +1 или -1
-          const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
-          flake.rotationSpeed = (flake.rotationSpeed || 0) + rotationForce * 0.016;
+          // Применяем вращение только если скорость мыши выше порога (> 10 пиксели/сек)
+          // Это предотвращает вращение от дрожания мыши
+          if (mouseSpeed > 10) {
+            const cross = dx * this.mouseVelocityY - dy * this.mouseVelocityX;
+            const rotationDirection = Math.sign(cross); // +1 или -1
+            const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
+            flake.rotationSpeed = (flake.rotationSpeed || 0) + rotationForce * 0.018; // значение 0.016 приводит к вращению
+          }
           
           if (!this.mouseLeftPressed && !this.mouseRightPressed) {
             if (flake.isGrabbed) {
@@ -373,7 +380,7 @@ export class Fallback2DRenderer {
         flake.x = flake.baseX;
 
         if (!flake.isGrabbed) {
-          flake.phase += flake.freq * 0.016;
+          flake.phase += flake.freq * 0.018; // значение 0.016 приводит к вращению
           
           // Качание маятника: визуальный наклон вместо горизонтального смещения
           // Это вычисляется при рендеринге для применения к ротации
@@ -381,8 +388,8 @@ export class Fallback2DRenderer {
         
         if (!flake.isGrabbed) {
           // Собственное независимое кручение снежинки
-          flake.cumulativeSpin = (flake.cumulativeSpin || 0) + (flake.rotationSpeed || 0) * 0.016;
-          flake.y += flake.fallSpeed * 0.016;
+          flake.cumulativeSpin = (flake.cumulativeSpin || 0) + (flake.rotationSpeed || 0) * 0.018; // значение 0.016 приводит к вращению
+          flake.y += flake.fallSpeed * 0.018; // значение 0.016 приводит к вращению
         }
 
         // Сброс позиции если вышла за экран
@@ -393,7 +400,9 @@ export class Fallback2DRenderer {
           flake.x = newX;
           flake.baseX = newX;
           flake.phase = Math.random() * Math.PI * 2;
-          flake.rotation = Math.random() * Math.PI * 2;
+          const newRotation = Math.random() * Math.PI * 2; // Новый случайный угол (но скорость = 0)
+          flake.rotation = newRotation;
+          flake.cumulativeSpin = newRotation;
           flake.rotationSpeed = 0;
           flake.velocityX = 0;
           flake.velocityY = 0;
@@ -415,19 +424,15 @@ export class Fallback2DRenderer {
             // Горизонтальное воздействие ветра (как ускорение)
             if (this.currentWindForce !== 0) {
               // Сбалансированное воздействие ветра с учетом физики массы
-              const windAccel = this.currentWindForce * sizeRatio * 15;
-              flake.velocityX += windAccel * 0.016;
-              
-              // Раскачивание снежинки при ветре (имитация вращения от ветра)
-              const spinForce = Math.abs(this.currentWindForce) * 3; // Чем сильнее ветер, тем быстрее вращение
-              flake.rotationSpeed += (Math.random() - 0.5) * spinForce * 0.05;
+              const windAccel = this.currentWindForce * sizeRatio * 40;
+              flake.velocityX += windAccel * 0.018; // значение 0.016 приводит к вращению
             }
             
             // Вертикальное воздействие ветра (лифт - сильно влияет на маленькие снежинки)
             if (this.currentWindLift !== 0) {
               // Лифт сильнее влияет на маленькие снежинки (обратная пропорциональность массе)
-              const liftAccel = -this.currentWindLift * sizeRatio * 35;
-              flake.velocityY += liftAccel * 0.016;
+              const liftAccel = -this.currentWindLift * sizeRatio * 70;
+              flake.velocityY += liftAccel * 0.018; // значение 0.016 приводит к вращению
             }
           }
         });
@@ -441,10 +446,15 @@ export class Fallback2DRenderer {
       // Это гарантирует, что импульсы от коллизий будут быстро затухать
       this.flakes.forEach((flake) => {
         if (!flake.isGrabbed) {
-          const damping = Math.pow(0.92, 0.016 * 60); // Затухание за 1 кадр на 60 FPS
+          const damping = Math.pow(0.98, 0.03 * 60); // Затухание за 1 кадр на 60 FPS
           flake.velocityX *= damping;
           flake.velocityY *= damping;
           flake.rotationSpeed = (flake.rotationSpeed || 0) * damping;
+          
+          // Обнулить очень малые значения вращения, чтобы избежать численных погрешностей
+          if (Math.abs(flake.rotationSpeed) < 0.0001) {
+            flake.rotationSpeed = 0;
+          }
         }
       });
 
@@ -530,6 +540,50 @@ export class Fallback2DRenderer {
 
         ctx.restore();
       });
+
+      // DEBUG: Визуализация коллизий
+      if (this.debugCollisions) {
+        this.flakes.forEach((flake) => {
+          const x = flake.x * ratio;
+          const y = flake.y * ratio;
+          const collisionRadius = (flake.collisionSize ?? flake.size ?? 20) * 0.5 * ratio;
+          
+          ctx.save();
+          
+          // Рисуем границу коллизии
+          ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(x, y, collisionRadius, 0, Math.PI * 2);
+          ctx.stroke();
+          
+          // Рисуем центр
+          ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+          ctx.beginPath();
+          ctx.arc(x, y, 3, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Рисуем вектор скорости
+          if (flake.velocityX || flake.velocityY) {
+            const velScale = 0.5;
+            ctx.strokeStyle = 'rgba(0, 255, 0, 0.7)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + flake.velocityX * velScale * ratio, y + flake.velocityY * velScale * ratio);
+            ctx.stroke();
+          }
+          
+          // Показываем rotationSpeed
+          if (flake.rotationSpeed && Math.abs(flake.rotationSpeed) > 0.001) {
+            ctx.fillStyle = 'rgba(255, 255, 0, 0.9)';
+            ctx.font = '10px monospace';
+            ctx.fillText(`ω: ${flake.rotationSpeed.toFixed(3)}`, x + collisionRadius + 5, y);
+          }
+          
+          ctx.restore();
+        });
+      }
 
       this.frameRequest = requestAnimationFrame(draw);
     };

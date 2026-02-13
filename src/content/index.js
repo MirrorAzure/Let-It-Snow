@@ -92,6 +92,7 @@ class SnowWebGPUController {
     this.mouseLeftPressed = false;
     this.mouseRightPressed = false;
     this.mouseInteractionEnabled = true;
+    this.windSyncInterval = null;
   }
 
   /**
@@ -119,6 +120,22 @@ class SnowWebGPUController {
 
     // Запуск слоя GIF (если настроен)
     await this.startGifLayer();
+
+    // Передаем ссылку на рендерер в GifLayer для коллизий в реальном времени
+    if (this.gifLayer && this.renderer) {
+      this.gifLayer.setMainRenderer?.(this.renderer);
+    }
+
+    // Start wind synchronization
+    if (this.gifLayer && this.renderer) {
+      this.windSyncInterval = setInterval(() => {
+        if (this.renderer && this.gifLayer) {
+          const windForce = this.renderer.currentWindForce ?? 0;
+          const windLift = this.renderer.currentWindLift ?? 0;
+          this.gifLayer.updateWind?.(windForce, windLift);
+        }
+      }, 100);
+    }
   }
 
   /**
@@ -229,10 +246,16 @@ class SnowWebGPUController {
         if (this.renderer && this.mouseInteractionEnabled) {
           this.renderer.updateMousePosition?.(this.mouseX, this.mouseY, 0, 0);
         }
+        if (this.gifLayer && this.mouseInteractionEnabled) {
+          this.gifLayer.updateMouse?.(this.mouseX, this.mouseY, 0, 0);
+        }
       }, 32);
       
       if (this.renderer && this.mouseInteractionEnabled) {
         this.renderer.updateMousePosition?.(this.mouseX, this.mouseY, this.mouseVelocityX, this.mouseVelocityY);
+      }
+      if (this.gifLayer && this.mouseInteractionEnabled) {
+        this.gifLayer.updateMouse?.(this.mouseX, this.mouseY, this.mouseVelocityX, this.mouseVelocityY);
       }
     };
 
@@ -242,6 +265,9 @@ class SnowWebGPUController {
       if (e.button === 2) this.mouseRightPressed = true;
       if (this.renderer && this.mouseInteractionEnabled) {
         this.renderer.onMouseDown?.(e.clientX, e.clientY, e.button);
+      }
+      if (this.gifLayer && this.mouseInteractionEnabled) {
+        this.gifLayer.onMouseDown?.(e.clientX, e.clientY, e.button);
       }
     };
 
@@ -265,6 +291,9 @@ class SnowWebGPUController {
       }
       if (this.renderer && this.mouseInteractionEnabled) {
         this.renderer.onMouseLeave?.();
+      }
+      if (this.gifLayer && this.mouseInteractionEnabled) {
+        this.gifLayer.onMouseLeave?.();
       }
     };
 
@@ -302,6 +331,11 @@ class SnowWebGPUController {
    * Полная очистка и удаление снегопада
    */
   destroy() {
+    if (this.windSyncInterval) {
+      clearInterval(this.windSyncInterval);
+      this.windSyncInterval = null;
+    }
+
     if (this.renderer) {
       this.renderer.cleanup?.();
       this.renderer.stop?.();
