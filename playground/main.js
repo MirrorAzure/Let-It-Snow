@@ -198,6 +198,7 @@ function getConfigFromForm() {
     gifCount: Math.max(0, Math.min(200, Number(els.gifCount.value) || defaults.gifCount)),
     mouseRadius: Math.max(50, Math.min(250, Number(els.mouseRadius.value) || defaults.mouseRadius)),
     debugCollisions: state.debugCollisions,
+    playgroundDebugMode: state.debugCollisions,
     windEnabled: state.windEnabled,
     windDirection: state.windDirection,
     windStrength: Math.max(0, Number(els.windStrength.value) || defaults.windStrength),

@@ -48,6 +48,8 @@ export class WebGPURenderer {
     this.collisionCheckRadius = config.collisionCheckRadius ?? 600;
     this.collisionDamping = config.collisionDamping ?? 0.7;
     this.debugCollisions = config.debugCollisions ?? false;
+    this.playgroundDebugMode = config.playgroundDebugMode ?? false;
+    this.windDebugLoggingEnabled = this.playgroundDebugMode && this.debugCollisions;
     
     // Debug overlay canvas для визуализации коллизий
     this.debugCanvas = null;
@@ -784,7 +786,7 @@ export class WebGPURenderer {
       this.prevWindForce = this.currentWindForce;
       this.prevWindLift = this.currentWindLift;
 
-      if (gustIntensity > 0.5 && !this.lastWindLogged) {
+      if (this.windDebugLoggingEnabled && gustIntensity > 0.5 && !this.lastWindLogged) {
         console.log('🌬️ Wind is blowing with turbulence:', {
           direction: this.windDirection,
           strength: this.windStrength,

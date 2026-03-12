@@ -16,6 +16,7 @@ export class CollisionHandler {
     this.collisionDamping = config.collisionDamping ?? 0.7;
     // Увеличиваем радиус проверки коллизий для обнаружения даже при большом покачивании
     this.collisionCheckRadius = config.collisionCheckRadius ?? 600;
+    this.collisionCheckRadiusSq = this.collisionCheckRadius * this.collisionCheckRadius;
     this.swayImpulseTransfer = config.swayImpulseTransfer ?? 0.3; // Коэффициент передачи импульса при раскачивании
     this.debugCollisions = config.debugCollisions ?? false; // Флаг для вывода дебаг информации при столкновениях
   }
@@ -37,9 +38,9 @@ export class CollisionHandler {
     if (!this.enableCollisions || !flakes) return;
 
     // Сбрасываем ограничения покачивания перед новой проверкой
-    flakes.forEach(flake => {
-      flake.swayLimit = flake.isGrabbed ? 0 : 1.0; // 1.0 = без ограничений
-    });
+    for (let i = 0; i < flakes.length; i++) {
+      flakes[i].swayLimit = flakes[i].isGrabbed ? 0 : 1.0;
+    }
 
     // Если меньше 2 снежинок, коллизий не будет, но swayLimit уже сброшен
     if (flakes.length < 2) return;
@@ -56,31 +57,27 @@ export class CollisionHandler {
         // Теперь качание реализовано через ротацию (визуальный наклон), а не горизонтальное смещение
         const baseXA = flakeA.baseX ?? flakeA.x;
         const baseXB = flakeB.baseX ?? flakeB.x;
-        
-        // Рассчитываем визуальное смещение от наклона (качания маятника)
-        const maxSwingAngle = 0.35; // максимальный наклон в радианах (~20 градусов)
-        const swingAngleA = flakeA.isGrabbed ? 0 : Math.sin(flakeA.phase ?? 0) * maxSwingAngle * ((flakeA.swayLimit ?? 1.0));
-        const swingAngleB = flakeB.isGrabbed ? 0 : Math.sin(flakeB.phase ?? 0) * maxSwingAngle * ((flakeB.swayLimit ?? 1.0));
-        
-        // Видимое горизонтальное смещение при наклоне снежинки: sin(angle) * (size/2)
-        const swayFromRotationA = Math.sin(swingAngleA) * (flakeA.size ?? 20) * 0.5;
-        const swayFromRotationB = Math.sin(swingAngleB) * (flakeB.size ?? 20) * 0.5;
-        
-        const dx = (baseXB + swayFromRotationB) - (baseXA + swayFromRotationA);
         const dy = flakeB.y - flakeA.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        // Пропускаем, если снежинки слишком далеко
-        if (distance > this.collisionCheckRadius) continue;
+
+        // Быстрый pre-reject по квадрату дистанции (без sqrt и тригонометрии)
+        const coarseDx = baseXB - baseXA;
+        if (coarseDx * coarseDx + dy * dy > this.collisionCheckRadiusSq) continue;
+
+        // Точное смещение с учётом качания (small-angle approximation: sin(angle)≈angle при angle≪1)
+        const swayFromRotationA = flakeA.isGrabbed ? 0 : (flakeA._sinPhase || 0) * 0.35 * (flakeA.swayLimit ?? 1.0) * (flakeA.size ?? 20) * 0.5;
+        const swayFromRotationB = flakeB.isGrabbed ? 0 : (flakeB._sinPhase || 0) * 0.35 * (flakeB.swayLimit ?? 1.0) * (flakeB.size ?? 20) * 0.5;
+
+        const dx = (baseXB + swayFromRotationB) - (baseXA + swayFromRotationA);
+        const distSq = dx * dx + dy * dy;
+        if (distSq > this.collisionCheckRadiusSq) continue;
+        const distance = Math.sqrt(distSq);
         
         // Используем collisionSize для проверки коллизий (соответствует визуальному размеру)
-        const minDistance = this._getMinCollisionDistance(flakeA, flakeB);
-        
-        // Добавляем запас на амплитуду качания обеих снежинок
-        // Это предотвращает просачивание при наклоне с большой амплитудой
-        const maxSwayFromRotationA = Math.abs(Math.sin(maxSwingAngle)) * (flakeA.size ?? 20) * 0.5;
-        const maxSwayFromRotationB = Math.abs(Math.sin(maxSwingAngle)) * (flakeB.size ?? 20) * 0.5;
-        const swayBuffer = Math.max(0, maxSwayFromRotationA + maxSwayFromRotationB) * 0.5;
+        // Минимальная дистанция коллизии (предвычислена на снежинке)
+        const minDistance = (flakeA._collisionRadius ?? (flakeA.collisionSize ?? flakeA.size ?? 20) * 0.5)
+                          + (flakeB._collisionRadius ?? (flakeB.collisionSize ?? flakeB.size ?? 20) * 0.5);
+        // Буфер качания (предвычислен на снежинке)
+        const swayBuffer = ((flakeA._swayBuffer ?? 0) + (flakeB._swayBuffer ?? 0)) * 0.5;
         
         // Если снежинки пересекаются
         // Простейшая предикция, чтобы уменьшить прохождения сквозь друг друга

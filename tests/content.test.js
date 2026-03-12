@@ -36,6 +36,8 @@ describe('content script snow control', () => {
       restore: vi.fn(),
       translate: vi.fn(),
       rotate: vi.fn(),
+      setTransform: vi.fn(),
+      resetTransform: vi.fn(),
       getImageData: vi.fn().mockReturnValue({
         data: new Uint8ClampedArray()
       })
