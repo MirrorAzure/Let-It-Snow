@@ -41,7 +41,10 @@ const els = {
   windRight: document.getElementById('wind-right'),
   windRandom: document.getElementById('wind-random'),
   windStrength: document.getElementById('windStrength'),
-  windGustFrequency: document.getElementById('windGustFrequency')
+  windGustFrequency: document.getElementById('windGustFrequency'),
+  rendererAuto: document.getElementById('renderer-auto'),
+  rendererWebgpu: document.getElementById('renderer-webgpu'),
+  renderer2d: document.getElementById('renderer-2d')
 };
 
 const defaults = {
@@ -60,7 +63,8 @@ const defaults = {
   windEnabled: false,
   windDirection: 'left',
   windStrength: 0.5,
-  windGustFrequency: 3
+  windGustFrequency: 3,
+  rendererMode: 'auto'
 };
 
 const state = {
@@ -71,7 +75,8 @@ const state = {
   windEnabled: defaults.windEnabled,
   windDirection: defaults.windDirection,
   ready: false,
-  pingAttempts: 0
+  pingAttempts: 0,
+  rendererMode: defaults.rendererMode
 };
 
 function setStatus(mode, text) {
@@ -196,7 +201,8 @@ function getConfigFromForm() {
     windEnabled: state.windEnabled,
     windDirection: state.windDirection,
     windStrength: Math.max(0, Number(els.windStrength.value) || defaults.windStrength),
-    windGustFrequency: Math.max(0.5, Number(els.windGustFrequency.value) || defaults.windGustFrequency)
+    windGustFrequency: Math.max(0.5, Number(els.windGustFrequency.value) || defaults.windGustFrequency),
+    rendererMode: state.rendererMode
   };
 }
 
@@ -239,9 +245,11 @@ function resetForm() {
   state.symbols = [...defaults.symbols];
   state.sentences = [...defaults.sentences];
   state.debugCollisions = defaults.debugCollisions;
+  state.rendererMode = defaults.rendererMode;
   state.windEnabled = defaults.windEnabled;
   state.windDirection = defaults.windDirection;
   updateWindButtons();
+  updateRendererButtons();
   renderColors();
   renderSymbols();
   renderSentences();
@@ -258,6 +266,12 @@ function updateWindButtons() {
   els.windLeft.classList.toggle('active', state.windDirection === 'left');
   els.windRight.classList.toggle('active', state.windDirection === 'right');
   els.windRandom.classList.toggle('active', state.windDirection === 'random');
+}
+
+function updateRendererButtons() {
+  els.rendererAuto.classList.toggle('active', state.rendererMode === 'auto');
+  els.rendererWebgpu.classList.toggle('active', state.rendererMode === 'webgpu');
+  els.renderer2d.classList.toggle('active', state.rendererMode === '2d');
 }
 
 els.start.addEventListener('click', async () => {
@@ -330,6 +344,21 @@ els.windEnabled.addEventListener('change', (e) => {
   state.windEnabled = e.target.checked;
 });
 
+els.rendererAuto.addEventListener('click', () => {
+  state.rendererMode = 'auto';
+  updateRendererButtons();
+});
+
+els.rendererWebgpu.addEventListener('click', () => {
+  state.rendererMode = 'webgpu';
+  updateRendererButtons();
+});
+
+els.renderer2d.addEventListener('click', () => {
+  state.rendererMode = '2d';
+  updateRendererButtons();
+});
+
 els.windLeft.addEventListener('click', () => {
   state.windDirection = 'left';
   updateWindButtons();
@@ -356,6 +385,7 @@ window.addEventListener('message', (event) => {
 
 resetForm();
 setTheme('dark');
+updateRendererButtons();
 
 // Initialize - playground uses direct source import
 setStatus('ready', 'Playground: ready - hot reload enabled');

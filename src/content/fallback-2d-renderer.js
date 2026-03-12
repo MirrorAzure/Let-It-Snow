@@ -2,6 +2,8 @@
  * 2D Canvas fallback рендерер для браузеров без WebGPU
  */
 
+import { CollisionHandler } from './physics/collision-handler.js';
+
 /**
  * Класс для рендеринга снега через Canvas 2D API
  */
@@ -38,6 +40,12 @@ export class Fallback2DRenderer {
     this.collisionDamping = 0.7; // Коэффициент упругости столкновений (0-1)
     this.collisionCheckRadius = 200; // Радиус проверки коллизий для оптимизации
     this.debugCollisions = config.debugCollisions ?? false; // Визуализация коллизий
+    this.collisionHandler = new CollisionHandler({
+      enableCollisions: this.enableCollisions,
+      collisionDamping: this.collisionDamping,
+      collisionCheckRadius: this.collisionCheckRadius,
+      debugCollisions: this.debugCollisions
+    });
     
     // Параметры ветра
     this.windEnabled = config.windEnabled ?? false;
@@ -58,6 +66,32 @@ export class Fallback2DRenderer {
       windStrength: this.windStrength,
       windGustFrequency: this.windGustFrequency
     });
+  }
+
+  /**
+   * Возвращает стабильные размеры viewport в CSS-пикселях.
+   * Некоторые сайты/режимы кратковременно отдают 0, поэтому используем несколько источников.
+   * @private
+   */
+  _getViewportSize() {
+    const vv = window.visualViewport;
+    const width =
+      window.innerWidth ||
+      document.documentElement?.clientWidth ||
+      document.body?.clientWidth ||
+      vv?.width ||
+      0;
+    const height =
+      window.innerHeight ||
+      document.documentElement?.clientHeight ||
+      document.body?.clientHeight ||
+      vv?.height ||
+      0;
+
+    return {
+      width: Math.max(1, Math.floor(width)),
+      height: Math.max(1, Math.floor(height))
+    };
   }
 
   /**
@@ -167,7 +201,7 @@ export class Fallback2DRenderer {
         y: -size - Math.random() * window.innerHeight,
         size,
         collisionSize,
-        speed,
+        fallSpeed: speed,
         sway: 10 + Math.random() * 25,
         phase: Math.random() * Math.PI * 2,
         freq: 0.8 + Math.random() * 1.4,
@@ -202,10 +236,16 @@ export class Fallback2DRenderer {
     const ctx = this.ctx;
     const { snowminsize, snowmaxsize } = this.config;
 
-    const draw = () => {
+    let lastFrameTime = performance.now();
+    const draw = (now = performance.now()) => {
+      const delta = Math.min((now - lastFrameTime) / 1000, 0.05);
+      lastFrameTime = now;
       const ratio = window.devicePixelRatio || 1;
-      const width = Math.floor(window.innerWidth * ratio);
-      const height = Math.floor(window.innerHeight * ratio);
+      const viewport = this._getViewportSize();
+      const worldWidth = viewport.width;
+      const worldHeight = viewport.height;
+      const width = Math.floor(worldWidth * ratio);
+      const height = Math.floor(worldHeight * ratio);
 
       // Обновляем размер canvas если изменился
       if (this.canvas.width !== width || this.canvas.height !== height) {
@@ -215,9 +255,9 @@ export class Fallback2DRenderer {
 
       ctx.clearRect(0, 0, width, height);
 
-      // Обновляем параметры ветра (каждый кадр с фиксированным delta=0.016)
+      // Обновляем параметры ветра
       if (this.windEnabled) {
-        this.windTime += 0.016;
+        this.windTime += delta;
 
         // Реалистичный ветер: смесь долгих циклов, порывов и турбулентности
         const baseFreq = Math.max(0.1, this.windGustFrequency * 0.5);
@@ -276,7 +316,7 @@ export class Fallback2DRenderer {
       }
 
       if (this.mouseBurstTimer > 0) {
-        this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - 0.03);
+        this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - delta);
         if (this.mouseBurstTimer === 0) {
           this.mouseBurstMode = null;
         }
@@ -313,15 +353,15 @@ export class Fallback2DRenderer {
             const nx = dx / safeDistance;
             const ny = dy / safeDistance;
             const burstAccel = activeInfluence * this.mouseForce * 10.0;
-            flake.velocityX += nx * burstAccel * 0.018; // значение 0.016 приводит к вращению
-            flake.velocityY += ny * burstAccel * 0.018; // значение 0.016 приводит к вращению
+            flake.velocityX += nx * burstAccel * delta;
+            flake.velocityY += ny * burstAccel * delta;
           } else if (burstActive && this.mouseBurstMode === 'suction') {
             const safeDistance = Math.max(distance, 0.0001);
             const nx = dx / safeDistance;
             const ny = dy / safeDistance;
             const pullAccel = activeInfluence * this.mouseForce * 10.0;
-            flake.velocityX -= nx * pullAccel * 0.018; // значение 0.016 приводит к вращению
-            flake.velocityY -= ny * pullAccel * 0.018; // значение 0.016 приводит к вращению
+            flake.velocityX -= nx * pullAccel * delta;
+            flake.velocityY -= ny * pullAccel * delta;
           } else if (isMouseFast) {
             // Нормализуем вектор скорости мыши
             const mouseVelMag = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
@@ -331,8 +371,8 @@ export class Fallback2DRenderer {
               
               // Притягиваем снежинку в сторону движения мыши
               const dragForce = activeInfluence * this.mouseDragStrength * (mouseSpeed / 1000);
-              flake.velocityX += mouseDirX * dragForce * 16;
-              flake.velocityY += mouseDirY * dragForce * 16;
+              flake.velocityX += mouseDirX * dragForce * delta * 1000;
+              flake.velocityY += mouseDirY * dragForce * delta * 1000;
             }
           } else {
             // Обычное отталкивание при медленном движении
@@ -341,26 +381,26 @@ export class Fallback2DRenderer {
             const nx = dx / safeDistance;
             const ny = dy / safeDistance;
             const verticalBias = ny < 0 ? 0.35 : 1.0;
-            const accel = force * 0.018; // значение 0.016 приводит к вращению
+            const accel = force * delta;
             flake.velocityX += nx * accel;
             flake.velocityY += ny * accel * verticalBias;
           }
           
           // Передаем импульс от движения мыши
           const impulseStrength = activeInfluence * this.mouseImpulseStrength;
-          flake.velocityX += this.mouseVelocityX * impulseStrength * 0.018; // значение 0.016 приводит к вращению
-          flake.velocityY += this.mouseVelocityY * impulseStrength * 0.018; // значение 0.016 приводит к вращению
+          flake.velocityX += this.mouseVelocityX * impulseStrength * delta;
+          flake.velocityY += this.mouseVelocityY * impulseStrength * delta;
           
           // Вращение снежинки при движении мыши рядом
           // Направление вращения зависит от того, с какой стороны пролетела мышка
-          const mouseSpeed = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
+          // mouseSpeed уже объявлена выше в этом forEach-коллбэке
           // Применяем вращение только если скорость мыши выше порога (> 10 пиксели/сек)
           // Это предотвращает вращение от дрожания мыши
           if (mouseSpeed > 10) {
             const cross = dx * this.mouseVelocityY - dy * this.mouseVelocityX;
             const rotationDirection = Math.sign(cross); // +1 или -1
             const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
-            flake.rotationSpeed = (flake.rotationSpeed || 0) + rotationForce * 0.018; // значение 0.016 приводит к вращению
+            flake.rotationSpeed = (flake.rotationSpeed || 0) + rotationForce * delta;
           }
           
           if (!this.mouseLeftPressed && !this.mouseRightPressed) {
@@ -373,14 +413,14 @@ export class Fallback2DRenderer {
           }
         }
 
-        // Применяем импульс к позиции
-        flake.baseX += flake.velocityX;
-        flake.y += flake.velocityY;
+        // Применяем импульс к позиции (скорость в px/сек, умножаем на delta)
+        flake.baseX += flake.velocityX * delta;
+        flake.y += flake.velocityY * delta;
         // Обновляем визуальную позицию (с покачиванием)
         flake.x = flake.baseX;
 
         if (!flake.isGrabbed) {
-          flake.phase += flake.freq * 0.018; // значение 0.016 приводит к вращению
+          flake.phase += flake.freq * delta;
           
           // Качание маятника: визуальный наклон вместо горизонтального смещения
           // Это вычисляется при рендеринге для применения к ротации
@@ -388,12 +428,12 @@ export class Fallback2DRenderer {
         
         if (!flake.isGrabbed) {
           // Собственное независимое кручение снежинки
-          flake.cumulativeSpin = (flake.cumulativeSpin || 0) + (flake.rotationSpeed || 0) * 0.018; // значение 0.016 приводит к вращению
-          flake.y += flake.fallSpeed * 0.018; // значение 0.016 приводит к вращению
+          flake.cumulativeSpin = (flake.cumulativeSpin || 0) + (flake.rotationSpeed || 0) * delta;
+          flake.y += flake.fallSpeed * delta;
         }
 
         // Сброс позиции если вышла за экран
-        if (flake.y - flake.size > height) {
+        if (flake.y - flake.size > worldHeight) {
           flake.y = -flake.size;
           // Используем функцию поиска безопасной позиции спауна
           const newX = this._findSafeSpawnX(flake.size);
@@ -425,14 +465,14 @@ export class Fallback2DRenderer {
             if (this.currentWindForce !== 0) {
               // Сбалансированное воздействие ветра с учетом физики массы
               const windAccel = this.currentWindForce * sizeRatio * 40;
-              flake.velocityX += windAccel * 0.018; // значение 0.016 приводит к вращению
+              flake.velocityX += windAccel * delta;
             }
             
             // Вертикальное воздействие ветра (лифт - сильно влияет на маленькие снежинки)
             if (this.currentWindLift !== 0) {
               // Лифт сильнее влияет на маленькие снежинки (обратная пропорциональность массе)
               const liftAccel = -this.currentWindLift * sizeRatio * 70;
-              flake.velocityY += liftAccel * 0.018; // значение 0.016 приводит к вращению
+              flake.velocityY += liftAccel * delta;
             }
           }
         });
@@ -446,7 +486,7 @@ export class Fallback2DRenderer {
       // Это гарантирует, что импульсы от коллизий будут быстро затухать
       this.flakes.forEach((flake) => {
         if (!flake.isGrabbed) {
-          const damping = Math.pow(0.98, 0.03 * 60); // Затухание за 1 кадр на 60 FPS
+          const damping = Math.pow(0.98, delta * 60);
           flake.velocityX *= damping;
           flake.velocityY *= damping;
           flake.rotationSpeed = (flake.rotationSpeed || 0) * damping;
@@ -461,7 +501,7 @@ export class Fallback2DRenderer {
       // Обрабатываем края экрана как порталы (wrapping)
       this.flakes.forEach((flake) => {
         const collisionRadius = (flake.collisionSize ?? flake.size ?? 20) * 0.5;
-        const worldWidth = window.innerWidth;
+        const worldWidth = viewport.width;
         
         // Портальная система: снежинка, вышедшая за левый край, появляется справа и наоборот
         if (flake.x + collisionRadius < 0) {
@@ -589,7 +629,7 @@ export class Fallback2DRenderer {
     };
 
     this.drawCallback = draw;
-    draw();
+    draw(performance.now());
   }
 
   /**

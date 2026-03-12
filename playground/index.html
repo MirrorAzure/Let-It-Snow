@@ -34,6 +34,17 @@
         </div>
       </div>
       <p class="hint">Switch background to see glow logic react to contrast.</p>
+      <div class="grid">
+        <label class="field">
+          <span>Renderer</span>
+          <div class="segmented" role="group" aria-label="Renderer mode">
+            <button id="renderer-auto" class="segmented-btn active" type="button">Auto</button>
+            <button id="renderer-webgpu" class="segmented-btn" type="button">WebGPU</button>
+            <button id="renderer-2d" class="segmented-btn" type="button">Canvas2D</button>
+          </div>
+          <small>Auto tries WebGPU first. Use Canvas2D to reproduce HTTP fallback behavior.</small>
+        </label>
+      </div>
     </section>
 
     <section class="panel">

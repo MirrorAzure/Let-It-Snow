@@ -27,6 +27,8 @@ export class WebGPURenderer {
     this.quadBuffer = null;
     this.canvasWidth = 0;
     this.canvasHeight = 0;
+    this.viewportWidth = 0;
+    this.viewportHeight = 0;
     this.frameRequest = null;
     this.resizeObserver = null;
     this.lastTimestamp = 0;
@@ -80,6 +82,34 @@ export class WebGPURenderer {
     this.prevWindLift = 0;
     this.windDirectionPhase = Math.random() * Math.PI * 2;
     this.lastWindLogged = false;
+  }
+
+  /**
+   * Возвращает стабильные размеры viewport в CSS-пикселях.
+   * Некоторые страницы могут временно отдавать 0 при перестроении layout.
+   * @private
+   */
+  _getViewportSize() {
+    const vv = window.visualViewport;
+    const width =
+      window.innerWidth ||
+      document.documentElement?.clientWidth ||
+      document.body?.clientWidth ||
+      vv?.width ||
+      this.viewportWidth ||
+      1;
+    const height =
+      window.innerHeight ||
+      document.documentElement?.clientHeight ||
+      document.body?.clientHeight ||
+      vv?.height ||
+      this.viewportHeight ||
+      1;
+
+    return {
+      width: Math.max(1, Math.floor(width)),
+      height: Math.max(1, Math.floor(height))
+    };
   }
 
   /**
@@ -555,16 +585,19 @@ export class WebGPURenderer {
    */
   handleResize() {
     const resize = () => {
+      const viewport = this._getViewportSize();
       const ratio = window.devicePixelRatio || 1;
-      const width = Math.floor(window.innerWidth * ratio);
-      const height = Math.floor(window.innerHeight * ratio);
+      const width = Math.floor(viewport.width * ratio);
+      const height = Math.floor(viewport.height * ratio);
       if (width === this.canvasWidth && height === this.canvasHeight) return;
 
       this.canvasWidth = width;
       this.canvasHeight = height;
+      this.viewportWidth = viewport.width;
+      this.viewportHeight = viewport.height;
       this.canvas.width = width;
       this.canvas.height = height;
-      this.uniformBufferManager?.setCanvasSize(width, height);
+      this.uniformBufferManager?.setCanvasSize(viewport.width, viewport.height);
       this.context?.configure({
         device: this.device,
         format: navigator.gpu.getPreferredCanvasFormat(),
@@ -701,8 +734,8 @@ export class WebGPURenderer {
    * @param {number} delta - Время с последнего кадра в секундах
    */
   updateSimulation(delta) {
-    const width = this.canvasWidth || window.innerWidth;
-    const height = this.canvasHeight || window.innerHeight;
+    const width = this.viewportWidth || this._getViewportSize().width;
+    const height = this.viewportHeight || this._getViewportSize().height;
     const strideFloats = 14;
     const glyphCount = this.atlasManager?.glyphAtlas.count || 0;
     const sentenceCount = this.atlasManager?.sentenceAtlas.count || 0;

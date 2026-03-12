@@ -29,6 +29,7 @@ const DEFAULT_CONFIG = {
   gifUrls: [],
   gifCount: 0,
   debugCollisions: false,
+  rendererMode: 'auto',
   mouseRadius: 100,
   windEnabled: false,
   windDirection: 'left',
@@ -100,15 +101,23 @@ class SnowWebGPUController {
    */
   async start() {
     this.createOverlayCanvas();
+    const mode = String(this.config.rendererMode || 'auto').toLowerCase();
+    const rendererMode = mode === 'webgpu' || mode === '2d' ? mode : 'auto';
 
-    // Пытаемся использовать WebGPU, если не получается - 2D fallback
-    const webgpuRenderer = new WebGPURenderer(this.canvas, this.config);
-    const webgpuSupported = await webgpuRenderer.init();
+    if (rendererMode !== '2d') {
+      // Пытаемся использовать WebGPU, если не получается - fallback в auto-режиме
+      const webgpuRenderer = new WebGPURenderer(this.canvas, this.config);
+      const webgpuSupported = await webgpuRenderer.init();
 
-    if (webgpuSupported) {
-      this.renderer = webgpuRenderer;
-      this.renderer.start();
-    } else {
+      if (webgpuSupported) {
+        this.renderer = webgpuRenderer;
+        this.renderer.start();
+      } else if (rendererMode === 'webgpu') {
+        console.warn('WebGPU mode requested but unavailable. Snow renderer is not started.');
+      }
+    }
+
+    if (!this.renderer && rendererMode !== 'webgpu') {
       // Fallback на 2D Canvas
       const fallbackRenderer = new Fallback2DRenderer(this.canvas, this.config);
       const fallbackInit = fallbackRenderer.init();
@@ -147,17 +156,22 @@ class SnowWebGPUController {
 
     const canvas = document.createElement('canvas');
     canvas.id = OVERLAY_ID;
-    canvas.style.position = 'fixed';
-    canvas.style.top = '0';
-    canvas.style.left = '0';
-    canvas.style.width = '100vw';
-    canvas.style.height = '100vh';
-    canvas.style.pointerEvents = 'none';
-    canvas.style.userSelect = 'none';
-    canvas.style.zIndex = MAX_Z_INDEX;
-    canvas.style.inset = '0';
-    canvas.style.display = 'block';
-    canvas.style.background = 'transparent';
+    const setStyle = (prop, value) => canvas.style.setProperty(prop, value, 'important');
+    setStyle('position', 'fixed');
+    setStyle('top', '0');
+    setStyle('left', '0');
+    setStyle('right', '0');
+    setStyle('bottom', '0');
+    setStyle('width', '100vw');
+    setStyle('height', '100vh');
+    setStyle('max-width', 'none');
+    setStyle('max-height', 'none');
+    setStyle('pointer-events', 'none');
+    setStyle('user-select', 'none');
+    setStyle('z-index', MAX_Z_INDEX);
+    setStyle('inset', '0');
+    setStyle('display', 'block');
+    setStyle('background', 'transparent');
     document.documentElement.appendChild(canvas);
 
     this.canvas = canvas;
