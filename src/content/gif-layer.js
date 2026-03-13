@@ -73,16 +73,56 @@ export class GifLayer {
       return FALLBACK_GIF_DATA_URL;
     }
 
+    // Способ 1: через background service worker.
+    // Background работает с origin расширения, а не страницы, поэтому
+    // CORS-ограничения контент-скрипта на него не распространяются.
+    // Это позволяет загружать GIF с любых серверов — даже тех, которые
+    // не выдают CORS-заголовки для HTTP-страниц.
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+      try {
+        const result = await new Promise((resolve) => {
+          const timer = setTimeout(() => resolve(null), 10000);
+          try {
+            chrome.runtime.sendMessage({ type: 'FETCH_GIF', url }, (response) => {
+              clearTimeout(timer);
+              // Читаем lastError чтобы Chrome не писал предупреждение об unhandled error
+              void chrome.runtime?.lastError;
+              resolve(response || null);
+            });
+          } catch {
+            clearTimeout(timer);
+            resolve(null);
+          }
+        });
+        if (result?.success && result.dataUrl) {
+          this.gifObjectUrls.set(url, result.dataUrl);
+          return result.dataUrl;
+        }
+      } catch {
+        // background недоступен — переходим к прямому fetch
+      }
+    }
+
+    // Способ 2: прямой fetch из контент-скрипта (работает если отдаётся CORS).
     if (typeof fetch !== 'function') {
       return url;
     }
 
     try {
-      const response = await fetch(url, { 
-        cache: 'no-cache', 
-        mode: 'cors',
-        timeout: 5000 
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      let response;
+      try {
+        response = await fetch(url, {
+          cache: 'no-cache',
+          mode: 'cors',
+          credentials: 'omit',
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -97,17 +137,21 @@ export class GifLayer {
       return objectUrl;
     } catch (error) {
       const errorMsg = error?.message || 'Unknown error';
-      const reason = 
-        error?.name === 'TypeError' && error?.message?.includes('Failed to fetch')
+      const reason =
+        error?.name === 'AbortError'
+          ? '(timeout)'
+          : error?.name === 'TypeError' && error?.message?.includes('Failed to fetch')
           ? '(CORS or network issue)'
           : error?.message?.includes('HTTP')
           ? '(Server error)'
           : '(Fetch failed)';
-      
+
       if (!IS_TEST_ENV) {
-        console.warn(`[Let It Snow] Unable to fetch GIF ${reason}:`, url, `- ${errorMsg}`);
+        console.warn(`[Let It Snow] Unable to fetch GIF ${reason}:`, url, `- ${errorMsg}`, '— falling back to direct src');
       }
-      return FALLBACK_GIF_DATA_URL;
+      // Способ 3: прямой URL — браузер загружает <img> без CORS (нет preflight),
+      // но subject to page CSP. Лучше чем ничего.
+      return url;
     }
   }
 
@@ -125,8 +169,11 @@ export class GifLayer {
    * Очищает все созданные object URL
    */
   cleanupGifObjectUrls() {
-    this.gifObjectUrls.forEach((objectUrl) => {
-      URL.revokeObjectURL(objectUrl);
+    this.gifObjectUrls.forEach((cachedUrl) => {
+      // data: URL не требует освобождения, revokeObjectURL нужен только для blob:
+      if (cachedUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(cachedUrl);
+      }
     });
     this.gifObjectUrls.clear();
   }
@@ -179,7 +226,7 @@ export class GifLayer {
       img.src = safeUrls[Math.floor(Math.random() * safeUrls.length)];
       img.alt = 'snow-gif';
       img.draggable = false;
-      img.loading = 'lazy';
+      img.loading = 'eager';
       img.style.position = 'absolute';
       img.style.pointerEvents = 'none';
       img.style.userSelect = 'none';

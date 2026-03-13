@@ -103,6 +103,11 @@ class SnowWebGPUController {
     this.createOverlayCanvas();
     const mode = String(this.config.rendererMode || 'auto').toLowerCase();
     const rendererMode = mode === 'webgpu' || mode === '2d' ? mode : 'auto';
+    const debugEnabled = Boolean(
+      this.config?.debug === true ||
+      this.config?.debugCollisions === true ||
+      this.config?.playgroundDebugMode === true
+    );
 
     if (rendererMode !== '2d') {
       // Пытаемся использовать WebGPU, если не получается - fallback в auto-режиме
@@ -111,9 +116,39 @@ class SnowWebGPUController {
 
       if (webgpuSupported) {
         this.renderer = webgpuRenderer;
+        this.renderer.setDeviceLostHandler?.(() => {
+          // В strict webgpu-режиме не переключаемся автоматически на 2D.
+          if (rendererMode === 'webgpu') {
+            if (debugEnabled) {
+              console.warn('[Let It Snow] WebGPU device lost in strict webgpu mode. Auto-fallback is disabled.');
+            }
+            return;
+          }
+
+          const fallbackRenderer = new Fallback2DRenderer(this.canvas, this.config);
+          const fallbackInit = fallbackRenderer.init();
+          if (fallbackInit) {
+            this.renderer = fallbackRenderer;
+            this.renderer.start();
+            if (this.gifLayer) {
+              this.gifLayer.setMainRenderer?.(this.renderer);
+            }
+            if (debugEnabled) {
+              console.debug('[Let It Snow] Switched to Canvas2D after WebGPU device loss.');
+            }
+          } else if (debugEnabled) {
+            console.warn('[Let It Snow] Failed to initialize Canvas2D fallback after WebGPU device loss.');
+          }
+        });
         this.renderer.start();
       } else if (rendererMode === 'webgpu') {
-        console.warn('WebGPU mode requested but unavailable. Snow renderer is not started.');
+        if (debugEnabled) {
+          const info = webgpuRenderer.getLastInitInfo?.();
+          console.warn('[Let It Snow] WebGPU mode requested but unavailable. Snow renderer is not started.', info || '');
+        }
+      } else if (debugEnabled) {
+        const info = webgpuRenderer.getLastInitInfo?.();
+        console.debug('[Let It Snow] Auto mode selected Canvas2D fallback.', info || '');
       }
     }
 
@@ -233,9 +268,14 @@ class SnowWebGPUController {
    * Настройка обработчиков событий мыши
    */
   setupMouseInteraction() {
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const maxMouseVelocity = Number(this.config.maxMouseVelocity ?? 2200);
+    const mouseVelocitySmoothing = Number(this.config.mouseVelocitySmoothing ?? 0.35);
+
     this.mouseMoveHandler = (e) => {
       const now = performance.now();
-      const dt = this.lastMouseTime ? (now - this.lastMouseTime) / 1000 : 0.016;
+      const rawDt = this.lastMouseTime ? (now - this.lastMouseTime) / 1000 : 0.016;
+      const dt = clamp(rawDt || 0.016, 1 / 240, 0.05);
       
       this.mousePrevX = this.mouseX;
       this.mousePrevY = this.mouseY;
@@ -244,8 +284,13 @@ class SnowWebGPUController {
       
       // Вычисляем скорость движения мыши
       if (dt > 0) {
-        this.mouseVelocityX = (this.mouseX - this.mousePrevX) / dt;
-        this.mouseVelocityY = (this.mouseY - this.mousePrevY) / dt;
+        const rawVx = (this.mouseX - this.mousePrevX) / dt;
+        const rawVy = (this.mouseY - this.mousePrevY) / dt;
+        const clampedVx = clamp(rawVx, -maxMouseVelocity, maxMouseVelocity);
+        const clampedVy = clamp(rawVy, -maxMouseVelocity, maxMouseVelocity);
+        const a = clamp(mouseVelocitySmoothing, 0.05, 1);
+        this.mouseVelocityX = this.mouseVelocityX * (1 - a) + clampedVx * a;
+        this.mouseVelocityY = this.mouseVelocityY * (1 - a) + clampedVy * a;
       }
       
       this.lastMouseTime = now;

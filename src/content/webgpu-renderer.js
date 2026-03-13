@@ -84,6 +84,94 @@ export class WebGPURenderer {
     this.prevWindLift = 0;
     this.windDirectionPhase = Math.random() * Math.PI * 2;
     this.lastWindLogged = false;
+
+    this.debugEnabled = Boolean(
+      config?.debug === true ||
+      config?.debugCollisions === true ||
+      config?.playgroundDebugMode === true
+    );
+
+    this.lastInitInfo = { ok: false, reason: 'not_initialized' };
+    this.onDeviceLost = null;
+  }
+
+  _debugLog(...args) {
+    if (!this.debugEnabled) return;
+    console.debug('[Let It Snow][WebGPU]', ...args);
+  }
+
+  _debugWarn(...args) {
+    if (!this.debugEnabled) return;
+    console.warn('[Let It Snow][WebGPU]', ...args);
+  }
+
+  _buildInitInfo(ok, reason, extra = {}) {
+    return {
+      ok,
+      reason,
+      ...extra
+    };
+  }
+
+  async _requestAdapterWithTimeout(timeoutMs = 1500) {
+    const adapterPromise = navigator.gpu.requestAdapter();
+    const timeoutPromise = new Promise((resolve) => {
+      setTimeout(() => resolve(null), timeoutMs);
+    });
+    return Promise.race([adapterPromise, timeoutPromise]);
+  }
+
+  async probeCapabilities() {
+    const protocol = window?.location?.protocol || '';
+    const host = window?.location?.hostname || '';
+    const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+
+    // WebGPU доступен только в secure context. Для localhost браузеры обычно
+    // считают HTTP защищенным контекстом, поэтому оставляем это исключение.
+    if (!window.isSecureContext && !(protocol === 'http:' && isLocalhost)) {
+      return this._buildInitInfo(false, 'insecure_context', {
+        protocol,
+        host
+      });
+    }
+
+    if (!navigator.gpu) {
+      return this._buildInitInfo(false, 'no_webgpu_api');
+    }
+
+    let adapter;
+    try {
+      adapter = await this._requestAdapterWithTimeout(1500);
+    } catch (error) {
+      return this._buildInitInfo(false, 'adapter_request_failed', {
+        error: error?.message || String(error)
+      });
+    }
+
+    if (!adapter) {
+      return this._buildInitInfo(false, 'no_adapter');
+    }
+
+    const isFallbackAdapter = adapter?.isFallbackAdapter === true;
+    const rendererMode = String(this.config?.rendererMode || 'auto').toLowerCase();
+    if (isFallbackAdapter && rendererMode !== 'webgpu') {
+      return this._buildInitInfo(false, 'fallback_adapter_in_auto', {
+        isFallbackAdapter: true
+      });
+    }
+
+    return this._buildInitInfo(true, 'adapter_available', {
+      adapter,
+      isFallbackAdapter
+    });
+  }
+
+  setDeviceLostHandler(handler) {
+    this.onDeviceLost = typeof handler === 'function' ? handler : null;
+  }
+
+  getLastInitInfo() {
+    return this.lastInitInfo;
   }
 
   /**
@@ -127,14 +215,23 @@ export class WebGPURenderer {
    * @returns {Promise<boolean>} true если успешно
    */
   async init() {
-    if (!navigator.gpu) return false;
-
-    const adapter = await navigator.gpu.requestAdapter();
-    if (!adapter) return false;
+    const probe = await this.probeCapabilities();
+    if (!probe.ok) {
+      this.lastInitInfo = probe;
+      this._debugWarn('WebGPU capability probe failed:', probe.reason, probe.error || '');
+      return false;
+    }
 
     try {
+      const adapter = probe.adapter;
       this.device = await adapter.requestDevice();
       const format = navigator.gpu.getPreferredCanvasFormat();
+
+      this.device.lost.then((info) => {
+        this._debugWarn('WebGPU device lost:', info?.reason || 'unknown', info?.message || '');
+        this.cleanup();
+        this.onDeviceLost?.(info);
+      });
 
       // Инициализация компонентов
       this.uniformBufferManager = new UniformBufferManager(this.device);
@@ -152,6 +249,10 @@ export class WebGPURenderer {
         format,
         alphaMode: 'premultiplied'
       });
+
+      // Минимальный smoke-test, чтобы отловить ранние проблемы очереди/драйвера.
+      const smokeEncoder = this.device.createCommandEncoder();
+      this.device.queue.submit([smokeEncoder.finish()]);
 
       this.setupInstances();
       await this.atlasManager.initialize(this.config);
@@ -176,9 +277,20 @@ export class WebGPURenderer {
         this.setupDebugCanvas();
       }
 
+      this.lastInitInfo = this._buildInitInfo(true, 'ready', {
+        isFallbackAdapter: probe.isFallbackAdapter === true
+      });
+
+      this._debugLog('WebGPU initialized successfully.', {
+        isFallbackAdapter: probe.isFallbackAdapter === true
+      });
+
       return true;
     } catch (error) {
-      console.warn('WebGPU init failed, switching to 2D fallback.', error);
+      this.lastInitInfo = this._buildInitInfo(false, 'init_failed', {
+        error: error?.message || String(error)
+      });
+      this._debugWarn('WebGPU init failed, switching to 2D fallback.', error);
       this.cleanup();
       return false;
     }

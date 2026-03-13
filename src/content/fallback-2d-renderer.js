@@ -31,6 +31,7 @@ export class Fallback2DRenderer {
     this._calibrationDeltaSum = 0;
     this._calibrationCount = 0;
     this.allowNewFlakes = true;
+    this.lowQualityMode = false;
     
     // Параметры взаимодействия с мышью
     this.mouseX = -1000;
@@ -48,6 +49,12 @@ export class Fallback2DRenderer {
     this.mouseBurstRadiusMultiplier = 3.5;
     this.mouseBurstTimer = 0;
     this.mouseBurstMode = null;
+    this.maxMouseVelocity = config.maxMouseVelocity ?? 2200;
+    this.mouseVelocitySmoothing = config.mouseVelocitySmoothing ?? 0.35;
+    this.mouseActivityThreshold = config.mouseActivityThreshold ?? 45;
+    this.maxFlakeSpeed = config.maxFlakeSpeed ?? 420;
+    this.maxRotationSpeed = config.maxRotationSpeed ?? 8;
+    this.canvas2dMaxDpr = config.canvas2dMaxDpr ?? 1.75;
     
     // Параметры коллизий между снежинками
     this.enableCollisions = config.enableCollisions ?? true; // Включить коллизии
@@ -336,11 +343,9 @@ export class Fallback2DRenderer {
   /**
    * Обработка коллизий между снежинками с использованием CollisionHandler
    */
-  handleCollisions() {
+  handleCollisions(delta = 0.016) {
     if (!this.collisionHandler || !this.enableCollisions) return;
-    
-    // Вызываем обработчик коллизий с предиктивной проверкой (0.03 ≈ 60 FPS)
-    this.collisionHandler.handleCollisions(this.flakes, 0.03);
+    this.collisionHandler.handleCollisions(this.flakes, delta);
   }
 
   /**
@@ -349,20 +354,24 @@ export class Fallback2DRenderer {
   start() {
     const ctx = this.ctx;
     const { snowminsize, snowmaxsize } = this.config;
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
     let lastFrameTime = performance.now();
     const draw = (now = performance.now()) => {
-      const delta = Math.min((now - lastFrameTime) / 1000, 0.05);
+      const rawDelta = Math.min((now - lastFrameTime) / 1000, 0.05);
       lastFrameTime = now;
 
       // EMA по frame-delta (а не по fps): медленные кадры вносят больший вклад,
       // поэтому просадки fps детектируются точнее чем при EMA(1/delta).
-      this._avgFrameDelta = this._avgFrameDelta * (1 - this.fpsSmoothing) + delta * this.fpsSmoothing;
+      this._avgFrameDelta = this._avgFrameDelta * (1 - this.fpsSmoothing) + rawDelta * this.fpsSmoothing;
       this.currentFpsEstimate = 1 / this._avgFrameDelta;
+      // Для физики используем реальный rawDelta (не сглаженный), только ограничиваем
+      // сверху чтобы снежинки не прыгали после длинной паузы вкладки.
+      const delta = Math.min(rawDelta, 1 / 20);
 
       // Авто-калибровка: первые 60 кадров определяют базовый fps монитора (60/120/144 Hz и т.д.)
       if (!this._calibrated) {
-        this._calibrationDeltaSum += delta;
+        this._calibrationDeltaSum += rawDelta;
         this._calibrationCount++;
         if (this._calibrationCount >= 60) {
           const baseDelta = this._calibrationDeltaSum / this._calibrationCount;
@@ -381,15 +390,39 @@ export class Fallback2DRenderer {
       }
 
       const flakeCount = this.flakes.length;
-      if (flakeCount >= 420 || (flakeCount >= 320 && this.currentFpsEstimate < 42)) {
+      if (flakeCount >= 260 || this.currentFpsEstimate < 42) {
+        this._collisionFrameStride = 5;
+      } else if (flakeCount >= 180 || this.currentFpsEstimate < 48) {
+        this._collisionFrameStride = 4;
+      } else if (flakeCount >= 120 || this.currentFpsEstimate < 54) {
         this._collisionFrameStride = 3;
-      } else if (flakeCount >= 220 || (flakeCount >= 160 && this.currentFpsEstimate < 52)) {
+      } else if (flakeCount >= 80 || this.currentFpsEstimate < 58) {
         this._collisionFrameStride = 2;
       } else {
         this._collisionFrameStride = 1;
       }
 
-      const ratio = window.devicePixelRatio || 1;
+      // Гистерезис: переключаемся в low-quality при fps < 48, выходим только при fps > 54.
+      // Без гистерезиса режим мог переключаться каждый кадр при fps ~52, вызывая прыжки.
+      // При смене режима поглощаем/изымаем swingAngle в cumulativeSpin, чтобы не было
+      // визуального скачка угла — рендерный finalRotation при этом не изменится.
+      if (!this.lowQualityMode && flakeCount >= 100 && this.currentFpsEstimate < 48) {
+        this.lowQualityMode = true;
+        for (let _i = 0; _i < this.flakes.length; _i++) {
+          const _f = this.flakes[_i];
+          if (_f.isAwaitingRespawn || _f.isGrabbed) continue;
+          _f.cumulativeSpin = (_f.cumulativeSpin || 0) + (_f._sinPhase || 0) * 0.35 * (_f.swayLimit ?? 1.0);
+        }
+      } else if (this.lowQualityMode && this.currentFpsEstimate > 54) {
+        this.lowQualityMode = false;
+        for (let _i = 0; _i < this.flakes.length; _i++) {
+          const _f = this.flakes[_i];
+          if (_f.isAwaitingRespawn || _f.isGrabbed) continue;
+          _f.cumulativeSpin = (_f.cumulativeSpin || 0) - (_f._sinPhase || 0) * 0.35 * (_f.swayLimit ?? 1.0);
+        }
+      }
+
+      const ratio = Math.min(window.devicePixelRatio || 1, this.canvas2dMaxDpr);
       const viewport = this._getViewportSize();
       const worldWidth = viewport.width;
       const worldHeight = viewport.height;
@@ -479,8 +512,9 @@ export class Fallback2DRenderer {
       const mouseVx = this.mouseVelocityX;
       const mouseVy = this.mouseVelocityY;
       const mouseSpeed = Math.sqrt(mouseVx * mouseVx + mouseVy * mouseVy);
-      const activityFactor = mouseSpeed > 0 ? 1 : 0;
-      const shouldApplyMouse = burstActive || activityFactor > 0;
+      const isMouseActive = mouseSpeed > this.mouseActivityThreshold;
+      const activityFactor = isMouseActive ? 1 : 0;
+      const shouldApplyMouse = burstActive || isMouseActive;
       const isMouseFast = mouseSpeed > this.mouseDragThreshold;
       const mouseVelMag = mouseSpeed > 0 ? mouseSpeed : 0;
 
@@ -577,6 +611,18 @@ export class Fallback2DRenderer {
           }
         }
 
+        // Ограничиваем экстремальные скорости, чтобы исключить резкие выбросы
+        // при высокочастотных mousemove событиях и рывках delta.
+        const maxSpeed = this.maxFlakeSpeed * (flake._sizeRatio || 1);
+        const speedSq = flake.velocityX * flake.velocityX + flake.velocityY * flake.velocityY;
+        const maxSpeedSq = maxSpeed * maxSpeed;
+        if (speedSq > maxSpeedSq) {
+          const scale = maxSpeed / Math.sqrt(speedSq);
+          flake.velocityX *= scale;
+          flake.velocityY *= scale;
+        }
+        flake.rotationSpeed = clamp(flake.rotationSpeed || 0, -this.maxRotationSpeed, this.maxRotationSpeed);
+
         // Применяем импульс к позиции (скорость в px/сек, умножаем на delta)
         flake.baseX += flake.velocityX * delta;
         flake.y += flake.velocityY * delta;
@@ -585,8 +631,17 @@ export class Fallback2DRenderer {
 
         if (!flake.isGrabbed) {
           flake.phase += flake.freq * delta;
+          // Нормализуем phase чтобы предотвратить потерю точности float64 при длинных сессиях
+          if (flake.phase > 6283.185 || flake.phase < -6283.185) {
+            flake.phase = flake.phase % (Math.PI * 2);
+          }
           flake._sinPhase = Math.sin(flake.phase);
           flake.cumulativeSpin = (flake.cumulativeSpin || 0) + (flake.rotationSpeed || 0) * delta;
+          // Нормализуем cumulativeSpin чтобы предотвратить потерю точности float64
+          // при очень длинных сессиях (> ~1000 оборотов)
+          if (flake.cumulativeSpin > 6283.185 || flake.cumulativeSpin < -6283.185) {
+            flake.cumulativeSpin = flake.cumulativeSpin % (Math.PI * 2);
+          }
           flake.y += flake.fallSpeed * delta;
         } else {
           flake._sinPhase = 0;
@@ -619,7 +674,7 @@ export class Fallback2DRenderer {
       // При высокой нагрузке считаем коллизии реже, чтобы стабилизировать FPS.
       this._collisionFrameCounter = (this._collisionFrameCounter + 1) % this._collisionFrameStride;
       if (this._collisionFrameCounter === 0) {
-        this.handleCollisions();
+        this.handleCollisions(delta);
       }
       
       // Затухание + портальное перемещение — один проход
@@ -652,6 +707,11 @@ export class Fallback2DRenderer {
       for (let i = 0; i < flakes.length; i++) {
         const flake = flakes[i];
         if (flake.isAwaitingRespawn) continue;
+        const cullMargin = flake.size * 2;
+        if (flake.y < -cullMargin || flake.y > worldHeight + cullMargin) {
+          continue;
+        }
+
         // Позиция БЕЗ горизонтального смещения (качание теперь визуальное через ротацию)
         const x = flake.x * ratio;
         const y = flake.y * ratio;
@@ -660,15 +720,19 @@ export class Fallback2DRenderer {
           ctx.fillStyle = flake.color;
           lastFillStyle = flake.color;
         }
-        // Качание маятника через rotate — без save/restore (setTransform заменяет оба)
+        // В low quality режиме вращение не обновляется — cumulativeSpin заморожен.
+        // Но setTransform всегда выставляет x,y + вращение из cumulativeSpin,
+        // чтобы координатное пространство оставалось единым и снежинки не прыгали
+        // при переключении режима.
         const swayLimit = flake.swayLimit ?? 1.0;
-        const swingAngle = !flake.isGrabbed ? (flake._sinPhase || 0) * 0.35 * swayLimit : 0;
+        const swingAngle = (!this.lowQualityMode && !flake.isGrabbed)
+          ? (flake._sinPhase || 0) * 0.35 * swayLimit
+          : 0;
         const finalRotation = (flake.cumulativeSpin || 0) + swingAngle;
         const cosR = Math.cos(finalRotation);
         const sinR = Math.sin(finalRotation);
         ctx.setTransform(cosR, sinR, -sinR, cosR, x, y);
 
-        // Для предложений используем многострочный рендеринг
         if (flake.isSentence) {
           const sentenceFont = flake.sentenceFont || `bold ${Math.max(10, flake.size * 0.3)}px Arial, sans-serif`;
           if (lastFont !== sentenceFont) {
@@ -686,7 +750,6 @@ export class Fallback2DRenderer {
             ctx.fillText(line, 0, lineY);
           }
         } else {
-          // Обычные символы
           const glyphFont = flake.glyphFont || `${Math.max(16, flake.size)}px serif`;
           if (lastFont !== glyphFont) {
             ctx.font = glyphFont;
@@ -799,10 +862,26 @@ export class Fallback2DRenderer {
    * @param {number} vy - Скорость по Y
    */
   updateMousePosition(x, y, vx = 0, vy = 0) {
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const maxMouseV = this.maxMouseVelocity;
+    const smooth = clamp(this.mouseVelocitySmoothing, 0.05, 1);
+
+    // При idle-сигнале сразу гасим скорость, чтобы поле влияния не оставалось активным.
+    if (Math.abs(vx) < 0.001 && Math.abs(vy) < 0.001) {
+      this.mouseX = x;
+      this.mouseY = y;
+      this.mouseVelocityX = 0;
+      this.mouseVelocityY = 0;
+      return;
+    }
+
+    const clampedVx = clamp(vx, -maxMouseV, maxMouseV);
+    const clampedVy = clamp(vy, -maxMouseV, maxMouseV);
+
     this.mouseX = x;
     this.mouseY = y;
-    this.mouseVelocityX = vx;
-    this.mouseVelocityY = vy;
+    this.mouseVelocityX = this.mouseVelocityX * (1 - smooth) + clampedVx * smooth;
+    this.mouseVelocityY = this.mouseVelocityY * (1 - smooth) + clampedVy * smooth;
   }
 
   /**

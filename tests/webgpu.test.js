@@ -40,11 +40,13 @@ const createMockWebGPU = () => {
       copyExternalImageToTexture: vi.fn(),
       submit: vi.fn()
     },
+    lost: new Promise(() => {}),
     destroy: vi.fn()
   };
 
   return {
     requestAdapter: vi.fn().mockResolvedValue({
+      isFallbackAdapter: false,
       requestDevice: vi.fn().mockResolvedValue(mockDevice)
     }),
     getPreferredCanvasFormat: vi.fn().mockReturnValue('bgra8unorm')
@@ -67,9 +69,16 @@ describe('Snow Animation System', () => {
       innerWidth: 1920,
       innerHeight: 1080,
       devicePixelRatio: 1,
+      isSecureContext: true,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn()
     };
+
+    Object.defineProperty(global, 'isSecureContext', {
+      value: true,
+      configurable: true,
+      writable: true
+    });
 
     global.chrome = {
       runtime: {
