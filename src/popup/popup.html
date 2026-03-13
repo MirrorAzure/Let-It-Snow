@@ -196,6 +196,25 @@
       </button>
     </div>
 
+    <div class="settings-card">
+      <div class="card-header">
+        <i class="fas fa-file-export"></i>
+        <h3 data-i18n="settingsTransferSection">Перенос настроек</h3>
+      </div>
+      <p class="hint settings-transfer-hint" data-i18n="importExportHint">Экспортируйте настройки в JSON или импортируйте их на другом устройстве.</p>
+      <div class="import-export-actions">
+        <button id="exportSettings" class="secondary-btn" data-i18n-title="tooltipExportSettings">
+          <i class="fas fa-download"></i>
+          <span data-i18n="exportSettings">Экспорт</span>
+        </button>
+        <button id="importSettings" class="secondary-btn" data-i18n-title="tooltipImportSettings">
+          <i class="fas fa-upload"></i>
+          <span data-i18n="importSettings">Импорт</span>
+        </button>
+      </div>
+      <input id="importSettingsInput" type="file" accept="application/json,.json" hidden>
+    </div>
+
     </div><!-- End Settings Tab -->
 
     <!-- About Tab Content -->
@@ -291,10 +310,16 @@
     </div><!-- End About Tab -->
 
     <div class="footer">
-      <button id="startSnow" class="big-btn" data-i18n-title="tooltipStartSnow">
-        <i class="fas fa-play-circle"></i>
-        <span data-i18n="startButton">Запустить снегопад!</span>
-      </button>
+      <div class="action-buttons">
+        <button id="startSnow" class="big-btn start-btn" data-i18n-title="tooltipStartSnow">
+          <i class="fas fa-play-circle"></i>
+          <span data-i18n="startButton">Запустить снегопад!</span>
+        </button>
+        <button id="stopSnow" class="big-btn stop-btn" data-i18n-title="tooltipStopSnow">
+          <i class="fas fa-stop-circle"></i>
+          <span data-i18n="stopButton">Stop</span>
+        </button>
+      </div>
       <div class="decoration">
         <span class="decoration-icon">🎄</span>
         <span class="decoration-icon">🦌</span>

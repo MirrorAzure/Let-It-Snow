@@ -80,6 +80,24 @@
   "startButton": {
     "message": "Let it snow!"
   },
+  "snowStarted": {
+    "message": "Snowfall started!"
+  },
+  "stopButton": {
+    "message": "Stop"
+  },
+  "settingsTransferSection": {
+    "message": "Settings transfer"
+  },
+  "importExportHint": {
+    "message": "Export settings to JSON or import them on another device."
+  },
+  "exportSettings": {
+    "message": "Export"
+  },
+  "importSettings": {
+    "message": "Import"
+  },
   "errorNoColor": {
     "message": "Add at least one color!"
   },
@@ -91,6 +109,9 @@
   },
   "errorInject": {
     "message": "Failed to start snow.\nTry refreshing the page."
+  },
+  "errorImportSettings": {
+    "message": "Failed to import settings. Please check that the selected file is a valid JSON settings file."
   },
   "resetDefaults": {
     "message": "Reset to defaults"
@@ -199,6 +220,15 @@
   },
   "tooltipStartSnow": {
     "message": "Start snowfall on the active tab"
+  },
+  "tooltipStopSnow": {
+    "message": "Stop snowfall and clear the active tab"
+  },
+  "tooltipExportSettings": {
+    "message": "Download current settings as JSON"
+  },
+  "tooltipImportSettings": {
+    "message": "Load settings from a JSON file"
   },
   "tooltipColorPicker": {
     "message": "Pick a color"

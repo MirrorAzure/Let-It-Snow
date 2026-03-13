@@ -159,6 +159,21 @@ describe('popup UI', () => {
     expect(lastCall.snowmax).toBe(200);
   });
 
+  it('sends stopSnow action when stop button is clicked', async () => {
+    global.chrome = createChromeMock();
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    document.getElementById('stopSnow').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(global.chrome.tabs.sendMessage).toHaveBeenCalledWith(1, {
+      action: 'stopSnow'
+    });
+  });
+
   it('loads and saves mouseRadius setting', async () => {
     global.chrome = createChromeMock({ mouseRadius: 150 });
 

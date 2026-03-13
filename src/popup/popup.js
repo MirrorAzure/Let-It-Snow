@@ -16,6 +16,25 @@ import {
   setupSliderListener
 } from './ui-controllers.js';
 
+const SETTINGS_KEYS = [
+  'snowmax',
+  'sinkspeed',
+  'snowminsize',
+  'snowmaxsize',
+  'colors',
+  'symbols',
+  'sentences',
+  'sentenceCount',
+  'autoStart',
+  'gifs',
+  'gifCount',
+  'mouseRadius',
+  'windEnabled',
+  'windDirection',
+  'windStrength',
+  'windGustFrequency'
+];
+
 /**
  * Инициализация popup при загрузке DOM
  */
@@ -72,9 +91,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     sentenceCount: document.getElementById('sentenceCount'),
     sentenceCountValue: document.getElementById('sentenceCountValue'),
     startSnow: document.getElementById('startSnow'),
+    stopSnow: document.getElementById('stopSnow'),
     addColor: document.getElementById('addColor'),
     addSymbol: document.getElementById('addSymbol'),
     addSentence: document.getElementById('addSentence'),
+    exportSettings: document.getElementById('exportSettings'),
+    importSettings: document.getElementById('importSettings'),
+    importSettingsInput: document.getElementById('importSettingsInput'),
     autoStart: document.getElementById('autoStart'),
     gifsList: document.getElementById('gifsList'),
     addGif: document.getElementById('addGif'),
@@ -92,9 +115,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   /**
-   * Сохраняет все настройки из UI в chrome.storage
+   * Собирает текущие настройки из UI
+   * @returns {Object}
    */
-  const saveAllSettings = async () => {
+  const buildSettingsPayload = () => {
     const colors = Array.from(
       elements.colorsList.querySelectorAll('.item')
     ).map((item) => item.querySelector('input[type="color"]').value);
@@ -115,14 +139,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       .map((item) => item.querySelector('input[type="url"]').value.trim())
       .filter((s) => s !== '');
 
-    await saveSettings({
+    return {
       snowmax: parseInt(elements.snowmax.value),
       sinkspeed: parseFloat(elements.sinkspeed.value),
       snowminsize: parseInt(elements.snowminsize.value),
       snowmaxsize: parseInt(elements.snowmaxsize.value),
       colors: colors.length > 0 ? colors : ['#ffffff'],
       symbols: symbols.length > 0 ? symbols : ['❄'],
-      sentences: sentences,
+      sentences,
       sentenceCount: parseInt(elements.sentenceCount.value) || 0,
       gifs,
       gifCount: parseInt(elements.gifCount.value) || 0,
@@ -132,88 +156,81 @@ document.addEventListener('DOMContentLoaded', async () => {
       windDirection: elements.windDirection.value,
       windStrength: parseFloat(elements.windStrength.value),
       windGustFrequency: parseFloat(elements.windGustFrequency.value)
-    });
+    };
+  };
+
+  /**
+   * Применяет объект настроек к UI
+   * @param {Object} rawConfig
+   */
+  const applySettingsToUI = (rawConfig = {}) => {
+    const config = { ...DEFAULT_SETTINGS, ...rawConfig };
+    const colors = Array.isArray(config.colors) && config.colors.length > 0
+      ? config.colors
+      : DEFAULT_SETTINGS.colors;
+    const symbols = Array.isArray(config.symbols) && config.symbols.length > 0
+      ? config.symbols
+      : DEFAULT_SETTINGS.symbols;
+    const sentences = Array.isArray(config.sentences) ? config.sentences : [];
+    const gifs = Array.isArray(config.gifs) ? config.gifs : [];
+
+    elements.snowmax.value = config.snowmax;
+    elements.snowmaxValue.textContent = config.snowmax;
+    elements.sinkspeed.value = config.sinkspeed;
+    elements.sinkspeedValue.textContent = parseFloat(config.sinkspeed).toFixed(1);
+    elements.snowminsize.value = config.snowminsize;
+    elements.snowmaxsize.value = config.snowmaxsize;
+    elements.minsizeValue.textContent = config.snowminsize;
+    elements.maxsizeValue.textContent = config.snowmaxsize;
+    elements.autoStart.checked = Boolean(config.autoStart);
+    elements.gifCount.value = config.gifCount || 0;
+    elements.gifCountValue.textContent = config.gifCount || 0;
+    elements.sentenceCount.value = config.sentenceCount || 0;
+    elements.sentenceCountValue.textContent = config.sentenceCount || 0;
+    elements.mouseRadius.value = config.mouseRadius || 100;
+    elements.mouseRadiusValue.textContent = config.mouseRadius || 100;
+
+    elements.windEnabled.checked = Boolean(config.windEnabled);
+    elements.windDirection.value = config.windDirection || 'left';
+    elements.windStrength.value = config.windStrength || 0.5;
+    elements.windStrengthValue.textContent = (config.windStrength || 0.5).toFixed(1);
+    elements.windGustFrequency.value = config.windGustFrequency || 3;
+    elements.windGustFrequencyValue.textContent = (config.windGustFrequency || 3).toFixed(1);
+    elements.windSettings.style.display = elements.windEnabled.checked ? 'block' : 'none';
+
+    elements.colorsList.innerHTML = '';
+    elements.symbolsList.innerHTML = '';
+    elements.sentencesList.innerHTML = '';
+    elements.gifsList.innerHTML = '';
+
+    colors.forEach((color) => createColorItem(color, elements.colorsList, saveAllSettings));
+    symbols.forEach((symbol) => createSymbolItem(symbol, elements.symbolsList, saveAllSettings));
+    sentences.forEach((sentence) => createSentenceItem(sentence, elements.sentencesList, saveAllSettings));
+    gifs.forEach((gif) => createGifItem(gif, elements.gifsList, saveAllSettings));
+
+    if (elements.colorsList.children.length === 0) {
+      createColorItem('#ffffff', elements.colorsList, saveAllSettings);
+    }
+    if (elements.symbolsList.children.length === 0) {
+      createSymbolItem('❄', elements.symbolsList, saveAllSettings);
+    }
+    if (elements.gifsList.children.length === 0) {
+      createGifItem('', elements.gifsList, saveAllSettings);
+    }
+  };
+
+  /**
+   * Сохраняет все настройки из UI в chrome.storage
+   */
+  const saveAllSettings = async () => {
+    await saveSettings(buildSettingsPayload());
   };
 
   // Загружаем сохраненные настройки
-  const saved = await loadSettings([
-    'snowmax',
-    'sinkspeed',
-    'snowminsize',
-    'snowmaxsize',
-    'colors',
-    'symbols',
-    'sentences',
-    'sentenceCount',
-    'autoStart',
-    'gifs',
-    'gifCount',
-    'mouseRadius',
-    'windEnabled',
-    'windDirection',
-    'windStrength',
-    'windGustFrequency'
-  ]);
+  const saved = await loadSettings(SETTINGS_KEYS);
 
   const config = { ...DEFAULT_SETTINGS, ...saved };
-
-  // Устанавливаем значения в UI
-  elements.snowmax.value = config.snowmax;
-  elements.snowmaxValue.textContent = config.snowmax;
-  elements.sinkspeed.value = config.sinkspeed;
-  elements.sinkspeedValue.textContent = parseFloat(config.sinkspeed).toFixed(1);
-  elements.snowminsize.value = config.snowminsize;
-  elements.snowmaxsize.value = config.snowmaxsize;
-  elements.minsizeValue.textContent = config.snowminsize;
-  elements.maxsizeValue.textContent = config.snowmaxsize;
-  elements.autoStart.checked = config.autoStart || false;
-  elements.gifCount.value = config.gifCount || 0;
-  elements.gifCountValue.textContent = config.gifCount || 0;
-  elements.sentenceCount.value = config.sentenceCount || 0;
-  elements.sentenceCountValue.textContent = config.sentenceCount || 0;
-  elements.mouseRadius.value = config.mouseRadius || 100;
-  elements.mouseRadiusValue.textContent = config.mouseRadius || 100;
-  
-  // Устанавливаем значения ветра
-  elements.windEnabled.checked = config.windEnabled || false;
-  elements.windDirection.value = config.windDirection || 'left';
-  elements.windStrength.value = config.windStrength || 0.5;
-  elements.windStrengthValue.textContent = (config.windStrength || 0.5).toFixed(1);
-  elements.windGustFrequency.value = config.windGustFrequency || 3;
-  elements.windGustFrequencyValue.textContent = (config.windGustFrequency || 3).toFixed(1);
-  
-  // Показываем/скрываем блок настроек ветра
-  elements.windSettings.style.display = elements.windEnabled.checked ? 'block' : 'none';
-
-  // Очищаем списки и заполняем сохраненными значениями
-  elements.colorsList.innerHTML = '';
-  elements.symbolsList.innerHTML = '';
-  elements.sentencesList.innerHTML = '';
-  elements.gifsList.innerHTML = '';
-
-  config.colors.forEach((color) =>
-    createColorItem(color, elements.colorsList, saveAllSettings)
-  );
-  config.symbols.forEach((symbol) =>
-    createSymbolItem(symbol, elements.symbolsList, saveAllSettings)
-  );
-  (config.sentences || []).forEach((sentence) =>
-    createSentenceItem(sentence, elements.sentencesList, saveAllSettings)
-  );
-  (config.gifs || []).forEach((gif) =>
-    createGifItem(gif, elements.gifsList, saveAllSettings)
-  );
-
-  // Минимум по одному элементу в каждом списке
-  if (elements.colorsList.children.length === 0) {
-    createColorItem('#ffffff', elements.colorsList, saveAllSettings);
-  }
-  if (elements.symbolsList.children.length === 0) {
-    createSymbolItem('❄', elements.symbolsList, saveAllSettings);
-  }
-  if (elements.gifsList.children.length === 0) {
-    createGifItem('', elements.gifsList, saveAllSettings);
-  }
+  applySettingsToUI(config);
 
   // === Настройка обработчиков событий ===
 
@@ -259,6 +276,54 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Автостарт
   elements.autoStart.addEventListener('change', () => {
     saveAllSettings();
+  });
+
+  // Экспорт настроек в JSON
+  elements.exportSettings.addEventListener('click', async () => {
+    await saveAllSettings();
+    const payload = buildSettingsPayload();
+    const data = JSON.stringify(payload, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `let-it-snow-settings-${date}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  // Открытие выбора файла импорта
+  elements.importSettings.addEventListener('click', () => {
+    elements.importSettingsInput.click();
+  });
+
+  // Импорт настроек из JSON
+  elements.importSettingsInput.addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('invalid_settings');
+      }
+
+      const merged = { ...DEFAULT_SETTINGS, ...parsed };
+      applySettingsToUI(merged);
+      await saveAllSettings();
+    } catch (error) {
+      console.error(error);
+      alert(t('errorImportSettings'));
+    } finally {
+      elements.importSettingsInput.value = '';
+    }
   });
 
   // Настройка слайдеров
@@ -328,25 +393,11 @@ document.addEventListener('DOMContentLoaded', async () => {
    * Запуск снегопада на активной вкладке
    */
   elements.startSnow.addEventListener('click', async () => {
-    const colors = Array.from(
-      elements.colorsList.querySelectorAll('input[type="color"]')
-    ).map((i) => i.value);
-
-    const symbols = Array.from(
-      elements.symbolsList.querySelectorAll('input[type="text"]')
-    )
-      .map((i) => i.value.trim())
-      .filter((s) => s !== '');
-
-    const sentences = Array.from(
-      elements.sentencesList.querySelectorAll('.sentence-text')
-    )
-      .map((i) => i.value.trim())
-      .filter((s) => s !== '');
-
-    const gifs = Array.from(elements.gifsList.querySelectorAll('input[type="url"]'))
-      .map((i) => i.value.trim())
-      .filter((s) => s !== '');
+    const payload = buildSettingsPayload();
+    const colors = payload.colors;
+    const symbols = payload.symbols;
+    const sentences = payload.sentences;
+    const gifs = payload.gifs;
 
     // Валидация
     if (colors.length === 0) {
@@ -360,21 +411,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Формируем конфигурацию
     const config = {
-      snowmax: parseInt(elements.snowmax.value),
-      sinkspeed: parseFloat(elements.sinkspeed.value),
-      snowminsize: parseInt(elements.snowminsize.value),
-      snowmaxsize: parseInt(elements.snowmaxsize.value),
+      snowmax: payload.snowmax,
+      sinkspeed: payload.sinkspeed,
+      snowminsize: payload.snowminsize,
+      snowmaxsize: payload.snowmaxsize,
       snowcolor: colors,
       snowletters: symbols.length > 0 ? symbols : ['❄'],
       snowsentences: sentences,
-      sentenceCount: parseInt(elements.sentenceCount.value) || 0,
+      sentenceCount: payload.sentenceCount,
       gifUrls: gifs,
-      gifCount: gifs.length > 0 ? parseInt(elements.gifCount.value) || 0 : 0,
-      mouseRadius: parseInt(elements.mouseRadius.value),
-      windEnabled: elements.windEnabled.checked,
-      windDirection: elements.windDirection.value,
-      windStrength: parseFloat(elements.windStrength.value),
-      windGustFrequency: parseFloat(elements.windGustFrequency.value)
+      gifCount: gifs.length > 0 ? payload.gifCount : 0,
+      mouseRadius: payload.mouseRadius,
+      windEnabled: payload.windEnabled,
+      windDirection: payload.windDirection,
+      windStrength: payload.windStrength,
+      windGustFrequency: payload.windGustFrequency
     };
 
     // UI анимация кнопки
@@ -413,7 +464,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Успешный запуск
       clearInterval(blinkInterval);
-      elements.startSnow.innerHTML = '<i class="fas fa-check"></i><span>Снегопад запущен!</span>';
+      elements.startSnow.innerHTML = `<i class="fas fa-check"></i><span>${t('snowStarted')}</span>`;
       elements.startSnow.style.background = 'linear-gradient(135deg, #66bb6a, #2e7d32)';
 
       setTimeout(() => {
@@ -437,7 +488,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           await chrome.tabs.sendMessage(tab.id, { action: 'startSnow', config });
 
           elements.startSnow.innerHTML =
-            '<i class="fas fa-check"></i><span>Снегопад запущен!</span>';
+            `<i class="fas fa-check"></i><span>${t('snowStarted')}</span>`;
           elements.startSnow.style.background = 'linear-gradient(135deg, #66bb6a, #2e7d32)';
 
           setTimeout(() => {
@@ -451,6 +502,27 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else {
         console.error(error);
         alert('Произошла ошибка: ' + error.message);
+      }
+    }
+  });
+
+  /**
+   * Остановка снегопада и очистка активной вкладки
+   */
+  elements.stopSnow.addEventListener('click', async () => {
+    let tab;
+    try {
+      [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (!tab?.id || tab.url.startsWith('chrome:')) {
+        alert(t('errorChromePage'));
+        return;
+      }
+
+      await chrome.tabs.sendMessage(tab.id, { action: 'stopSnow' });
+    } catch (error) {
+      if (!error.message?.includes('Receiving end does not exist')) {
+        console.error(error);
       }
     }
   });

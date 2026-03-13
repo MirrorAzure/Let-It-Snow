@@ -17,8 +17,65 @@ export class CollisionHandler {
     // Увеличиваем радиус проверки коллизий для обнаружения даже при большом покачивании
     this.collisionCheckRadius = config.collisionCheckRadius ?? 600;
     this.collisionCheckRadiusSq = this.collisionCheckRadius * this.collisionCheckRadius;
+    this.minSpatialCellSize = config.minSpatialCellSize ?? 48;
+    this.maxSpatialCellSize = config.maxSpatialCellSize ?? this.collisionCheckRadius;
+    this._spatialGrid = new Map();
+    this._spatialCellSize = this.minSpatialCellSize;
     this.swayImpulseTransfer = config.swayImpulseTransfer ?? 0.3; // Коэффициент передачи импульса при раскачивании
     this.debugCollisions = config.debugCollisions ?? false; // Флаг для вывода дебаг информации при столкновениях
+  }
+
+  _cellKey(cx, cy) {
+    return `${cx},${cy}`;
+  }
+
+  _bucketFlake(grid, index, x, y, invCellSize) {
+    const cx = Math.floor(x * invCellSize);
+    const cy = Math.floor(y * invCellSize);
+    const key = this._cellKey(cx, cy);
+    const bucket = grid.get(key);
+    if (bucket) {
+      bucket.push(index);
+    } else {
+      grid.set(key, [index]);
+    }
+  }
+
+  _processPair(flakes, i, j, delta) {
+    const flakeA = flakes[i];
+    const flakeB = flakes[j];
+
+    const baseXA = flakeA.baseX ?? flakeA.x;
+    const baseXB = flakeB.baseX ?? flakeB.x;
+    const dy = flakeB.y - flakeA.y;
+
+    const coarseDx = baseXB - baseXA;
+    if (coarseDx * coarseDx + dy * dy > this.collisionCheckRadiusSq) return;
+
+    const swayFromRotationA = flakeA.isGrabbed ? 0 : (flakeA._sinPhase || 0) * 0.35 * (flakeA.swayLimit ?? 1.0) * (flakeA.size ?? 20) * 0.5;
+    const swayFromRotationB = flakeB.isGrabbed ? 0 : (flakeB._sinPhase || 0) * 0.35 * (flakeB.swayLimit ?? 1.0) * (flakeB.size ?? 20) * 0.5;
+
+    const dx = (baseXB + swayFromRotationB) - (baseXA + swayFromRotationA);
+    const distSq = dx * dx + dy * dy;
+    if (distSq > this.collisionCheckRadiusSq) return;
+
+    const distance = Math.sqrt(distSq);
+    const minDistance = (flakeA._collisionRadius ?? (flakeA.collisionSize ?? flakeA.size ?? 20) * 0.5)
+                      + (flakeB._collisionRadius ?? (flakeB.collisionSize ?? flakeB.size ?? 20) * 0.5);
+    const swayBuffer = ((flakeA._swayBuffer ?? 0) + (flakeB._swayBuffer ?? 0)) * 0.5;
+
+    const safeDistance = Math.max(distance, 0.0001);
+    const nx = dx / safeDistance;
+    const ny = dy / safeDistance;
+    const dvx = (flakeB.velocityX ?? 0) - (flakeA.velocityX ?? 0);
+    const dvy = (flakeB.velocityY ?? 0) - (flakeA.velocityY ?? 0);
+    const dvn = dvx * nx + dvy * ny;
+    const predictivePadding = Math.max(0, -dvn) * delta;
+
+    const effectiveMinDistance = minDistance + predictivePadding + swayBuffer;
+    if (distance < effectiveMinDistance) {
+      this._resolveCollision(flakeA, flakeB, dx, dy, distance, effectiveMinDistance, 0, 0, delta);
+    }
   }
 
   /**
@@ -38,60 +95,70 @@ export class CollisionHandler {
     if (!this.enableCollisions || !flakes) return;
 
     // Сбрасываем ограничения покачивания перед новой проверкой
+    let maxCollisionRadius = 0;
+    let maxSwayBuffer = 0;
+    let maxVelocity = 0;
     for (let i = 0; i < flakes.length; i++) {
-      flakes[i].swayLimit = flakes[i].isGrabbed ? 0 : 1.0;
+      const flake = flakes[i];
+      flake.swayLimit = flake.isGrabbed ? 0 : 1.0;
+
+      const radius = flake._collisionRadius ?? (flake.collisionSize ?? flake.size ?? 20) * 0.5;
+      const swayBuffer = flake._swayBuffer ?? Math.sin(0.35) * (flake.size ?? 20) * 0.5;
+      const velocityMag = Math.hypot(flake.velocityX ?? 0, flake.velocityY ?? 0);
+
+      if (radius > maxCollisionRadius) maxCollisionRadius = radius;
+      if (swayBuffer > maxSwayBuffer) maxSwayBuffer = swayBuffer;
+      if (velocityMag > maxVelocity) maxVelocity = velocityMag;
     }
 
     // Если меньше 2 снежинок, коллизий не будет, но swayLimit уже сброшен
     if (flakes.length < 2) return;
 
-    // Оптимизация: проверяем только близкие пары
+    const maxInteractionDistance = Math.min(
+      this.collisionCheckRadius,
+      Math.max(this.minSpatialCellSize, maxCollisionRadius * 2 + maxSwayBuffer + maxVelocity * Math.max(delta, 0.016))
+    );
+    const cellSize = Math.max(this.minSpatialCellSize, Math.min(this.maxSpatialCellSize, maxInteractionDistance));
+    this._spatialCellSize = cellSize;
+
+    const grid = this._spatialGrid;
+    grid.clear();
+    const invCellSize = 1 / cellSize;
+
     for (let i = 0; i < flakes.length; i++) {
-      const flakeA = flakes[i];
-      
-      // Проверяем только снежинки в радиусе collisionCheckRadius
-      for (let j = i + 1; j < flakes.length; j++) {
-        const flakeB = flakes[j];
-        
-        // КРИТИЧНО: Используем продолжительную позицию, которая совпадает с визуальным положением при рендеринге
-        // Теперь качание реализовано через ротацию (визуальный наклон), а не горизонтальное смещение
-        const baseXA = flakeA.baseX ?? flakeA.x;
-        const baseXB = flakeB.baseX ?? flakeB.x;
-        const dy = flakeB.y - flakeA.y;
+      const flake = flakes[i];
+      this._bucketFlake(grid, i, flake.baseX ?? flake.x, flake.y, invCellSize);
+    }
 
-        // Быстрый pre-reject по квадрату дистанции (без sqrt и тригонометрии)
-        const coarseDx = baseXB - baseXA;
-        if (coarseDx * coarseDx + dy * dy > this.collisionCheckRadiusSq) continue;
+    const neighbors = [
+      [1, 0],
+      [1, 1],
+      [0, 1],
+      [-1, 1]
+    ];
 
-        // Точное смещение с учётом качания (small-angle approximation: sin(angle)≈angle при angle≪1)
-        const swayFromRotationA = flakeA.isGrabbed ? 0 : (flakeA._sinPhase || 0) * 0.35 * (flakeA.swayLimit ?? 1.0) * (flakeA.size ?? 20) * 0.5;
-        const swayFromRotationB = flakeB.isGrabbed ? 0 : (flakeB._sinPhase || 0) * 0.35 * (flakeB.swayLimit ?? 1.0) * (flakeB.size ?? 20) * 0.5;
+    for (const [key, indices] of grid.entries()) {
+      for (let i = 0; i < indices.length; i++) {
+        for (let j = i + 1; j < indices.length; j++) {
+          this._processPair(flakes, indices[i], indices[j], delta);
+        }
+      }
 
-        const dx = (baseXB + swayFromRotationB) - (baseXA + swayFromRotationA);
-        const distSq = dx * dx + dy * dy;
-        if (distSq > this.collisionCheckRadiusSq) continue;
-        const distance = Math.sqrt(distSq);
-        
-        // Используем collisionSize для проверки коллизий (соответствует визуальному размеру)
-        // Минимальная дистанция коллизии (предвычислена на снежинке)
-        const minDistance = (flakeA._collisionRadius ?? (flakeA.collisionSize ?? flakeA.size ?? 20) * 0.5)
-                          + (flakeB._collisionRadius ?? (flakeB.collisionSize ?? flakeB.size ?? 20) * 0.5);
-        // Буфер качания (предвычислен на снежинке)
-        const swayBuffer = ((flakeA._swayBuffer ?? 0) + (flakeB._swayBuffer ?? 0)) * 0.5;
-        
-        // Если снежинки пересекаются
-        // Простейшая предикция, чтобы уменьшить прохождения сквозь друг друга
-        const safeDistance = Math.max(distance, 0.0001);
-        const nx = dx / safeDistance;
-        const ny = dy / safeDistance;
-        const dvx = (flakeB.velocityX ?? 0) - (flakeA.velocityX ?? 0);
-        const dvy = (flakeB.velocityY ?? 0) - (flakeA.velocityY ?? 0);
-        const dvn = dvx * nx + dvy * ny;
-        const predictivePadding = Math.max(0, -dvn) * delta;
+      const split = key.split(',');
+      const cx = Number(split[0]);
+      const cy = Number(split[1]);
 
-        const effectiveMinDistance = minDistance + predictivePadding + swayBuffer;
-        if (distance < effectiveMinDistance) {
-          this._resolveCollision(flakeA, flakeB, dx, dy, distance, effectiveMinDistance, 0, 0, delta);
+      for (let n = 0; n < neighbors.length; n++) {
+        const nx = cx + neighbors[n][0];
+        const ny = cy + neighbors[n][1];
+        const neighborBucket = grid.get(this._cellKey(nx, ny));
+        if (!neighborBucket) continue;
+
+        for (let i = 0; i < indices.length; i++) {
+          const a = indices[i];
+          for (let j = 0; j < neighborBucket.length; j++) {
+            this._processPair(flakes, a, neighborBucket[j], delta);
+          }
         }
       }
     }
@@ -405,6 +472,8 @@ export class CollisionHandler {
     }
     if (config.collisionCheckRadius !== undefined) {
       this.collisionCheckRadius = config.collisionCheckRadius;
+      this.collisionCheckRadiusSq = this.collisionCheckRadius * this.collisionCheckRadius;
+      this.maxSpatialCellSize = this.collisionCheckRadius;
     }
     if (config.swayImpulseTransfer !== undefined) {
       this.swayImpulseTransfer = config.swayImpulseTransfer;

@@ -62,6 +62,8 @@ export class Fallback2DRenderer {
       collisionCheckRadius: this.collisionCheckRadius,
       debugCollisions: this.debugCollisions
     });
+    this._collisionFrameStride = 1;
+    this._collisionFrameCounter = 0;
     
     // Параметры ветра
     this.windEnabled = config.windEnabled ?? false;
@@ -378,6 +380,15 @@ export class Fallback2DRenderer {
         this.allowNewFlakes = true;
       }
 
+      const flakeCount = this.flakes.length;
+      if (flakeCount >= 420 || (flakeCount >= 320 && this.currentFpsEstimate < 42)) {
+        this._collisionFrameStride = 3;
+      } else if (flakeCount >= 220 || (flakeCount >= 160 && this.currentFpsEstimate < 52)) {
+        this._collisionFrameStride = 2;
+      } else {
+        this._collisionFrameStride = 1;
+      }
+
       const ratio = window.devicePixelRatio || 1;
       const viewport = this._getViewportSize();
       const worldWidth = viewport.width;
@@ -605,7 +616,11 @@ export class Fallback2DRenderer {
       }
       
       // КРИТИЧНЫЙ ШАГ: Обрабатываем коллизии между снежинками ДО рендеринга
-      this.handleCollisions();
+      // При высокой нагрузке считаем коллизии реже, чтобы стабилизировать FPS.
+      this._collisionFrameCounter = (this._collisionFrameCounter + 1) % this._collisionFrameStride;
+      if (this._collisionFrameCounter === 0) {
+        this.handleCollisions();
+      }
       
       // Затухание + портальное перемещение — один проход
       const damping = Math.pow(0.98, delta * 60);

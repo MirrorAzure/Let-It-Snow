@@ -80,6 +80,24 @@
   "startButton": {
     "message": "Let it snow!"
   },
+  "snowStarted": {
+    "message": "Снегопад запущен!"
+  },
+  "stopButton": {
+    "message": "Stop"
+  },
+  "settingsTransferSection": {
+    "message": "Перенос настроек"
+  },
+  "importExportHint": {
+    "message": "Экспортируйте настройки в JSON или импортируйте их на другом устройстве."
+  },
+  "exportSettings": {
+    "message": "Экспорт"
+  },
+  "importSettings": {
+    "message": "Импорт"
+  },
   "errorNoColor": {
     "message": "Добавьте хотя бы один цвет!"
   },
@@ -91,6 +109,9 @@
   },
   "errorInject": {
     "message": "Не удалось запустить снегопад.\nПопробуйте обновить страницу."
+  },
+  "errorImportSettings": {
+    "message": "Не удалось импортировать настройки. Проверьте, что выбран корректный JSON-файл."
   },
   "resetDefaults": {
     "message": "Вернуть настройки по умолчанию"
@@ -199,6 +220,15 @@
   },
   "tooltipStartSnow": {
     "message": "Запустить снегопад на активной вкладке"
+  },
+  "tooltipStopSnow": {
+    "message": "Остановить снегопад и очистить активную вкладку"
+  },
+  "tooltipExportSettings": {
+    "message": "Скачать текущие настройки в JSON"
+  },
+  "tooltipImportSettings": {
+    "message": "Загрузить настройки из JSON-файла"
   },
   "tooltipColorPicker": {
     "message": "Выбрать цвет"
