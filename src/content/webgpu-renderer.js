@@ -5,6 +5,7 @@
 import shaderSource from './shader.wgsl?raw';
 import { hexToRgb } from './utils/color-utils.js';
 import { BackgroundMonitor } from './utils/background-monitor.js';
+import { estimateGlyphAtlasCellSize } from './utils/glyph-quality-estimator.js';
 import { AtlasManager } from './graphics/atlas-manager.js';
 import { UniformBufferManager } from './graphics/uniform-buffer.js';
 import { SimulationEngine } from './physics/simulation-engine.js';
@@ -115,10 +116,11 @@ export class WebGPURenderer {
 
   _getGlyphAtlasCellSize() {
     const maxTextureDim = Number(this.device?.limits?.maxTextureDimension2D) || 4096;
+    const snowLetters = Array.isArray(this.config?.snowletters) ? this.config.snowletters : [];
     const glyphCount = Math.max(
       1,
-      Array.isArray(this.config?.snowletters) && this.config.snowletters.length > 0
-        ? this.config.snowletters.length
+      snowLetters.length > 0
+        ? snowLetters.length
         : 1
     );
     const sentenceCount = Math.max(
@@ -129,7 +131,7 @@ export class WebGPURenderer {
     );
     const maxByGlyphAtlas = Math.floor(maxTextureDim / glyphCount);
     const maxBySentenceAtlas = Math.floor(maxTextureDim / Math.max(2, sentenceCount));
-    const maxSafeSize = Math.max(64, Math.min(512, maxByGlyphAtlas, maxBySentenceAtlas));
+    const maxSafeSize = Math.max(64, Math.min(1024, maxByGlyphAtlas, maxBySentenceAtlas));
 
     const configuredSize = Number(this.config?.webgpuGlyphAtlasSize);
     if (Number.isFinite(configuredSize)) {
@@ -138,11 +140,16 @@ export class WebGPURenderer {
 
     const dpr = Number(window?.devicePixelRatio) || 1;
     const maxFlakeSize = Number(this.config?.snowmaxsize) || 24;
-    const qualityFromDpr = 96 * Math.min(2.5, dpr);
-    const qualityFromGlyphSize = maxFlakeSize * 5;
-    const rawSize = Math.max(128, qualityFromDpr, qualityFromGlyphSize);
 
-    return Math.max(64, Math.min(maxSafeSize, Math.round(rawSize / 16) * 16));
+    return estimateGlyphAtlasCellSize({
+      glyphs: snowLetters,
+      targetRenderSize: maxFlakeSize,
+      devicePixelRatio: dpr,
+      maxTextureDimension2D: maxTextureDim,
+      sentenceCount,
+      minCellSize: 64,
+      maxCellSize: maxSafeSize
+    });
   }
 
   async _requestAdapterWithTimeout(timeoutMs = 1500) {

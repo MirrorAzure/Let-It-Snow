@@ -85,6 +85,226 @@ export function computeGlyphMonotoneFlags(imageData, atlasWidth, atlasHeight, ce
   return flags;
 }
 
+const GLYPH_FONT_FAMILY = '"Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Times New Roman", serif';
+const GLYPH_FONT_WEIGHT = 'normal';
+const GLYPH_CELL_PADDING_RATIO = 0.08;
+
+function applyGlyphFont(ctx, fontSize) {
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = `${GLYPH_FONT_WEIGHT} ${Math.max(1, Math.floor(fontSize))}px ${GLYPH_FONT_FAMILY}`;
+}
+
+function measureGlyphAtSize(ctx, glyph, fontSize) {
+  applyGlyphFont(ctx, fontSize);
+  const metrics = ctx.measureText(glyph);
+  const left = metrics.actualBoundingBoxLeft || 0;
+  const right = metrics.actualBoundingBoxRight || 0;
+  const ascent = metrics.actualBoundingBoxAscent || 0;
+  const descent = metrics.actualBoundingBoxDescent || 0;
+
+  return {
+    left,
+    right,
+    ascent,
+    descent,
+    width: right - left,
+    height: ascent + descent
+  };
+}
+
+function fitGlyphFontSize(ctx, glyph, cellSize) {
+  const availableSize = cellSize * (1 - GLYPH_CELL_PADDING_RATIO * 2);
+  let low = Math.max(12, cellSize * 0.35);
+  let high = Math.max(low, cellSize * 0.98);
+  let best = low;
+
+  for (let iteration = 0; iteration < 10; iteration += 1) {
+    const mid = (low + high) * 0.5;
+    const metrics = measureGlyphAtSize(ctx, glyph, mid);
+    const fits = metrics.width <= availableSize && metrics.height <= availableSize;
+
+    if (fits) {
+      best = mid;
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  return Math.max(12, best);
+}
+
+export function configureGlyphTextContext(ctx, cellSize, glyph = '❄') {
+  const fontSize = fitGlyphFontSize(ctx, glyph, cellSize);
+  applyGlyphFont(ctx, fontSize);
+}
+
+export function drawGlyphToCell(ctx, glyph, cellIndex, cellSize, atlasHeight) {
+  const centerX = cellIndex * cellSize + cellSize / 2;
+  const centerY = atlasHeight / 2;
+
+  const fittedFontSize = fitGlyphFontSize(ctx, glyph, cellSize);
+  const metrics = measureGlyphAtSize(ctx, glyph, fittedFontSize);
+  const x = centerX - metrics.width / 2;
+  const y = centerY + (metrics.ascent - metrics.descent) / 2;
+  ctx.fillText(glyph, x, y);
+}
+
+function edt1d(f, n) {
+  const d = new Float32Array(n);
+  const v = new Int32Array(n);
+  const z = new Float32Array(n + 1);
+  let k = 0;
+  v[0] = 0;
+  z[0] = -Infinity;
+  z[1] = Infinity;
+
+  for (let q = 1; q < n; q += 1) {
+    let s;
+    while (true) {
+      const p = v[k];
+      s = ((f[q] + q * q) - (f[p] + p * p)) / (2 * (q - p));
+      if (s > z[k]) break;
+      k -= 1;
+    }
+    k += 1;
+    v[k] = q;
+    z[k] = s;
+    z[k + 1] = Infinity;
+  }
+
+  k = 0;
+  for (let q = 0; q < n; q += 1) {
+    while (z[k + 1] < q) {
+      k += 1;
+    }
+    const p = v[k];
+    d[q] = (q - p) * (q - p) + f[p];
+  }
+
+  return d;
+}
+
+function edt2d(featureGrid, width, height) {
+  const temp = new Float32Array(width * height);
+  const out = new Float32Array(width * height);
+
+  const column = new Float32Array(height);
+  for (let x = 0; x < width; x += 1) {
+    for (let y = 0; y < height; y += 1) {
+      column[y] = featureGrid[y * width + x];
+    }
+    const columnDist = edt1d(column, height);
+    for (let y = 0; y < height; y += 1) {
+      temp[y * width + x] = columnDist[y];
+    }
+  }
+
+  const row = new Float32Array(width);
+  for (let y = 0; y < height; y += 1) {
+    const rowOffset = y * width;
+    for (let x = 0; x < width; x += 1) {
+      row[x] = temp[rowOffset + x];
+    }
+    const rowDist = edt1d(row, width);
+    for (let x = 0; x < width; x += 1) {
+      out[rowOffset + x] = rowDist[x];
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Создает SDF-версию атласа глифов из alpha-маски каждой ячейки.
+ * Используется только для монотонных глифов: цвет задается в шейдере.
+ * @param {HTMLCanvasElement} sourceCanvas
+ * @param {number} cellSize
+ * @param {number} glyphCount
+ * @returns {HTMLCanvasElement}
+ */
+export function createSdfGlyphAtlas(sourceCanvas, cellSize, glyphCount) {
+  if (!sourceCanvas || glyphCount <= 0 || cellSize <= 0) {
+    return sourceCanvas;
+  }
+
+  const srcCtx = sourceCanvas.getContext('2d');
+  if (!srcCtx || typeof srcCtx.getImageData !== 'function') {
+    return sourceCanvas;
+  }
+
+  let sourceImage;
+  try {
+    sourceImage = srcCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+  } catch (error) {
+    return sourceCanvas;
+  }
+
+  const sdfCanvas = document.createElement('canvas');
+  sdfCanvas.width = sourceCanvas.width;
+  sdfCanvas.height = sourceCanvas.height;
+  const dstCtx = sdfCanvas.getContext('2d');
+  if (!dstCtx || typeof dstCtx.createImageData !== 'function' || typeof dstCtx.putImageData !== 'function') {
+    return sourceCanvas;
+  }
+
+  const srcData = sourceImage.data;
+  const outImage = dstCtx.createImageData(sourceCanvas.width, sourceCanvas.height);
+  const outData = outImage.data;
+
+  // Баланс резкости и сохранения внутренних деталей (прорезей) глифа.
+  const spread = Math.max(7, Math.min(28, Math.floor(cellSize * 0.16)));
+  const invRange = 1 / (2 * spread);
+  const inf = 1e20;
+
+  const pixelCount = cellSize * cellSize;
+  const insideGrid = new Float32Array(pixelCount);
+  const outsideGrid = new Float32Array(pixelCount);
+
+  for (let glyphIdx = 0; glyphIdx < glyphCount; glyphIdx += 1) {
+    const cellX = glyphIdx * cellSize;
+
+    for (let y = 0; y < cellSize; y += 1) {
+      const srcRowOffset = y * sourceCanvas.width;
+      const localRowOffset = y * cellSize;
+      for (let x = 0; x < cellSize; x += 1) {
+        const srcPixelIndex = (srcRowOffset + cellX + x) * 4;
+        const alpha = srcData[srcPixelIndex + 3];
+        const idx = localRowOffset + x;
+        // Слишком низкий порог может "заливать" внутренние отверстия символа,
+        // поэтому используем более консервативное значение.
+        const inside = alpha > 96;
+        insideGrid[idx] = inside ? 0 : inf;
+        outsideGrid[idx] = inside ? inf : 0;
+      }
+    }
+
+    const distToInsideSq = edt2d(insideGrid, cellSize, cellSize);
+    const distToOutsideSq = edt2d(outsideGrid, cellSize, cellSize);
+
+    for (let y = 0; y < cellSize; y += 1) {
+      const dstRowOffset = y * sourceCanvas.width;
+      const localRowOffset = y * cellSize;
+      for (let x = 0; x < cellSize; x += 1) {
+        const idx = localRowOffset + x;
+        const signedDistance = Math.sqrt(distToOutsideSq[idx]) - Math.sqrt(distToInsideSq[idx]);
+        const normalized = Math.max(0, Math.min(1, 0.5 + signedDistance * invRange));
+        const alphaByte = Math.round(normalized * 255);
+        const dstPixelIndex = (dstRowOffset + cellX + x) * 4;
+
+        outData[dstPixelIndex] = 255;
+        outData[dstPixelIndex + 1] = 255;
+        outData[dstPixelIndex + 2] = 255;
+        outData[dstPixelIndex + 3] = alphaByte;
+      }
+    }
+  }
+
+  dstCtx.putImageData(outImage, 0, 0);
+  return sdfCanvas;
+}
+
 /**
  * Создает атлас текстур из символов
  * @param {string[]} glyphs - Массив символов для рендера
@@ -105,22 +325,11 @@ export async function createGlyphAtlas(glyphs, cellSize) {
   // Очищаем и настраиваем контекст
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = '#fff';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  ctx.font = `bold ${Math.floor(cellSize * 0.7)}px serif`;
 
   // Рендерим каждый глиф по центру своей ячейки
   glyphs.forEach((g, i) => {
-    const metrics = ctx.measureText(g);
-    const left = metrics.actualBoundingBoxLeft || 0;
-    const right = metrics.actualBoundingBoxRight || 0;
-    const ascent = metrics.actualBoundingBoxAscent || 0;
-    const descent = metrics.actualBoundingBoxDescent || 0;
-    const centerX = i * cellSize + cellSize / 2;
-    const centerY = height / 2;
-    const x = centerX - (right - left) / 2;
-    const y = centerY + (ascent - descent) / 2;
-    ctx.fillText(g, x, y);
+    configureGlyphTextContext(ctx, cellSize, g);
+    drawGlyphToCell(ctx, g, i, cellSize, height);
   });
 
   // Проверка монотонности по каждому глифу отдельно

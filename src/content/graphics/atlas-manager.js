@@ -2,7 +2,8 @@
  * Управление Атласами текстур для WebGPU рендерера
  */
 
-import { createGlyphAtlas, createSentenceAtlas } from '../utils/glyph-utils.js';
+import { createGlyphAtlas, createSentenceAtlas, createSdfGlyphAtlas } from '../utils/glyph-utils.js';
+import { shouldUseSdfGlyphAtlas } from '../utils/glyph-quality-estimator.js';
 
 export class AtlasManager {
   constructor(device, size = 64) {
@@ -41,10 +42,19 @@ export class AtlasManager {
 
     // Создание атласа глифов
     const glyphResult = await createGlyphAtlas(glyphs, this.size);
+    const useSdfGlyphs =
+      config?.webgpuUseSdfGlyphs !== false &&
+      shouldUseSdfGlyphAtlas({
+        glyphs,
+        targetRenderSize: Number(config?.snowmaxsize) || this.size
+      });
+    const glyphCanvas = useSdfGlyphs && glyphResult.isMonotone
+      ? createSdfGlyphAtlas(glyphResult.canvas, this.size, glyphResult.glyphCount)
+      : glyphResult.canvas;
     this.glyphAtlas.count = glyphResult.glyphCount;
     this.glyphAtlas.monotoneFlags = glyphResult.glyphMonotoneFlags;
     this.glyphAtlas.isMonotone = glyphResult.isMonotone;
-    this.glyphAtlas.canvas = glyphResult.canvas;
+    this.glyphAtlas.canvas = glyphCanvas;
     await this._createAtlasTexture(this.glyphAtlas, 'glyph');
 
     // Создание атласа предложений (если есть)
@@ -107,13 +117,9 @@ export class AtlasManager {
       { width, height }
     );
 
-    const isGlyphAtlas = type === 'glyph';
-
     atlas.sampler = this.device.createSampler({
       minFilter: 'linear',
-      // Для глифов сохраняем тонкие штрихи при увеличении: nearest по mag.
-      // Для предложений оставляем сглаживание, чтобы длинный текст не выглядел рваным.
-      magFilter: isGlyphAtlas ? 'nearest' : 'linear',
+      magFilter: 'linear',
       addressModeU: 'clamp-to-edge',
       addressModeV: 'clamp-to-edge',
       label: `${type}Sampler`

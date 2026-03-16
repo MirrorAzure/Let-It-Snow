@@ -61,8 +61,6 @@ fn vs(
   @location(11) iGlyph: f32,          // Индекс глифа в атласе
   @location(12) iMonotone: f32        // Флаг монотонности глифа
 ) -> VSOut {
-  var out: VSOut;
-  
   // Масштабируем квад до нужного размера
   let local = position * iSize;
   
@@ -132,11 +130,16 @@ fn fs(
   let dist = length(p);
   let halo = select(0.0, exp(-3.5 * dot(p, p)), dist <= 1.0);
   
-  // Небольшое усиление полутонов на кромке помогает сохранить тонкие штрихи
-  // глифа после фильтрации атласа и premultiplied compositing.
   let rawAlpha = glyphSampleFinal.a;
+  let isSdfGlyph = isGlyph && monotone > 0.5 && uniforms.isMonotone > 0.5;
+  let sdfWidth = max(fwidth(rawAlpha) * 0.85, 0.75 / max(16.0, uniforms.glyphSize));
+  let sdfAlpha = smoothstep(0.5 - sdfWidth, 0.5 + sdfWidth, rawAlpha);
+
+  // Для SDF используем реконструкцию покрытия по distance field,
+  // для остальных кейсов оставляем мягкое усиление кромки.
   let edgeBoost = 0.18;
-  let surfaceAlpha = clamp(rawAlpha + rawAlpha * (1.0 - rawAlpha) * edgeBoost, 0.0, 1.0);
+  let boostedAlpha = clamp(rawAlpha + rawAlpha * (1.0 - rawAlpha) * edgeBoost, 0.0, 1.0);
+  let surfaceAlpha = select(boostedAlpha, sdfAlpha, isSdfGlyph);
 
   // Canvas настроен в premultiplied alpha, поэтому отдаём premultiplied цвет.
   // Для цветных глифов тоже умножаем RGB на alpha, иначе при premultiplied blend
