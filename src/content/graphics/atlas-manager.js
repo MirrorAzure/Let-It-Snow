@@ -107,9 +107,13 @@ export class AtlasManager {
       { width, height }
     );
 
+    const isGlyphAtlas = type === 'glyph';
+
     atlas.sampler = this.device.createSampler({
       minFilter: 'linear',
-      magFilter: 'linear',
+      // Для глифов сохраняем тонкие штрихи при увеличении: nearest по mag.
+      // Для предложений оставляем сглаживание, чтобы длинный текст не выглядел рваным.
+      magFilter: isGlyphAtlas ? 'nearest' : 'linear',
       addressModeU: 'clamp-to-edge',
       addressModeV: 'clamp-to-edge',
       label: `${type}Sampler`

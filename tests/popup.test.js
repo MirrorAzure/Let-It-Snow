@@ -78,6 +78,7 @@ describe('popup UI', () => {
       global.__TESTING__ = true;
     }
     vi.stubGlobal('alert', vi.fn());
+    vi.stubGlobal('confirm', vi.fn(() => true));
     // Удаляем старый chrome объект перед каждым тестом
     delete global.chrome;
   });
@@ -88,6 +89,7 @@ describe('popup UI', () => {
     if (typeof global !== 'undefined') {
       delete global.__TESTING__;
     }
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     delete global.chrome;
   });
@@ -155,8 +157,11 @@ describe('popup UI', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(global.chrome.storage.sync.set).toHaveBeenCalled();
-    const lastCall = global.chrome.storage.sync.set.mock.calls.at(-1)[0];
-    expect(lastCall.snowmax).toBe(200);
+    const payloadCall = global.chrome.storage.sync.set.mock.calls.find(
+      (call) => call[0].snowmax !== undefined
+    );
+    expect(payloadCall).toBeDefined();
+    expect(payloadCall[0].snowmax).toBe(200);
   });
 
   it('sends stopSnow action when stop button is clicked', async () => {
@@ -231,5 +236,149 @@ describe('popup UI', () => {
     );
     expect(savedData).toBeDefined();
     expect(savedData[0].windStrength).toBe(1.0);
+  });
+
+  it('creates a new preset on import and selects it', async () => {
+    global.chrome = createChromeMock();
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const importInput = document.getElementById('importSettingsInput');
+    const importedFile = new File(
+      [JSON.stringify({
+        name: 'Импортированный пресет',
+        settings: {
+          snowmax: 150,
+          colors: ['#123456'],
+          symbols: ['*']
+        }
+      })],
+      'imported-preset.json',
+      { type: 'application/json' }
+    );
+
+    Object.defineProperty(importInput, 'files', {
+      value: [importedFile],
+      configurable: true
+    });
+
+    importInput.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const presetSelect = document.getElementById('presetSelect');
+    expect(presetSelect.options).toHaveLength(2);
+    expect(presetSelect.options[presetSelect.selectedIndex].textContent).toBe('Импортированный пресет');
+    expect(document.getElementById('snowmax').value).toBe('150');
+
+    const presetsCall = global.chrome.storage.sync.set.mock.calls.find(
+      (call) => Array.isArray(call[0].savedPresets)
+    );
+    expect(presetsCall).toBeDefined();
+    expect(presetsCall[0].savedPresets.some((preset) => preset.name === 'Импортированный пресет')).toBe(true);
+  });
+
+  it('renames the selected preset', async () => {
+    global.chrome = createChromeMock();
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const presetNameInput = document.getElementById('presetNameInput');
+    presetNameInput.value = 'Праздничный набор';
+
+    document.getElementById('renamePreset').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const presetSelect = document.getElementById('presetSelect');
+    expect(presetSelect.options[0].textContent).toBe('Праздничный набор');
+
+    const presetsCall = global.chrome.storage.sync.set.mock.calls.findLast(
+      (call) => Array.isArray(call[0].savedPresets)
+    );
+    expect(presetsCall).toBeDefined();
+    expect(presetsCall[0].savedPresets[0].name).toBe('Праздничный набор');
+  });
+
+  it('exports active preset name in filename and JSON payload', async () => {
+    const createObjectURL = vi.fn(() => 'blob:test');
+    const revokeObjectURL = vi.fn();
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: createObjectURL,
+      configurable: true,
+      writable: true
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: revokeObjectURL,
+      configurable: true,
+      writable: true
+    });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    global.chrome = createChromeMock({
+      savedPresets: [
+        {
+          id: 'preset-1',
+          name: 'Holiday Magic',
+          settings: {
+            snowmax: 140,
+            sinkspeed: 0.7,
+            snowminsize: 10,
+            snowmaxsize: 24,
+            colors: ['#abcdef'],
+            symbols: ['❄'],
+            sentences: [],
+            sentenceCount: 0,
+            gifs: [],
+            gifCount: 0,
+            autoStart: false,
+            mouseRadius: 100,
+            windEnabled: false,
+            windDirection: 'left',
+            windStrength: 0.5,
+            windGustFrequency: 3
+          },
+          updatedAt: Date.now()
+        }
+      ],
+      activePresetId: 'preset-1'
+    });
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const appendSpy = vi.spyOn(document.body, 'appendChild');
+    document.getElementById('exportSettings').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(clickSpy).toHaveBeenCalled();
+    const exportedLink = appendSpy.mock.calls.at(-1)[0];
+    expect(exportedLink.download).toMatch(/^let-it-snow-holiday-magic-\d{4}-\d{2}-\d{2}\.json$/);
+
+    const exportedBlob = createObjectURL.mock.calls[0][0];
+    const exportedText = await exportedBlob.text();
+    const exportedJson = JSON.parse(exportedText);
+
+    expect(exportedJson.name).toBe('Holiday Magic');
+    expect(exportedJson.presetName).toBe('Holiday Magic');
+    expect(exportedJson.settings.snowmax).toBe(140);
+
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: originalCreateObjectURL,
+      configurable: true,
+      writable: true
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: originalRevokeObjectURL,
+      configurable: true,
+      writable: true
+    });
+    clickSpy.mockRestore();
   });
 });

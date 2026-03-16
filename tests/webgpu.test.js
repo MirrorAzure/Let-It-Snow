@@ -273,6 +273,37 @@ describe('Snow Animation System', () => {
       expect(renderer.device).not.toBeNull();
     });
 
+    it('should use premultiplied alpha blending for canvas compositing', async () => {
+      const { WebGPURenderer } = await import('../src/content/webgpu-renderer.js');
+      const canvas = document.createElement('canvas');
+      const config = {
+        snowmax: 10,
+        snowminsize: 10,
+        snowmaxsize: 20,
+        snowcolor: ['#ffffff'],
+        snowletters: ['❄']
+      };
+
+      const renderer = new WebGPURenderer(canvas, config);
+      const result = await renderer.init();
+
+      expect(result).toBe(true);
+
+      const pipelineDescriptor = renderer.device.createRenderPipeline.mock.calls[0][0];
+      expect(pipelineDescriptor.fragment.targets[0].blend).toEqual({
+        color: {
+          srcFactor: 'one',
+          dstFactor: 'one-minus-src-alpha',
+          operation: 'add'
+        },
+        alpha: {
+          srcFactor: 'one',
+          dstFactor: 'one-minus-src-alpha',
+          operation: 'add'
+        }
+      });
+    });
+
     it('should return false if WebGPU unavailable', async () => {
       Object.defineProperty(global.navigator, 'gpu', {
         value: undefined,

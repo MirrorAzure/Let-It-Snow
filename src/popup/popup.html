@@ -198,6 +198,47 @@
 
     <div class="settings-card">
       <div class="card-header">
+        <i class="fas fa-bookmark"></i>
+        <h3 data-i18n="presetsSection">Пресеты</h3>
+      </div>
+      <p class="hint settings-transfer-hint" data-i18n="presetsHint">Сохраняйте разные наборы настроек и переключайтесь между ними.</p>
+
+      <label class="setting-item">
+        <div class="setting-label">
+          <i class="fas fa-list"></i>
+          <span data-i18n="presetsCurrent">Текущий пресет</span>
+        </div>
+        <select id="presetSelect" class="snow-select" data-i18n-title="tooltipPresetSelect"></select>
+      </label>
+
+      <div class="preset-actions-row">
+        <input id="presetNameInput" type="text" class="preset-name-input" data-i18n-title="tooltipPresetNameInput" placeholder="Новый пресет">
+        <div class="import-export-actions">
+          <button id="savePreset" class="secondary-btn" data-i18n-title="tooltipSavePreset">
+            <i class="fas fa-save"></i>
+            <span data-i18n="savePreset">Сохранить как новый</span>
+          </button>
+          <button id="renamePreset" class="secondary-btn" data-i18n-title="tooltipRenamePreset">
+            <i class="fas fa-pen"></i>
+            <span data-i18n="renamePreset">Переименовать</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="import-export-actions">
+        <button id="applyPreset" class="secondary-btn" data-i18n-title="tooltipApplyPreset">
+          <i class="fas fa-check-circle"></i>
+          <span data-i18n="applyPreset">Применить</span>
+        </button>
+        <button id="deletePreset" class="secondary-btn" data-i18n-title="tooltipDeletePreset">
+          <i class="fas fa-trash"></i>
+          <span data-i18n="deletePreset">Удалить</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="settings-card">
+      <div class="card-header">
         <i class="fas fa-file-export"></i>
         <h3 data-i18n="settingsTransferSection">Перенос настроек</h3>
       </div>

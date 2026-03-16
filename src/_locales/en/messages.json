@@ -98,6 +98,39 @@
   "importSettings": {
     "message": "Import"
   },
+  "presetsSection": {
+    "message": "Presets"
+  },
+  "presetsHint": {
+    "message": "Save different setting sets and switch between them quickly."
+  },
+  "presetsCurrent": {
+    "message": "Current preset"
+  },
+  "savePreset": {
+    "message": "Save as new"
+  },
+  "renamePreset": {
+    "message": "Rename"
+  },
+  "applyPreset": {
+    "message": "Apply"
+  },
+  "deletePreset": {
+    "message": "Delete"
+  },
+  "presetNamePlaceholder": {
+    "message": "New preset"
+  },
+  "presetNameFallback": {
+    "message": "Preset"
+  },
+  "presetDefaultName": {
+    "message": "Default"
+  },
+  "confirmDeletePreset": {
+    "message": "Delete selected preset?"
+  },
   "errorNoColor": {
     "message": "Add at least one color!"
   },
@@ -229,6 +262,24 @@
   },
   "tooltipImportSettings": {
     "message": "Load settings from a JSON file"
+  },
+  "tooltipPresetSelect": {
+    "message": "Choose a saved preset"
+  },
+  "tooltipPresetNameInput": {
+    "message": "Enter a name for the new preset"
+  },
+  "tooltipSavePreset": {
+    "message": "Save current settings as a new preset"
+  },
+  "tooltipRenamePreset": {
+    "message": "Rename selected preset"
+  },
+  "tooltipApplyPreset": {
+    "message": "Apply selected preset"
+  },
+  "tooltipDeletePreset": {
+    "message": "Delete selected preset"
   },
   "tooltipColorPicker": {
     "message": "Pick a color"

@@ -113,6 +113,38 @@ export class WebGPURenderer {
     };
   }
 
+  _getGlyphAtlasCellSize() {
+    const maxTextureDim = Number(this.device?.limits?.maxTextureDimension2D) || 4096;
+    const glyphCount = Math.max(
+      1,
+      Array.isArray(this.config?.snowletters) && this.config.snowletters.length > 0
+        ? this.config.snowletters.length
+        : 1
+    );
+    const sentenceCount = Math.max(
+      1,
+      Array.isArray(this.config?.snowsentences) && this.config.snowsentences.length > 0
+        ? this.config.snowsentences.length
+        : 1
+    );
+    const maxByGlyphAtlas = Math.floor(maxTextureDim / glyphCount);
+    const maxBySentenceAtlas = Math.floor(maxTextureDim / Math.max(2, sentenceCount));
+    const maxSafeSize = Math.max(64, Math.min(512, maxByGlyphAtlas, maxBySentenceAtlas));
+
+    const configuredSize = Number(this.config?.webgpuGlyphAtlasSize);
+    if (Number.isFinite(configuredSize)) {
+      return Math.max(64, Math.min(maxSafeSize, Math.round(configuredSize / 16) * 16));
+    }
+
+    const dpr = Number(window?.devicePixelRatio) || 1;
+    const maxFlakeSize = Number(this.config?.snowmaxsize) || 24;
+    const qualityFromDpr = 96 * Math.min(2.5, dpr);
+    const qualityFromGlyphSize = maxFlakeSize * 5;
+    const rawSize = Math.max(128, qualityFromDpr, qualityFromGlyphSize);
+
+    return Math.max(64, Math.min(maxSafeSize, Math.round(rawSize / 16) * 16));
+  }
+
   async _requestAdapterWithTimeout(timeoutMs = 1500) {
     const adapterPromise = navigator.gpu.requestAdapter();
     const timeoutPromise = new Promise((resolve) => {
@@ -235,8 +267,11 @@ export class WebGPURenderer {
 
       // Инициализация компонентов
       this.uniformBufferManager = new UniformBufferManager(this.device);
-      this.atlasManager = new AtlasManager(this.device, 64);
+      const glyphAtlasCellSize = this._getGlyphAtlasCellSize();
+      this.atlasManager = new AtlasManager(this.device, glyphAtlasCellSize);
       this.simulationEngine = new SimulationEngine(this.config);
+
+      this._debugLog('Using glyph atlas cell size:', glyphAtlasCellSize);
 
       this.setupGeometry();
       await this.setupPipeline(format);
@@ -386,7 +421,7 @@ export class WebGPURenderer {
             format,
             blend: {
               color: {
-                srcFactor: 'src-alpha',
+                srcFactor: 'one',
                 dstFactor: 'one-minus-src-alpha',
                 operation: 'add'
               },

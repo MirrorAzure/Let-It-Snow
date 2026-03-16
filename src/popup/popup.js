@@ -35,6 +35,9 @@ const SETTINGS_KEYS = [
   'windGustFrequency'
 ];
 
+const PRESETS_STORAGE_KEY = 'savedPresets';
+const ACTIVE_PRESET_STORAGE_KEY = 'activePresetId';
+
 /**
  * Инициализация popup при загрузке DOM
  */
@@ -95,6 +98,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     addColor: document.getElementById('addColor'),
     addSymbol: document.getElementById('addSymbol'),
     addSentence: document.getElementById('addSentence'),
+    presetSelect: document.getElementById('presetSelect'),
+    presetNameInput: document.getElementById('presetNameInput'),
+    savePreset: document.getElementById('savePreset'),
+    renamePreset: document.getElementById('renamePreset'),
+    applyPreset: document.getElementById('applyPreset'),
+    deletePreset: document.getElementById('deletePreset'),
     exportSettings: document.getElementById('exportSettings'),
     importSettings: document.getElementById('importSettings'),
     importSettingsInput: document.getElementById('importSettingsInput'),
@@ -112,6 +121,150 @@ document.addEventListener('DOMContentLoaded', async () => {
     windStrengthValue: document.getElementById('windStrengthValue'),
     windGustFrequency: document.getElementById('windGustFrequency'),
     windGustFrequencyValue: document.getElementById('windGustFrequencyValue')
+  };
+
+  elements.presetNameInput.placeholder = t('presetNamePlaceholder');
+
+  const createPresetId = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return `preset-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  };
+
+  const normalizeSettings = (rawConfig = {}) => {
+    const config = { ...DEFAULT_SETTINGS, ...rawConfig };
+    return {
+      snowmax: Number.isFinite(config.snowmax) ? config.snowmax : DEFAULT_SETTINGS.snowmax,
+      sinkspeed: Number.isFinite(config.sinkspeed) ? config.sinkspeed : DEFAULT_SETTINGS.sinkspeed,
+      snowminsize: Number.isFinite(config.snowminsize)
+        ? config.snowminsize
+        : DEFAULT_SETTINGS.snowminsize,
+      snowmaxsize: Number.isFinite(config.snowmaxsize)
+        ? config.snowmaxsize
+        : DEFAULT_SETTINGS.snowmaxsize,
+      colors: Array.isArray(config.colors) && config.colors.length > 0
+        ? config.colors
+        : [...DEFAULT_SETTINGS.colors],
+      symbols: Array.isArray(config.symbols) && config.symbols.length > 0
+        ? config.symbols
+        : [...DEFAULT_SETTINGS.symbols],
+      sentences: Array.isArray(config.sentences) ? config.sentences : [],
+      sentenceCount: Number.isFinite(config.sentenceCount) ? config.sentenceCount : 0,
+      gifs: Array.isArray(config.gifs) ? config.gifs : [],
+      gifCount: Number.isFinite(config.gifCount) ? config.gifCount : 0,
+      autoStart: Boolean(config.autoStart),
+      mouseRadius: Number.isFinite(config.mouseRadius) ? config.mouseRadius : DEFAULT_SETTINGS.mouseRadius,
+      windEnabled: Boolean(config.windEnabled),
+      windDirection: ['left', 'right', 'random'].includes(config.windDirection)
+        ? config.windDirection
+        : DEFAULT_SETTINGS.windDirection,
+      windStrength: Number.isFinite(config.windStrength) ? config.windStrength : DEFAULT_SETTINGS.windStrength,
+      windGustFrequency: Number.isFinite(config.windGustFrequency)
+        ? config.windGustFrequency
+        : DEFAULT_SETTINGS.windGustFrequency
+    };
+  };
+
+  const createPresetObject = (name, settings) => ({
+    id: createPresetId(),
+    name: (name || '').trim() || `${t('presetNameFallback')} ${new Date().toLocaleDateString()}`,
+    settings: normalizeSettings(settings),
+    updatedAt: Date.now()
+  });
+
+  const getPresetDisplayName = (name, fallbackIndex = null) => {
+    const normalizedName = (name || '').trim();
+    if (normalizedName) {
+      return normalizedName;
+    }
+
+    if (fallbackIndex !== null) {
+      return `${t('presetNameFallback')} ${fallbackIndex}`;
+    }
+
+    return t('presetNameFallback');
+  };
+
+  const sanitizeFilenamePart = (value) => {
+    const normalized = (value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9а-яё]+/gi, '-')
+      .replace(/^-+|-+$/g, '');
+
+    return normalized || 'preset';
+  };
+
+  const stripFileExtension = (filename = '') => filename.replace(/\.[^/.]+$/, '').trim();
+
+  const extractImportedPreset = (parsed, fileName = '') => {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('invalid_settings');
+    }
+
+    if (parsed.settings && typeof parsed.settings === 'object' && !Array.isArray(parsed.settings)) {
+      return {
+        name: getPresetDisplayName(parsed.name || parsed.presetName || stripFileExtension(fileName)),
+        settings: normalizeSettings(parsed.settings)
+      };
+    }
+
+    return {
+      name: getPresetDisplayName(parsed.name || parsed.presetName || stripFileExtension(fileName)),
+      settings: normalizeSettings(parsed)
+    };
+  };
+
+  let presets = [];
+  let activePresetId = null;
+
+  const syncPresetNameInput = () => {
+    const activePreset = presets.find((preset) => preset.id === activePresetId);
+    elements.presetNameInput.value = activePreset ? activePreset.name : '';
+  };
+
+  const setPresetButtonsState = () => {
+    const hasPresets = presets.length > 0;
+    elements.applyPreset.disabled = !hasPresets;
+    elements.renamePreset.disabled = !hasPresets;
+    elements.deletePreset.disabled = !hasPresets;
+    elements.presetSelect.disabled = !hasPresets;
+  };
+
+  const refreshPresetSelect = () => {
+    const previousSelection = elements.presetSelect.value;
+    elements.presetSelect.innerHTML = '';
+
+    presets.forEach((preset) => {
+      const option = document.createElement('option');
+      option.value = preset.id;
+      option.textContent = preset.name;
+      elements.presetSelect.appendChild(option);
+    });
+
+    const selectedId = presets.some((preset) => preset.id === activePresetId)
+      ? activePresetId
+      : previousSelection;
+
+    if (selectedId && presets.some((preset) => preset.id === selectedId)) {
+      elements.presetSelect.value = selectedId;
+    } else if (presets.length > 0) {
+      activePresetId = presets[0].id;
+      elements.presetSelect.value = activePresetId;
+    }
+
+    setPresetButtonsState();
+    syncPresetNameInput();
+  };
+
+  const findPresetById = (presetId) => presets.find((preset) => preset.id === presetId);
+
+  const persistPresets = async () => {
+    await saveSettings({
+      [PRESETS_STORAGE_KEY]: presets,
+      [ACTIVE_PRESET_STORAGE_KEY]: activePresetId
+    });
   };
 
   /**
@@ -164,7 +317,7 @@ document.addEventListener('DOMContentLoaded', async () => {
    * @param {Object} rawConfig
    */
   const applySettingsToUI = (rawConfig = {}) => {
-    const config = { ...DEFAULT_SETTINGS, ...rawConfig };
+    const config = normalizeSettings(rawConfig);
     const colors = Array.isArray(config.colors) && config.colors.length > 0
       ? config.colors
       : DEFAULT_SETTINGS.colors;
@@ -222,15 +375,50 @@ document.addEventListener('DOMContentLoaded', async () => {
   /**
    * Сохраняет все настройки из UI в chrome.storage
    */
-  const saveAllSettings = async () => {
-    await saveSettings(buildSettingsPayload());
+  const saveAllSettings = async (syncActivePreset = true) => {
+    const payload = buildSettingsPayload();
+    await saveSettings(payload);
+
+    if (syncActivePreset && activePresetId) {
+      const presetIndex = presets.findIndex((preset) => preset.id === activePresetId);
+      if (presetIndex !== -1) {
+        presets[presetIndex] = {
+          ...presets[presetIndex],
+          settings: normalizeSettings(payload),
+          updatedAt: Date.now()
+        };
+        await persistPresets();
+      }
+    }
+
+    return payload;
   };
 
   // Загружаем сохраненные настройки
-  const saved = await loadSettings(SETTINGS_KEYS);
+  const saved = await loadSettings([...SETTINGS_KEYS, PRESETS_STORAGE_KEY, ACTIVE_PRESET_STORAGE_KEY]);
 
-  const config = { ...DEFAULT_SETTINGS, ...saved };
-  applySettingsToUI(config);
+  const loadedPresets = Array.isArray(saved[PRESETS_STORAGE_KEY])
+    ? saved[PRESETS_STORAGE_KEY]
+        .filter((preset) => preset && typeof preset === 'object')
+        .map((preset) => ({
+          id: typeof preset.id === 'string' && preset.id.trim() ? preset.id : createPresetId(),
+          name: typeof preset.name === 'string' && preset.name.trim() ? preset.name.trim() : t('presetNameFallback'),
+          settings: normalizeSettings(preset.settings),
+          updatedAt: Number.isFinite(preset.updatedAt) ? preset.updatedAt : Date.now()
+        }))
+    : [];
+
+  const config = normalizeSettings(saved);
+  presets = loadedPresets.length > 0
+    ? loadedPresets
+    : [createPresetObject(t('presetDefaultName'), config)];
+  activePresetId = saved[ACTIVE_PRESET_STORAGE_KEY] || presets[0].id;
+
+  const activePreset = findPresetById(activePresetId) || presets[0];
+  activePresetId = activePreset.id;
+
+  refreshPresetSelect();
+  applySettingsToUI(activePreset.settings);
 
   // === Настройка обработчиков событий ===
 
@@ -273,6 +461,88 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveAllSettings();
   });
 
+  elements.presetSelect.addEventListener('change', () => {
+    const selectedId = elements.presetSelect.value;
+    if (findPresetById(selectedId)) {
+      activePresetId = selectedId;
+      syncPresetNameInput();
+      persistPresets();
+    }
+  });
+
+  elements.savePreset.addEventListener('click', async () => {
+    const payload = await saveAllSettings(false);
+    const rawName = elements.presetNameInput.value.trim();
+    const defaultName = getPresetDisplayName(rawName, presets.length + 1);
+    const preset = createPresetObject(rawName || defaultName, payload);
+
+    presets.push(preset);
+    activePresetId = preset.id;
+    refreshPresetSelect();
+    await persistPresets();
+  });
+
+  elements.renamePreset.addEventListener('click', async () => {
+    const selectedId = elements.presetSelect.value;
+    const selectedPreset = findPresetById(selectedId);
+
+    if (!selectedPreset) {
+      return;
+    }
+
+    const nextName = getPresetDisplayName(elements.presetNameInput.value, presets.indexOf(selectedPreset) + 1);
+    selectedPreset.name = nextName;
+    selectedPreset.updatedAt = Date.now();
+    activePresetId = selectedPreset.id;
+    refreshPresetSelect();
+    await persistPresets();
+  });
+
+  elements.applyPreset.addEventListener('click', async () => {
+    const selectedId = elements.presetSelect.value;
+    const selectedPreset = findPresetById(selectedId);
+
+    if (!selectedPreset) {
+      return;
+    }
+
+    activePresetId = selectedPreset.id;
+    applySettingsToUI(selectedPreset.settings);
+    await saveAllSettings(false);
+    await persistPresets();
+  });
+
+  elements.deletePreset.addEventListener('click', async () => {
+    const selectedId = elements.presetSelect.value;
+    const selectedPreset = findPresetById(selectedId);
+
+    if (!selectedPreset) {
+      return;
+    }
+
+    const confirmed = confirm(t('confirmDeletePreset'));
+    if (!confirmed) {
+      return;
+    }
+
+    presets = presets.filter((preset) => preset.id !== selectedId);
+
+    if (presets.length === 0) {
+      const payload = await saveAllSettings(false);
+      const fallbackPreset = createPresetObject(t('presetDefaultName'), payload);
+      presets = [fallbackPreset];
+      activePresetId = fallbackPreset.id;
+      applySettingsToUI(fallbackPreset.settings);
+    } else {
+      activePresetId = presets[0].id;
+      applySettingsToUI(presets[0].settings);
+      await saveAllSettings(false);
+    }
+
+    refreshPresetSelect();
+    await persistPresets();
+  });
+
   // Автостарт
   elements.autoStart.addEventListener('change', () => {
     saveAllSettings();
@@ -280,15 +550,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Экспорт настроек в JSON
   elements.exportSettings.addEventListener('click', async () => {
-    await saveAllSettings();
-    const payload = buildSettingsPayload();
-    const data = JSON.stringify(payload, null, 2);
+    const payload = await saveAllSettings();
+    const activePreset = findPresetById(activePresetId);
+    const presetName = getPresetDisplayName(
+      activePreset?.name || elements.presetNameInput.value,
+      presets.indexOf(activePreset) + 1
+    );
+    const exportData = {
+      name: presetName,
+      presetName,
+      exportedAt: new Date().toISOString(),
+      settings: normalizeSettings(payload)
+    };
+    const data = JSON.stringify(exportData, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     const date = new Date().toISOString().slice(0, 10);
     link.href = url;
-    link.download = `let-it-snow-settings-${date}.json`;
+    link.download = `let-it-snow-${sanitizeFilenamePart(presetName)}-${date}.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -310,14 +590,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
+      const importedPreset = extractImportedPreset(parsed, file.name);
+      const preset = createPresetObject(
+        getPresetDisplayName(importedPreset.name, presets.length + 1),
+        importedPreset.settings
+      );
 
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('invalid_settings');
-      }
-
-      const merged = { ...DEFAULT_SETTINGS, ...parsed };
-      applySettingsToUI(merged);
-      await saveAllSettings();
+      presets.push(preset);
+      activePresetId = preset.id;
+      refreshPresetSelect();
+      applySettingsToUI(preset.settings);
+      await saveAllSettings(false);
+      await persistPresets();
     } catch (error) {
       console.error(error);
       alert(t('errorImportSettings'));

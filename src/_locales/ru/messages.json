@@ -98,6 +98,39 @@
   "importSettings": {
     "message": "Импорт"
   },
+  "presetsSection": {
+    "message": "Пресеты"
+  },
+  "presetsHint": {
+    "message": "Сохраняйте разные наборы настроек и переключайтесь между ними."
+  },
+  "presetsCurrent": {
+    "message": "Текущий пресет"
+  },
+  "savePreset": {
+    "message": "Сохранить как новый"
+  },
+  "renamePreset": {
+    "message": "Переименовать"
+  },
+  "applyPreset": {
+    "message": "Применить"
+  },
+  "deletePreset": {
+    "message": "Удалить"
+  },
+  "presetNamePlaceholder": {
+    "message": "Новый пресет"
+  },
+  "presetNameFallback": {
+    "message": "Пресет"
+  },
+  "presetDefaultName": {
+    "message": "Основной"
+  },
+  "confirmDeletePreset": {
+    "message": "Удалить выбранный пресет?"
+  },
   "errorNoColor": {
     "message": "Добавьте хотя бы один цвет!"
   },
@@ -229,6 +262,24 @@
   },
   "tooltipImportSettings": {
     "message": "Загрузить настройки из JSON-файла"
+  },
+  "tooltipPresetSelect": {
+    "message": "Выберите сохраненный пресет"
+  },
+  "tooltipPresetNameInput": {
+    "message": "Введите имя нового пресета"
+  },
+  "tooltipSavePreset": {
+    "message": "Сохранить текущие настройки как новый пресет"
+  },
+  "tooltipRenamePreset": {
+    "message": "Переименовать выбранный пресет"
+  },
+  "tooltipApplyPreset": {
+    "message": "Применить выбранный пресет"
+  },
+  "tooltipDeletePreset": {
+    "message": "Удалить выбранный пресет"
   },
   "tooltipColorPicker": {
     "message": "Выбрать цвет"

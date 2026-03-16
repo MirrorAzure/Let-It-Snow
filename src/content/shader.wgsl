@@ -132,14 +132,18 @@ fn fs(
   let dist = length(p);
   let halo = select(0.0, exp(-3.5 * dot(p, p)), dist <= 1.0);
   
-  // Определяем базовый цвет в зависимости от типа глифа
-  var baseColor = vec3<f32>(1.0, 1.0, 1.0);
+  // Небольшое усиление полутонов на кромке помогает сохранить тонкие штрихи
+  // глифа после фильтрации атласа и premultiplied compositing.
+  let rawAlpha = glyphSampleFinal.a;
+  let edgeBoost = 0.18;
+  let surfaceAlpha = clamp(rawAlpha + rawAlpha * (1.0 - rawAlpha) * edgeBoost, 0.0, 1.0);
+
+  // Canvas настроен в premultiplied alpha, поэтому отдаём premultiplied цвет.
+  // Для цветных глифов тоже умножаем RGB на alpha, иначе при premultiplied blend
+  // прозрачные пиксели могут визуально закрашивать весь квад.
+  var surfaceColor = glyphSampleFinal.rgb * surfaceAlpha;
   if (monotone > 0.5) {
-    // Монотонный глиф - применяем наш цвет
-    baseColor = color;
-  } else {
-    // Цветной глиф - смешиваем с текстурой
-    baseColor = mix(color, glyphSampleFinal.rgb, glyphSampleFinal.a);
+    surfaceColor = color * surfaceAlpha;
   }
   
   // Добавляем эффект мерцающего свечения с плавным наростанием и затуханием
@@ -147,11 +151,12 @@ fn fs(
   let cycle = (sin(phase * 2.0) + 1.0) * 0.5;  // Нормализуем в [0, 1]
   let smoothFlicker = smoothstep(0.0, 1.0, cycle);  // Встроенная функция сглаживания
   let flicker = 0.3 + 0.7 * smoothFlicker;  // Мерцание от 0.3 до 1.0
-  let glowContribution = halo * uniforms.glowStrength * (1.0 - glyphSampleFinal.a) * flicker;
-  let finalColor = baseColor + color * glowContribution;
-  
-  // Итоговая прозрачность с учетом мерцающего halo
-  let alpha = clamp(glyphSampleFinal.a + halo * 0.35 * flicker, 0.0, 1.0);
-  
+  let glowAlpha = halo * uniforms.glowStrength * (1.0 - surfaceAlpha) * flicker * 0.35;
+  let finalColor = surfaceColor + color * glowAlpha;
+
+  // Итоговая прозрачность с учетом мерцающего halo.
+  // Основная поверхность глифа и glow складываются в одной premultiplied модели.
+  let alpha = clamp(surfaceAlpha + glowAlpha, 0.0, 1.0);
+
   return vec4<f32>(finalColor, alpha);
 }
