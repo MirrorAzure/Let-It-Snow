@@ -2,8 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GifLayer } from '../src/content/gif-layer.js';
 
 describe('GifLayer', () => {
+  const originalRandom = Math.random;
+
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
     document.body.innerHTML = '<div id="root"></div>';
     global.URL.createObjectURL = vi.fn(() => 'blob:test');
     global.URL.revokeObjectURL = vi.fn();
@@ -17,6 +20,7 @@ describe('GifLayer', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    Math.random = originalRandom;
     document.body.innerHTML = '';
     vi.clearAllMocks();
   });
@@ -70,6 +74,25 @@ describe('GifLayer', () => {
     expect(flake).not.toHaveProperty('sway');
     expect(flake).not.toHaveProperty('freq');
     expect(flake).not.toHaveProperty('phase');
+
+    gifLayer.stop();
+  });
+
+  it('shows part of GIF flakes immediately on start', async () => {
+    const config = {
+      gifUrls: ['https://test.com/test.gif'],
+      gifCount: 10,
+      gifInitialVisibleRatio: 0.4,
+      snowminsize: 20,
+      snowmaxsize: 20,
+      sinkspeed: 0.6
+    };
+    const gifLayer = new GifLayer(config);
+
+    await gifLayer.start();
+
+    const visibleNow = gifLayer.flakes.filter((flake) => flake.y >= -flake.size).length;
+    expect(visibleNow).toBeGreaterThanOrEqual(4);
 
     gifLayer.stop();
   });

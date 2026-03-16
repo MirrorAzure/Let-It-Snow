@@ -42,6 +42,36 @@ export class GifLayer {
     this.enableCollisions = config.enableCollisions ?? true;
     // Reference to main renderer for real-time flake access
     this.mainRenderer = null;
+    this.initialVisibleGifRatio = Math.max(0, Math.min(1, config.gifInitialVisibleRatio ?? 0.35));
+    this._gifFallbackWarnedUrls = new Set();
+    this.useBackgroundGifFetch = config.useBackgroundGifFetch !== false;
+    this.backgroundGifFetchTimeoutMs = Math.max(500, Number(config.backgroundGifFetchTimeoutMs ?? 2500));
+  }
+
+  /**
+   * Строит маску равномерно распределенных слотов.
+   * @private
+   */
+  _buildDistributedSlotMask(total, selectedCount) {
+    const mask = new Array(Math.max(0, total)).fill(false);
+    const count = Math.min(Math.max(0, selectedCount), total);
+    if (count === 0 || total <= 0) return mask;
+    if (count >= total) {
+      for (let i = 0; i < total; i++) mask[i] = true;
+      return mask;
+    }
+
+    for (let i = 0; i < count; i++) {
+      let slot = Math.floor(((i + 0.5) * total) / count);
+      if (slot < 0) slot = 0;
+      if (slot >= total) slot = total - 1;
+      while (mask[slot]) {
+        slot = (slot + 1) % total;
+      }
+      mask[slot] = true;
+    }
+
+    return mask;
   }
 
   /**
@@ -73,15 +103,17 @@ export class GifLayer {
       return FALLBACK_GIF_DATA_URL;
     }
 
+    let backgroundFetchSucceeded = false;
+
     // Способ 1: через background service worker.
     // Background работает с origin расширения, а не страницы, поэтому
     // CORS-ограничения контент-скрипта на него не распространяются.
     // Это позволяет загружать GIF с любых серверов — даже тех, которые
     // не выдают CORS-заголовки для HTTP-страниц.
-    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+    if (this.useBackgroundGifFetch && typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
       try {
         const result = await new Promise((resolve) => {
-          const timer = setTimeout(() => resolve(null), 10000);
+          const timer = setTimeout(() => resolve(null), this.backgroundGifFetchTimeoutMs);
           try {
             chrome.runtime.sendMessage({ type: 'FETCH_GIF', url }, (response) => {
               clearTimeout(timer);
@@ -96,11 +128,19 @@ export class GifLayer {
         });
         if (result?.success && result.dataUrl) {
           this.gifObjectUrls.set(url, result.dataUrl);
+          backgroundFetchSucceeded = true;
           return result.dataUrl;
         }
       } catch {
         // background недоступен — переходим к прямому fetch
       }
+    }
+
+    // Для внешних URL после неуспеха background не тратим дополнительное время
+    // на CORS fetch в контент-скрипте: сразу используем direct src.
+    // Это устраняет длинные таймауты и ускоряет появление GIF.
+    if (!backgroundFetchSucceeded && /^https?:\/\//.test(url)) {
+      return url;
     }
 
     // Способ 2: прямой fetch из контент-скрипта (работает если отдаётся CORS).
@@ -110,7 +150,7 @@ export class GifLayer {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
       let response;
       try {
         response = await fetch(url, {
@@ -146,7 +186,12 @@ export class GifLayer {
           ? '(Server error)'
           : '(Fetch failed)';
 
-      if (!IS_TEST_ENV) {
+      const isTimeout = error?.name === 'AbortError';
+      const isNetworkOrCors = error?.name === 'TypeError' && error?.message?.includes('Failed to fetch');
+      const shouldWarn = !IS_TEST_ENV && !isTimeout && !isNetworkOrCors && !this._gifFallbackWarnedUrls.has(url);
+
+      if (shouldWarn) {
+        this._gifFallbackWarnedUrls.add(url);
         console.warn(`[Let It Snow] Unable to fetch GIF ${reason}:`, url, `- ${errorMsg}`, '— falling back to direct src');
       }
       // Способ 3: прямой URL — браузер загружает <img> без CORS (нет preflight),
@@ -216,8 +261,11 @@ export class GifLayer {
 
     const sizeRange = this.config.snowmaxsize - this.config.snowminsize;
 
+    const initialVisibleCount = Math.min(count, Math.max(1, Math.ceil(count * this.initialVisibleGifRatio)));
+    const initialVisibleMask = this._buildDistributedSlotMask(count, initialVisibleCount);
+
     // Создаем GIF снежинки
-    const flakes = new Array(count).fill(null).map(() => {
+    const flakes = new Array(count).fill(null).map((_, idx) => {
       const size = this.config.snowminsize + Math.random() * sizeRange;
       const sinkspeed = this.config.sinkspeed ?? 1.0; // Default sink speed
       const speed = sinkspeed * (size / 20) * 20;
@@ -241,7 +289,9 @@ export class GifLayer {
         size,
         speed,
         x: Math.random() * window.innerWidth,
-        y: -size - Math.random() * window.innerHeight,
+        y: initialVisibleMask[idx]
+          ? (-size + Math.random() * size)
+          : (-size - Math.random() * window.innerHeight),
         velocityX: 0,
         velocityY: 0,
         rotationSpeed: 0,

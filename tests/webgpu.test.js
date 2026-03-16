@@ -350,6 +350,99 @@ describe('Snow Animation System', () => {
       expect(flake).toHaveProperty('color');
       expect(flake).toHaveProperty('char');
     });
+
+    it('should keep minimum active flakes when respawn is throttled', async () => {
+      const { Fallback2DRenderer } = await import('../src/content/fallback-2d-renderer.js');
+      const canvas = document.createElement('canvas');
+      const config = {
+        snowmax: 12,
+        snowminsize: 10,
+        snowmaxsize: 20,
+        sinkspeed: 1.0,
+        snowcolor: ['#ffffff'],
+        snowletters: ['❄'],
+        canvas2dRespawnPauseFps: 120,
+        canvas2dRespawnResumeFps: 121
+      };
+
+      const renderer = new Fallback2DRenderer(canvas, config);
+      renderer.init();
+
+      renderer.flakes.forEach((flake) => {
+        flake.y = window.innerHeight + flake.size + 1;
+        flake.isAwaitingRespawn = false;
+      });
+
+      renderer.start();
+      vi.advanceTimersByTime(96);
+
+      const activeFlakes = renderer.flakes.filter((flake) => !flake.isAwaitingRespawn);
+      const expectedMin = Math.min(renderer.flakes.length, renderer.minActiveFlakesWhenThrottled);
+
+      expect(activeFlakes.length).toBeGreaterThan(0);
+      expect(activeFlakes.length).toBeGreaterThanOrEqual(expectedMin);
+
+      renderer.stop();
+    });
+
+    it('should sanitize invalid flake state and recover rendering', async () => {
+      const { Fallback2DRenderer } = await import('../src/content/fallback-2d-renderer.js');
+      const canvas = document.createElement('canvas');
+      const config = {
+        snowmax: 5,
+        snowminsize: 10,
+        snowmaxsize: 20,
+        sinkspeed: 1.0,
+        snowcolor: ['#ffffff'],
+        snowletters: ['❄']
+      };
+
+      const renderer = new Fallback2DRenderer(canvas, config);
+      renderer.init();
+
+      const corrupted = renderer.flakes[0];
+      corrupted.y = Number.NaN;
+      corrupted.x = Number.POSITIVE_INFINITY;
+      corrupted.baseX = Number.NaN;
+      corrupted.velocityY = Number.NaN;
+
+      renderer.start();
+      vi.advanceTimersByTime(64);
+
+      expect(Number.isFinite(corrupted.y)).toBe(true);
+      expect(Number.isFinite(corrupted.x)).toBe(true);
+      expect(Number.isFinite(corrupted.baseX)).toBe(true);
+      expect(Number.isFinite(corrupted.velocityY)).toBe(true);
+
+      renderer.stop();
+    });
+
+    it('should mix sentence and glyph flakes in initial active pool', async () => {
+      const { Fallback2DRenderer } = await import('../src/content/fallback-2d-renderer.js');
+      const canvas = document.createElement('canvas');
+      const config = {
+        snowmax: 20,
+        snowminsize: 10,
+        snowmaxsize: 20,
+        sinkspeed: 1.0,
+        snowcolor: ['#ffffff'],
+        snowletters: ['❄', '✺'],
+        snowsentences: ['HELLO', 'WORLD'],
+        sentenceCount: 6,
+        canvas2dInitialActiveFlakes: 10
+      };
+
+      const renderer = new Fallback2DRenderer(canvas, config);
+      renderer.init();
+
+      const activeFlakes = renderer.flakes.filter((flake) => !flake.isAwaitingRespawn);
+      const activeSentences = activeFlakes.filter((flake) => flake.isSentence).length;
+      const activeGlyphs = activeFlakes.filter((flake) => !flake.isSentence).length;
+
+      expect(activeFlakes.length).toBe(10);
+      expect(activeSentences).toBeGreaterThan(0);
+      expect(activeGlyphs).toBeGreaterThan(0);
+    });
   });
 
   describe('Integration', () => {

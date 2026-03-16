@@ -31,6 +31,15 @@ export class Fallback2DRenderer {
     this._calibrationDeltaSum = 0;
     this._calibrationCount = 0;
     this.allowNewFlakes = true;
+    this.minActiveFlakesWhenThrottled = config.canvas2dMinActiveFlakesWhenThrottled
+      ?? Math.max(8, Math.min(24, Math.ceil((config.snowmax ?? 80) * 0.15)));
+    this.maxRespawnsPerSecond = config.canvas2dMaxRespawnsPerSecond
+      ?? Math.max(20, Math.min(90, Math.ceil((config.snowmax ?? 80) * 0.45)));
+    this.maxRespawnBurst = config.canvas2dMaxRespawnBurst
+      ?? Math.max(4, Math.min(16, Math.ceil((config.snowmax ?? 80) * 0.08)));
+    this.initialActiveFlakes = config.canvas2dInitialActiveFlakes
+      ?? Math.max(6, Math.min(24, Math.ceil((config.snowmax ?? 80) * 0.2)));
+    this._respawnCredit = 0;
     this.lowQualityMode = false;
     
     // Параметры взаимодействия с мышью
@@ -159,6 +168,32 @@ export class Fallback2DRenderer {
   }
 
   /**
+   * Строит маску равномерно распределенных слотов.
+   * @private
+   */
+  _buildDistributedSlotMask(total, selectedCount) {
+    const mask = new Array(Math.max(0, total)).fill(false);
+    const count = Math.min(Math.max(0, selectedCount), total);
+    if (count === 0 || total <= 0) return mask;
+    if (count >= total) {
+      for (let i = 0; i < total; i++) mask[i] = true;
+      return mask;
+    }
+
+    for (let i = 0; i < count; i++) {
+      let slot = Math.floor(((i + 0.5) * total) / count);
+      if (slot < 0) slot = 0;
+      if (slot >= total) slot = total - 1;
+      while (mask[slot]) {
+        slot = (slot + 1) % total;
+      }
+      mask[slot] = true;
+    }
+
+    return mask;
+  }
+
+  /**
    * Подготовить кэш многострочного рендера предложения.
    * Вызывается при init и при смене текста после респауна.
    * @private
@@ -238,6 +273,73 @@ export class Fallback2DRenderer {
   }
 
   /**
+   * Проверка числового значения на корректность.
+   * @private
+   */
+  _isFiniteNumber(value) {
+    return Number.isFinite(value);
+  }
+
+  /**
+   * Санитизация состояния снежинки. Возвращает true, если был выполнен аварийный сброс.
+   * @private
+   */
+  _sanitizeFlakeState(flake, worldWidth, worldHeight, canRespawnFlake) {
+    const hasInvalidState =
+      !this._isFiniteNumber(flake.size) ||
+      flake.size <= 0 ||
+      !this._isFiniteNumber(flake.x) ||
+      !this._isFiniteNumber(flake.baseX) ||
+      !this._isFiniteNumber(flake.y) ||
+      !this._isFiniteNumber(flake.velocityX) ||
+      !this._isFiniteNumber(flake.velocityY) ||
+      !this._isFiniteNumber(flake.phase) ||
+      !this._isFiniteNumber(flake.rotationSpeed) ||
+      !this._isFiniteNumber(flake.cumulativeSpin) ||
+      !this._isFiniteNumber(flake.fallSpeed);
+
+    if (hasInvalidState) {
+      const safeSize = this._isFiniteNumber(flake.size) && flake.size > 0 ? flake.size : 24;
+      flake.size = safeSize;
+      flake.collisionSize = this._isFiniteNumber(flake.collisionSize) && flake.collisionSize > 0
+        ? flake.collisionSize
+        : safeSize;
+      flake.fallSpeed = this._isFiniteNumber(flake.fallSpeed) ? flake.fallSpeed : (this.config.sinkspeed ?? 0.4) * safeSize;
+      flake.speed = flake.fallSpeed;
+      flake.velocityX = 0;
+      flake.velocityY = 0;
+      flake.phase = Math.random() * Math.PI * 2;
+      flake._sinPhase = Math.sin(flake.phase);
+      flake.rotationSpeed = 0;
+      flake.cumulativeSpin = Math.random() * Math.PI * 2;
+      flake.rotation = flake.cumulativeSpin;
+      flake.x = Math.random() * worldWidth;
+      flake.baseX = flake.x;
+      flake.isGrabbed = false;
+      flake.isAwaitingRespawn = false;
+
+      if (canRespawnFlake()) {
+        this._respawnFlake(flake);
+      } else {
+        this._deferRespawn(flake, worldHeight);
+      }
+      return true;
+    }
+
+    const maxVerticalDrift = Math.max(2000, worldHeight * 2);
+    if (flake.y > worldHeight + maxVerticalDrift || flake.y < -maxVerticalDrift) {
+      if (canRespawnFlake()) {
+        this._respawnFlake(flake);
+      } else {
+        this._deferRespawn(flake, worldHeight);
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Инициализация 2D контекста
    * @returns {boolean} true если успешно
    */
@@ -269,18 +371,28 @@ export class Fallback2DRenderer {
     // Создаем снежинки - контролируемое количество предложений + глифы
     this.flakes = []; // Инициализируем как пустой массив для безопасного спауна
     
-    for (let idx = 0; idx < Math.max(1, snowmax); idx++) {
+    const totalFlakes = Math.max(1, snowmax);
+    const initialActive = Math.min(totalFlakes, this.initialActiveFlakes);
+
+    const activeMask = this._buildDistributedSlotMask(totalFlakes, initialActive);
+    const sentenceMask = hasSentences
+      ? this._buildDistributedSlotMask(totalFlakes, maxSentenceInstances)
+      : new Array(totalFlakes).fill(false);
+    let glyphCursor = 0;
+
+    for (let idx = 0; idx < totalFlakes; idx++) {
       // Выбираем между глифами и предложениями на основе sentenceCount
       let textItem;
-      let isSentence = false;
+      const isSentence = sentenceMask[idx];
+      const isInitiallyActive = activeMask[idx];
       
-      if (hasSentences && idx < maxSentenceInstances) {
-        // Первые sentenceCount снежинок - это предложения
+      if (isSentence) {
+        // Равномерно распределенные слоты предложений
         textItem = this._nextSentence();
-        isSentence = true;
       } else if (hasGlyphs) {
-        // Остальные - глифы
-        textItem = snowletters[(idx - maxSentenceInstances) % snowletters.length];
+        // Слоты глифов
+        textItem = snowletters[glyphCursor % snowletters.length];
+        glyphCursor++;
       } else {
         // Если нет глифов, используем дефолтный
         textItem = '❄';
@@ -306,7 +418,9 @@ export class Fallback2DRenderer {
       this.flakes.push({
         x,
         baseX: x,
-        y: -size - Math.random() * window.innerHeight,
+        y: isInitiallyActive
+          ? (-size - Math.random() * window.innerHeight * 0.5)
+          : (window.innerHeight + size * 2),
         size,
         collisionSize,
         speed,
@@ -321,6 +435,7 @@ export class Fallback2DRenderer {
         cumulativeSpin: initialRotation,
         velocityX: 0,
         velocityY: 0,
+        isAwaitingRespawn: !isInitiallyActive,
         isGrabbed: false,
         // Предвычисленные поля для горячего цикла рендера
         _sizeRatio: Math.sqrt(size / 20),
@@ -388,6 +503,44 @@ export class Fallback2DRenderer {
       } else if (!this.allowNewFlakes && this.currentFpsEstimate >= this.respawnResumeFps) {
         this.allowNewFlakes = true;
       }
+
+      let forcedRespawnBudget = 0;
+      if (!this.allowNewFlakes) {
+        let activeFlakeCount = 0;
+        for (let i = 0; i < this.flakes.length; i++) {
+          if (!this.flakes[i]?.isAwaitingRespawn) {
+            activeFlakeCount++;
+          }
+        }
+
+        const minActive = Math.min(this.flakes.length, this.minActiveFlakesWhenThrottled);
+        if (activeFlakeCount < minActive) {
+          forcedRespawnBudget = minActive - activeFlakeCount;
+        }
+      }
+
+      // Равномерный респаун предотвращает стартовый burst и выравнивает нагрузку на CPU.
+      this._respawnCredit = Math.min(
+        this.maxRespawnBurst,
+        this._respawnCredit + delta * this.maxRespawnsPerSecond
+      );
+      let respawnRateBudget = Math.floor(this._respawnCredit);
+      this._respawnCredit -= respawnRateBudget;
+
+      const canRespawnFlake = () => {
+        if (this.allowNewFlakes) {
+          if (respawnRateBudget > 0) {
+            respawnRateBudget--;
+            return true;
+          }
+          return false;
+        }
+        if (forcedRespawnBudget > 0) {
+          forcedRespawnBudget--;
+          return true;
+        }
+        return false;
+      };
 
       const flakeCount = this.flakes.length;
       if (flakeCount >= 260 || this.currentFpsEstimate < 42) {
@@ -522,8 +675,14 @@ export class Fallback2DRenderer {
       for (let i = 0; i < flakes.length; i++) {
         const flake = flakes[i];
 
+        if (this._sanitizeFlakeState(flake, worldWidth, worldHeight, canRespawnFlake)) {
+          if (flake.isAwaitingRespawn) {
+            continue;
+          }
+        }
+
         if (flake.isAwaitingRespawn) {
-          if (this.allowNewFlakes) {
+          if (canRespawnFlake()) {
             this._respawnFlake(flake);
           } else {
             continue;
@@ -648,8 +807,8 @@ export class Fallback2DRenderer {
         }
 
         // Сброс позиции если вышла за экран
-        if (flake.y - flake.size > worldHeight) {
-          if (this.allowNewFlakes) {
+        if (flake.y - flake.size * 0.5 > worldHeight) {
+          if (canRespawnFlake()) {
             this._respawnFlake(flake);
           } else {
             this._deferRespawn(flake, worldHeight);

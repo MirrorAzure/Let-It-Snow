@@ -1,6 +1,6 @@
 {
   "name": "let-it-snow",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "A magical snowfall extension for web pages",
   "type": "module",
   "scripts": {
@@ -23,13 +23,13 @@
     "check-updates": "ncu"
   },
   "devDependencies": {
-    "@crxjs/vite-plugin": "^2.3.0",
+    "@crxjs/vite-plugin": "^2.4.0",
     "archiver": "^7.0.1",
     "cross-env": "^10.1.0",
     "crx3": "^2.0.0",
-    "jsdom": "^28.0.0",
-    "npm-check-updates": "^19.3.2",
-    "vite": "^7.3.1",
-    "vitest": "^4.0.18"
+    "jsdom": "^29.0.0",
+    "npm-check-updates": "^19.6.3",
+    "vite": "^8.0.0",
+    "vitest": "^4.1.0"
   }
 }

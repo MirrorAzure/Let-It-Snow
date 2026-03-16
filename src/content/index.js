@@ -101,6 +101,7 @@ class SnowWebGPUController {
    */
   async start() {
     this.createOverlayCanvas();
+    const gifStartPromise = this.startGifLayer();
     const mode = String(this.config.rendererMode || 'auto').toLowerCase();
     const rendererMode = mode === 'webgpu' || mode === '2d' ? mode : 'auto';
     const debugEnabled = Boolean(
@@ -162,8 +163,9 @@ class SnowWebGPUController {
       }
     }
 
-    // Запуск слоя GIF (если настроен)
-    await this.startGifLayer();
+    // GIF запускаем параллельно с инициализацией рендера,
+    // чтобы не ждать завершения тяжелого WebGPU init.
+    await gifStartPromise;
 
     // Передаем ссылку на рендерер в GifLayer для коллизий в реальном времени
     if (this.gifLayer && this.renderer) {
