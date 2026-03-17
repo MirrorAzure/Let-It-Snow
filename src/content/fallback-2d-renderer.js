@@ -37,8 +37,8 @@ export class Fallback2DRenderer {
       ?? Math.max(20, Math.min(90, Math.ceil((config.snowmax ?? 80) * 0.45)));
     this.maxRespawnBurst = config.canvas2dMaxRespawnBurst
       ?? Math.max(4, Math.min(16, Math.ceil((config.snowmax ?? 80) * 0.08)));
-    this.initialActiveFlakes = config.canvas2dInitialActiveFlakes
-      ?? Math.max(6, Math.min(24, Math.ceil((config.snowmax ?? 80) * 0.2)));
+    this.initialActiveFlakes = config.canvas2dInitialActiveFlakes ?? 0;
+    this.maxRespawnsPerFrame = Math.max(1, Math.floor(config.canvas2dMaxRespawnsPerFrame ?? 2));
     this._respawnCredit = 0;
     this.lowQualityMode = false;
     
@@ -241,7 +241,9 @@ export class Fallback2DRenderer {
    * @private
    */
   _respawnFlake(flake) {
-    flake.y = -flake.size;
+    const { height: viewportHeight } = this._getViewportSize();
+    const respawnDepthSpan = Math.max(viewportHeight * 1.5, flake.size * 2);
+    flake.y = -flake.size - Math.random() * respawnDepthSpan;
     const newX = this._findSafeSpawnX(flake.size);
     flake.x = newX;
     flake.baseX = newX;
@@ -373,12 +375,15 @@ export class Fallback2DRenderer {
     
     const totalFlakes = Math.max(1, snowmax);
     const initialActive = Math.min(totalFlakes, this.initialActiveFlakes);
+    const { height: viewportHeight } = this._getViewportSize();
+    const initialDepthSpan = Math.max(viewportHeight * 2.5, 1);
 
     const activeMask = this._buildDistributedSlotMask(totalFlakes, initialActive);
     const sentenceMask = hasSentences
       ? this._buildDistributedSlotMask(totalFlakes, maxSentenceInstances)
       : new Array(totalFlakes).fill(false);
     let glyphCursor = 0;
+    let activeCursor = 0;
 
     for (let idx = 0; idx < totalFlakes; idx++) {
       // Выбираем между глифами и предложениями на основе sentenceCount
@@ -415,12 +420,20 @@ export class Fallback2DRenderer {
       const initialRotation = Math.random() * Math.PI * 2; // Случайный начальный угол для разнообразия
       const initialPhase = Math.random() * Math.PI * 2;
 
+      const initialDepth = isInitiallyActive
+        ? (((activeCursor + Math.random()) / Math.max(1, initialActive)) * initialDepthSpan)
+        : 0;
+
+      if (isInitiallyActive) {
+        activeCursor++;
+      }
+
       this.flakes.push({
         x,
         baseX: x,
         y: isInitiallyActive
-          ? (-size - Math.random() * window.innerHeight * 0.5)
-          : (window.innerHeight + size * 2),
+          ? (-size - initialDepth)
+          : (viewportHeight + size * 2),
         size,
         collisionSize,
         speed,
@@ -526,17 +539,23 @@ export class Fallback2DRenderer {
       );
       let respawnRateBudget = Math.floor(this._respawnCredit);
       this._respawnCredit -= respawnRateBudget;
+      let respawnFrameBudget = this.maxRespawnsPerFrame;
 
       const canRespawnFlake = () => {
+        if (respawnFrameBudget <= 0) {
+          return false;
+        }
         if (this.allowNewFlakes) {
           if (respawnRateBudget > 0) {
             respawnRateBudget--;
+            respawnFrameBudget--;
             return true;
           }
           return false;
         }
         if (forcedRespawnBudget > 0) {
           forcedRespawnBudget--;
+          respawnFrameBudget--;
           return true;
         }
         return false;
