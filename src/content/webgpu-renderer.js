@@ -547,15 +547,19 @@ export class WebGPURenderer {
       const size = isSentence 
         ? Math.max(snowmaxsize * 1.2, 60) + Math.random() * 20
         : snowminsize + Math.random() * sizeRange;
+
+      // Ячейка sentence-атласа в 2 раза шире высоты, поэтому визуальный размер
+      // по X также должен быть увеличен, чтобы текст не сжимался.
+      const sentenceHorizontalScale = 2.0;
       
       const collisionSize = isSentence 
-        ? Math.max(snowminsize, 20) + Math.random() * 15
+        ? size * sentenceHorizontalScale
         : size;
       
       const colorHex = snowcolor[Math.floor(Math.random() * snowcolor.length)];
       const color = hexToRgb(colorHex);
       const speed = sinkspeed * (size / 20) * 20;
-      const spawnX = this._findSafeSpawnX(size);
+      const spawnX = this._findSafeSpawnX(collisionSize);
       const initialRotation = Math.random() * Math.PI * 2; // Случайный начальный угол для разнообразия
 
       this.instances.push({
@@ -1112,7 +1116,7 @@ export class WebGPURenderer {
     
     // Обрабатываем края экрана как порталы (wrapping)
     this.instances.forEach((flake) => {
-      const collisionRadius = (flake.size ?? 20) * 0.5;
+      const collisionRadius = (flake.collisionSize ?? flake.size ?? 20) * 0.5;
       
       if (flake.x + collisionRadius < 0) {
         flake.x = width + collisionRadius;

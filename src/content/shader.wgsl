@@ -61,8 +61,12 @@ fn vs(
   @location(11) iGlyph: f32,          // Индекс глифа в атласе
   @location(12) iMonotone: f32        // Флаг монотонности глифа
 ) -> VSOut {
-  // Масштабируем квад до нужного размера
-  let local = position * iSize;
+  // Для предложений sentence-атлас использует ячейки с соотношением 2:1,
+  // поэтому расширяем геометрию по X, чтобы текст не был сжат.
+  let sentenceAspect = 2.0;
+  let isGlyph = iGlyph < uniforms.glyphCount;
+  let scaleX = select(sentenceAspect, 1.0, isGlyph);
+  let local = vec2<f32>(position.x * iSize * scaleX, position.y * iSize);
   
   // Вращение вокруг центра
   let c = cos(iRot);
