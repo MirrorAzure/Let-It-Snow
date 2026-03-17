@@ -271,7 +271,7 @@ class SnowWebGPUController {
    */
   setupMouseInteraction() {
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-    const maxMouseVelocity = Number(this.config.maxMouseVelocity ?? 2200);
+    const maxMouseVelocity = Number(this.config.maxMouseVelocity ?? 3800);
     const mouseVelocitySmoothing = Number(this.config.mouseVelocitySmoothing ?? 0.35);
 
     this.mouseMoveHandler = (e) => {

@@ -110,6 +110,9 @@ export class MouseHandler {
       : 0;
     const activeInfluence = influence * Math.max(activityFactor, burstFactor);
     const isMouseFast = mouseSpeed > this.mouseDragThreshold;
+    const speedBoost = isMouseFast
+      ? 1 + Math.min(1.8, (mouseSpeed - this.mouseDragThreshold) / this.mouseDragThreshold)
+      : 1;
 
     if (burstActive && this.mouseBurstMode === 'explode') {
       const safeDistance = Math.max(distance, 0.0001);
@@ -131,7 +134,7 @@ export class MouseHandler {
       const mouseDirX = this.mouseVelocityX / mouseVelMag;
       const mouseDirY = this.mouseVelocityY / mouseVelMag;
       
-      const dragForce = activeInfluence * this.mouseDragStrength * (mouseSpeed / 1000);
+      const dragForce = activeInfluence * this.mouseDragStrength * (mouseSpeed / 1000) * speedBoost;
       flake.velocityX = (flake.velocityX ?? 0) + mouseDirX * dragForce * delta * 1000;
       flake.velocityY = (flake.velocityY ?? 0) + mouseDirY * dragForce * delta * 1000;
     } else {
@@ -148,7 +151,7 @@ export class MouseHandler {
     }
     
     // Передаем импульс от движения мыши
-    const impulseStrength = activeInfluence * this.mouseImpulseStrength;
+    const impulseStrength = activeInfluence * this.mouseImpulseStrength * speedBoost;
     flake.velocityX = (flake.velocityX ?? 0) + this.mouseVelocityX * impulseStrength * (delta || 0.016);
     flake.velocityY = (flake.velocityY ?? 0) + this.mouseVelocityY * impulseStrength * (delta || 0.016);
     

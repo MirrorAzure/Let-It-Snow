@@ -58,7 +58,7 @@ export class Fallback2DRenderer {
     this.mouseBurstRadiusMultiplier = 3.5;
     this.mouseBurstTimer = 0;
     this.mouseBurstMode = null;
-    this.maxMouseVelocity = config.maxMouseVelocity ?? 2200;
+    this.maxMouseVelocity = config.maxMouseVelocity ?? 3800;
     this.mouseVelocitySmoothing = config.mouseVelocitySmoothing ?? 0.35;
     this.mouseActivityThreshold = config.mouseActivityThreshold ?? 45;
     this.maxFlakeSpeed = config.maxFlakeSpeed ?? 420;
@@ -689,6 +689,9 @@ export class Fallback2DRenderer {
       const shouldApplyMouse = burstActive || isMouseActive;
       const isMouseFast = mouseSpeed > this.mouseDragThreshold;
       const mouseVelMag = mouseSpeed > 0 ? mouseSpeed : 0;
+      const speedBoost = isMouseFast
+        ? 1 + Math.min(1.8, (mouseSpeed - this.mouseDragThreshold) / this.mouseDragThreshold)
+        : 1;
 
       // ПЕРВЫЙ ПРОХОД: Обновляем физику и позиции для всех снежинок
       for (let i = 0; i < flakes.length; i++) {
@@ -746,7 +749,7 @@ export class Fallback2DRenderer {
               const mouseDirY = mouseVy / mouseVelMag;
               
               // Притягиваем снежинку в сторону движения мыши
-              const dragForce = activeInfluence * this.mouseDragStrength * (mouseSpeed / 1000);
+              const dragForce = activeInfluence * this.mouseDragStrength * (mouseSpeed / 1000) * speedBoost;
               flake.velocityX += mouseDirX * dragForce * delta * 1000;
               flake.velocityY += mouseDirY * dragForce * delta * 1000;
             }
@@ -763,7 +766,7 @@ export class Fallback2DRenderer {
           }
           
           // Передаем импульс от движения мыши
-          const impulseStrength = activeInfluence * this.mouseImpulseStrength;
+          const impulseStrength = activeInfluence * this.mouseImpulseStrength * speedBoost;
           flake.velocityX += mouseVx * impulseStrength * delta;
           flake.velocityY += mouseVy * impulseStrength * delta;
           
