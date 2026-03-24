@@ -16,6 +16,31 @@ function getFallbackGlyphFont(size, mode) {
   return `${Math.max(16, size)}px ${family}`;
 }
 
+function computeGlyphDrawOffsets(ctx, glyph, font) {
+  if (!ctx || typeof ctx.measureText !== 'function') {
+    return { x: 0, y: 0 };
+  }
+
+  ctx.save();
+  ctx.font = font;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+
+  const metrics = ctx.measureText(String(glyph || ''));
+  const left = Number(metrics.actualBoundingBoxLeft) || 0;
+  const right = Number(metrics.actualBoundingBoxRight) || 0;
+  const ascent = Number(metrics.actualBoundingBoxAscent) || 0;
+  const descent = Number(metrics.actualBoundingBoxDescent) || 0;
+  const width = right - left;
+
+  ctx.restore();
+
+  return {
+    x: -width * 0.5,
+    y: (ascent - descent) * 0.5
+  };
+}
+
 /**
  * Класс для рендеринга снега через Canvas 2D API
  */
@@ -335,6 +360,12 @@ export class Fallback2DRenderer {
       flake.baseX = flake.x;
       flake.isGrabbed = false;
       flake.isAwaitingRespawn = false;
+      if (!flake.isSentence) {
+        flake.glyphFont = getFallbackGlyphFont(flake.size, flake.glyphRenderMode);
+        const offsets = computeGlyphDrawOffsets(this.ctx, flake.char, flake.glyphFont);
+        flake.glyphDrawX = offsets.x;
+        flake.glyphDrawY = offsets.y;
+      }
 
       if (canRespawnFlake()) {
         this._respawnFlake(flake);
@@ -494,6 +525,9 @@ export class Fallback2DRenderer {
         this._prepareSentenceRenderData(flake);
       } else {
         flake.glyphFont = getFallbackGlyphFont(flake.size, flake.glyphRenderMode);
+        const offsets = computeGlyphDrawOffsets(this.ctx, flake.char, flake.glyphFont);
+        flake.glyphDrawX = offsets.x;
+        flake.glyphDrawY = offsets.y;
       }
 
     }
@@ -943,6 +977,8 @@ export class Fallback2DRenderer {
       ctx.textBaseline = 'middle';
       let lastFillStyle = '';
       let lastFont = '';
+      let lastTextAlign = 'center';
+      let lastTextBaseline = 'middle';
 
       for (let i = 0; i < flakes.length; i++) {
         const flake = flakes[i];
@@ -979,6 +1015,14 @@ export class Fallback2DRenderer {
             ctx.font = sentenceFont;
             lastFont = sentenceFont;
           }
+          if (lastTextAlign !== 'center') {
+            ctx.textAlign = 'center';
+            lastTextAlign = 'center';
+          }
+          if (lastTextBaseline !== 'middle') {
+            ctx.textBaseline = 'middle';
+            lastTextBaseline = 'middle';
+          }
 
           const lines = flake.sentenceLines || [String(flake.char || '')];
           const lineHeight = flake.sentenceLineHeight || Math.max(10, flake.size * 0.3) * 1.2;
@@ -995,7 +1039,26 @@ export class Fallback2DRenderer {
             ctx.font = glyphFont;
             lastFont = glyphFont;
           }
-          ctx.fillText(flake.char, 0, 0);
+          if (lastTextAlign !== 'left') {
+            ctx.textAlign = 'left';
+            lastTextAlign = 'left';
+          }
+          if (lastTextBaseline !== 'alphabetic') {
+            ctx.textBaseline = 'alphabetic';
+            lastTextBaseline = 'alphabetic';
+          }
+
+          let drawX = flake.glyphDrawX;
+          let drawY = flake.glyphDrawY;
+          if (!Number.isFinite(drawX) || !Number.isFinite(drawY)) {
+            const offsets = computeGlyphDrawOffsets(ctx, flake.char, glyphFont);
+            drawX = offsets.x;
+            drawY = offsets.y;
+            flake.glyphDrawX = drawX;
+            flake.glyphDrawY = drawY;
+          }
+
+          ctx.fillText(flake.char, drawX, drawY);
         }
       }
 

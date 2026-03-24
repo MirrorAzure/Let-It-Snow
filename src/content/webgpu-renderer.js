@@ -814,9 +814,12 @@ export class WebGPURenderer {
       this.debugCtx = this.debugCanvas.getContext('2d');
     }
 
+    const viewport = this._getViewportSize();
     const ratio = window.devicePixelRatio || 1;
-    this.debugCanvas.width = Math.floor(window.innerWidth * ratio);
-    this.debugCanvas.height = Math.floor(window.innerHeight * ratio);
+    const targetWidth = Math.max(1, Math.floor(viewport.width * ratio));
+    const targetHeight = Math.max(1, Math.floor(viewport.height * ratio));
+    this.debugCanvas.width = targetWidth;
+    this.debugCanvas.height = targetHeight;
   }
 
   /**
@@ -826,13 +829,17 @@ export class WebGPURenderer {
     if (!this.debugCollisions || !this.debugCtx || !this.debugCanvas) return;
 
     const ctx = this.debugCtx;
-    const ratio = window.devicePixelRatio || 1;
+    const viewportWidth = Math.max(1, this.viewportWidth || this._getViewportSize().width || 1);
+    const viewportHeight = Math.max(1, this.viewportHeight || this._getViewportSize().height || 1);
+    const scaleX = this.debugCanvas.width / viewportWidth;
+    const scaleY = this.debugCanvas.height / viewportHeight;
+    const scaleR = Math.min(scaleX, scaleY);
     ctx.clearRect(0, 0, this.debugCanvas.width, this.debugCanvas.height);
 
     this.instances.forEach((flake) => {
-      const x = flake.x * ratio;
-      const y = flake.y * ratio;
-      const collisionRadius = (flake.collisionSize ?? flake.size ?? 20) * 0.5 * ratio;
+      const x = flake.x * scaleX;
+      const y = flake.y * scaleY;
+      const collisionRadius = (flake.collisionSize ?? flake.size ?? 20) * 0.5 * scaleR;
 
       ctx.save();
 
@@ -856,7 +863,7 @@ export class WebGPURenderer {
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(x, y);
-        ctx.lineTo(x + flake.velocityX * velScale * ratio, y + flake.velocityY * velScale * ratio);
+        ctx.lineTo(x + flake.velocityX * velScale * scaleX, y + flake.velocityY * velScale * scaleY);
         ctx.stroke();
       }
 

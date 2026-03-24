@@ -91,7 +91,7 @@ describe('GifLayer', () => {
 
     await gifLayer.start();
 
-    const visibleNow = gifLayer.flakes.filter((flake) => flake.y >= -flake.size).length;
+    const visibleNow = gifLayer.flakes.filter((flake) => flake.y >= -(flake.size * 0.5)).length;
     expect(visibleNow).toBeGreaterThanOrEqual(4);
 
     gifLayer.stop();
@@ -210,14 +210,14 @@ describe('GifLayer', () => {
     const width = window.innerWidth;
 
     // Test wrap from left to right
-    flake.x = -flake.size - 5;
+    flake.x = -(flake.size * 0.5) - 5;
     gifLayer.animate(performance.now() + 16);
-    expect(flake.x).toBe(width + flake.size);
+    expect(flake.x).toBe(width + flake.size * 0.5);
 
     // Test wrap from right to left
-    flake.x = width + flake.size + 5;
+    flake.x = width + flake.size * 0.5 + 5;
     gifLayer.animate(performance.now() + 16);
-    expect(flake.x).toBe(-flake.size);
+    expect(flake.x).toBe(-flake.size * 0.5);
 
     gifLayer.stop();
   });
@@ -232,7 +232,7 @@ describe('GifLayer', () => {
     await gifLayer.start();
 
     const flake = gifLayer.flakes[0];
-    flake.y = window.innerHeight + flake.size + 10;
+    flake.y = window.innerHeight + flake.size * 0.5 + 10;
     flake.velocityX = 50;
     flake.velocityY = 30;
     flake.rotation = 3.14;
@@ -240,7 +240,7 @@ describe('GifLayer', () => {
 
     gifLayer.animate(performance.now() + 16);
 
-    expect(flake.y).toBe(-flake.size);
+    expect(flake.y).toBe(-flake.size * 0.5);
     expect(flake.velocityX).toBe(0);
     expect(flake.velocityY).toBe(0);
     expect(flake.rotation).toBe(0);

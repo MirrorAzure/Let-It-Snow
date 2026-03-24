@@ -290,8 +290,8 @@ export class GifLayer {
         speed,
         x: Math.random() * window.innerWidth,
         y: initialVisibleMask[idx]
-          ? (-size + Math.random() * size)
-          : (-size - Math.random() * window.innerHeight),
+          ? (-size * 0.5 + Math.random() * size)
+          : (-size * 0.5 - Math.random() * window.innerHeight),
         velocityX: 0,
         velocityY: 0,
         rotationSpeed: 0,
@@ -426,16 +426,18 @@ export class GifLayer {
       flake.rotation += flake.rotationSpeed * delta;
 
       // Wrap around horizontal boundaries
-      if (flake.x < -flake.size) {
-        flake.x = width + flake.size;
-      } else if (flake.x > width + flake.size) {
-        flake.x = -flake.size;
+      const halfSize = flake.size * 0.5;
+      if (flake.x < -halfSize) {
+        flake.x = width + halfSize;
+      } else if (flake.x > width + halfSize) {
+        flake.x = -halfSize;
       }
 
       // Сброс позиции если снежинка вышла за экран
       const flakeSize = flake.size ?? 20;
-      if (flake.y - flakeSize > height) {
-        flake.y = -flakeSize;
+      const flakeHalfSize = flakeSize * 0.5;
+      if (flake.y - flakeHalfSize > height) {
+        flake.y = -flakeHalfSize;
         flake.x = Math.random() * width;
         flake.velocityX = 0;
         flake.velocityY = 0;
@@ -444,7 +446,7 @@ export class GifLayer {
       }
 
       // Применяем трансформации
-      flake.el.style.transform = `translate3d(${flake.x}px, ${flake.y}px, 0) rotate(${flake.rotation}rad)`;
+      flake.el.style.transform = `translate3d(${flake.x - flakeHalfSize}px, ${flake.y - flakeHalfSize}px, 0) rotate(${flake.rotation}rad)`;
     });
 
     // Process collisions between ALL flakes (GIF + flakes from main renderer)
