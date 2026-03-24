@@ -23,6 +23,7 @@ const SETTINGS_KEYS = [
   'snowmaxsize',
   'colors',
   'symbols',
+  'symbolModes',
   'sentences',
   'sentenceCount',
   'autoStart',
@@ -134,6 +135,35 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const normalizeSettings = (rawConfig = {}) => {
     const config = { ...DEFAULT_SETTINGS, ...rawConfig };
+    const rawSymbols = Array.isArray(config.symbols) ? config.symbols : [...DEFAULT_SETTINGS.symbols];
+    const normalizedSymbolEntries = rawSymbols
+      .map((entry) => {
+        if (typeof entry === 'string') {
+          return { symbol: entry, mode: null };
+        }
+        if (entry && typeof entry === 'object') {
+          const symbol = String(entry.symbol || entry.char || '').trim();
+          if (!symbol) return null;
+          const mode = entry.mode === 'emoji' ? 'emoji' : (entry.mode === 'text' ? 'text' : null);
+          return { symbol, mode };
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    const normalizedSymbols = normalizedSymbolEntries.length > 0
+      ? normalizedSymbolEntries.map((entry) => entry.symbol)
+      : [...DEFAULT_SETTINGS.symbols];
+
+    const rawSymbolModes = Array.isArray(config.symbolModes) ? config.symbolModes : [];
+    const symbolModes = normalizedSymbols.map((_, index) => {
+      const entryMode = normalizedSymbolEntries[index]?.mode;
+      if (entryMode === 'emoji' || entryMode === 'text') {
+        return entryMode;
+      }
+      return rawSymbolModes[index] === 'emoji' ? 'emoji' : 'text';
+    });
+
     return {
       snowmax: Number.isFinite(config.snowmax) ? config.snowmax : DEFAULT_SETTINGS.snowmax,
       sinkspeed: Number.isFinite(config.sinkspeed) ? config.sinkspeed : DEFAULT_SETTINGS.sinkspeed,
@@ -146,9 +176,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       colors: Array.isArray(config.colors) && config.colors.length > 0
         ? config.colors
         : [...DEFAULT_SETTINGS.colors],
-      symbols: Array.isArray(config.symbols) && config.symbols.length > 0
-        ? config.symbols
-        : [...DEFAULT_SETTINGS.symbols],
+      symbols: normalizedSymbols,
+      symbolModes,
       sentences: Array.isArray(config.sentences) ? config.sentences : [],
       sentenceCount: Number.isFinite(config.sentenceCount) ? config.sentenceCount : 0,
       gifs: Array.isArray(config.gifs) ? config.gifs : [],
@@ -276,11 +305,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       elements.colorsList.querySelectorAll('.item')
     ).map((item) => item.querySelector('input[type="color"]').value);
 
-    const symbols = Array.from(
+    const symbolEntries = Array.from(
       elements.symbolsList.querySelectorAll('.item')
     )
-      .map((item) => item.querySelector('input[type="text"]').value.trim())
-      .filter((s) => s !== '');
+      .map((item) => {
+        const symbol = item.querySelector('input[type="text"]').value.trim();
+        const mode = item.dataset.symbolMode === 'emoji' ? 'emoji' : 'text';
+        return { symbol, mode };
+      })
+      .filter((entry) => entry.symbol !== '');
+
+    const symbols = symbolEntries.map((entry) => entry.symbol);
+    const symbolModes = symbolEntries.map((entry) => entry.mode);
 
     const sentences = Array.from(
       elements.sentencesList.querySelectorAll('.item')
@@ -299,6 +335,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       snowmaxsize: parseInt(elements.snowmaxsize.value),
       colors: colors.length > 0 ? colors : ['#ffffff'],
       symbols: symbols.length > 0 ? symbols : ['❄'],
+      symbolModes: symbolModes.length > 0 ? symbolModes : ['text'],
       sentences,
       sentenceCount: parseInt(elements.sentenceCount.value) || 0,
       gifs,
@@ -324,6 +361,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const symbols = Array.isArray(config.symbols) && config.symbols.length > 0
       ? config.symbols
       : DEFAULT_SETTINGS.symbols;
+    const symbolModes = Array.isArray(config.symbolModes) && config.symbolModes.length > 0
+      ? config.symbolModes
+      : new Array(symbols.length).fill('text');
     const sentences = Array.isArray(config.sentences) ? config.sentences : [];
     const gifs = Array.isArray(config.gifs) ? config.gifs : [];
 
@@ -357,7 +397,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.gifsList.innerHTML = '';
 
     colors.forEach((color) => createColorItem(color, elements.colorsList, saveAllSettings));
-    symbols.forEach((symbol) => createSymbolItem(symbol, elements.symbolsList, saveAllSettings));
+    symbols.forEach((symbol, index) => createSymbolItem(
+      symbol,
+      elements.symbolsList,
+      saveAllSettings,
+      symbolModes[index] === 'emoji' ? 'emoji' : 'text'
+    ));
     sentences.forEach((sentence) => createSentenceItem(sentence, elements.sentencesList, saveAllSettings));
     gifs.forEach((gif) => createGifItem(gif, elements.gifsList, saveAllSettings));
 
@@ -365,7 +410,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       createColorItem('#ffffff', elements.colorsList, saveAllSettings);
     }
     if (elements.symbolsList.children.length === 0) {
-      createSymbolItem('❄', elements.symbolsList, saveAllSettings);
+      createSymbolItem('❄', elements.symbolsList, saveAllSettings, 'text');
     }
     if (elements.gifsList.children.length === 0) {
       createGifItem('', elements.gifsList, saveAllSettings);
@@ -433,7 +478,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.addSymbol.addEventListener('click', () => {
     const symbols = ['❄', '❅', '❆', '＊', '⋅', '✦', '❋', '✧', '✶', '✴', '✳', '❇'];
     const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
-    createSymbolItem(randomSymbol, elements.symbolsList, saveAllSettings);
+    createSymbolItem(randomSymbol, elements.symbolsList, saveAllSettings, 'text');
     saveAllSettings();
   });
 
@@ -701,6 +746,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       snowmaxsize: payload.snowmaxsize,
       snowcolor: colors,
       snowletters: symbols.length > 0 ? symbols : ['❄'],
+      snowglyphmodes: payload.symbolModes && payload.symbolModes.length > 0
+        ? payload.symbolModes
+        : ['text'],
       snowsentences: sentences,
       sentenceCount: payload.sentenceCount,
       gifUrls: gifs,

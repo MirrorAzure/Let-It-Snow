@@ -4,6 +4,18 @@
 
 import { CollisionHandler } from './physics/collision-handler.js';
 
+const TEXT_GLYPH_FONT_STACK = '"Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Times New Roman", serif';
+const EMOJI_GLYPH_FONT_STACK = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif';
+
+function normalizeGlyphMode(mode) {
+  return mode === 'emoji' ? 'emoji' : 'text';
+}
+
+function getFallbackGlyphFont(size, mode) {
+  const family = normalizeGlyphMode(mode) === 'emoji' ? EMOJI_GLYPH_FONT_STACK : TEXT_GLYPH_FONT_STACK;
+  return `${Math.max(16, size)}px ${family}`;
+}
+
 /**
  * Класс для рендеринга снега через Canvas 2D API
  */
@@ -361,7 +373,17 @@ export class Fallback2DRenderer {
 
     if (!this.ctx) return false;
 
-    const { snowmax, snowminsize, snowmaxsize, sinkspeed, snowcolor, snowletters, snowsentences, sentenceCount } = this.config;
+    const {
+      snowmax,
+      snowminsize,
+      snowmaxsize,
+      sinkspeed,
+      snowcolor,
+      snowletters,
+      snowglyphmodes,
+      snowsentences,
+      sentenceCount
+    } = this.config;
 
     const sizeRange = snowmaxsize - snowminsize;
     
@@ -392,6 +414,7 @@ export class Fallback2DRenderer {
     for (let idx = 0; idx < totalFlakes; idx++) {
       // Выбираем между глифами и предложениями на основе sentenceCount
       let textItem;
+      let glyphRenderMode = 'text';
       const isSentence = sentenceMask[idx];
       const isInitiallyActive = activeMask[idx];
       
@@ -400,11 +423,15 @@ export class Fallback2DRenderer {
         textItem = this._nextSentence();
       } else if (hasGlyphs) {
         // Слоты глифов
-        textItem = snowletters[glyphCursor % snowletters.length];
+        const glyphSlot = glyphCursor % snowletters.length;
+        textItem = snowletters[glyphSlot];
+        const glyphMode = Array.isArray(snowglyphmodes) ? snowglyphmodes[glyphSlot] : 'text';
+        glyphRenderMode = normalizeGlyphMode(glyphMode);
         glyphCursor++;
       } else {
         // Если нет глифов, используем дефолтный
         textItem = '❄';
+        glyphRenderMode = 'text';
       }
       
       // Предложения должны быть больше
@@ -448,6 +475,7 @@ export class Fallback2DRenderer {
         color,
         char: textItem,
         isSentence,
+        glyphRenderMode: isSentence ? 'text' : glyphRenderMode,
         rotationSpeed: 0,
         cumulativeSpin: initialRotation,
         velocityX: 0,
@@ -465,8 +493,9 @@ export class Fallback2DRenderer {
       if (flake.isSentence) {
         this._prepareSentenceRenderData(flake);
       } else {
-        flake.glyphFont = `${Math.max(16, flake.size)}px serif`;
+        flake.glyphFont = getFallbackGlyphFont(flake.size, flake.glyphRenderMode);
       }
+
     }
 
     return true;
@@ -961,7 +990,7 @@ export class Fallback2DRenderer {
             ctx.fillText(line, 0, lineY);
           }
         } else {
-          const glyphFont = flake.glyphFont || `${Math.max(16, flake.size)}px serif`;
+          const glyphFont = flake.glyphFont || getFallbackGlyphFont(flake.size, flake.glyphRenderMode);
           if (lastFont !== glyphFont) {
             ctx.font = glyphFont;
             lastFont = glyphFont;

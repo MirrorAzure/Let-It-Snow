@@ -427,16 +427,37 @@ h2, h3 {
 }
 
 .symbol-preview {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
   background: rgba(10, 20, 40, 0.6);
   border: 1px solid rgba(100, 200, 255, 0.3);
   border-radius: 8px;
   flex-shrink: 0;
+}
+
+.symbol-mode-btn {
+  width: 44px;
+  height: 36px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #5c6bc0, #3949ab);
+  border: none;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.symbol-mode-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(57, 73, 171, 0.45);
 }
 
 .gif-preview {

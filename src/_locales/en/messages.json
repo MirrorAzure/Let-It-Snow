@@ -290,6 +290,12 @@
   "tooltipSymbolInput": {
     "message": "Enter a symbol or short text"
   },
+  "tooltipSymbolModeText": {
+    "message": "Glyph mode: text/monochrome (click to switch to Emoji)"
+  },
+  "tooltipSymbolModeEmoji": {
+    "message": "Glyph mode: Segoe UI Emoji (click to switch to text)"
+  },
   "tooltipSentenceInput": {
     "message": "Enter a long phrase"
   },

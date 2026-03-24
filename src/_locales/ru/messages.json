@@ -290,6 +290,12 @@
   "tooltipSymbolInput": {
     "message": "Введите символ или короткий текст"
   },
+  "tooltipSymbolModeText": {
+    "message": "Режим глифа: текст/монохром (нажмите для Emoji)"
+  },
+  "tooltipSymbolModeEmoji": {
+    "message": "Режим глифа: Segoe UI Emoji (нажмите для текста)"
+  },
   "tooltipSentenceInput": {
     "message": "Введите длинную фразу"
   },

@@ -36,12 +36,13 @@ export class AtlasManager {
    */
   async initialize(config) {
     const glyphs = this._extractGlyphs(config);
+    const glyphEntries = this._extractGlyphEntries(config, glyphs);
     const sentences = config.snowsentences && config.snowsentences.length > 0 
       ? config.snowsentences 
       : null;
 
     // Создание атласа глифов
-    const glyphResult = await createGlyphAtlas(glyphs, this.size);
+    const glyphResult = await createGlyphAtlas(glyphEntries, this.size);
     const useSdfGlyphs =
       config?.webgpuUseSdfGlyphs !== false &&
       shouldUseSdfGlyphAtlas({
@@ -84,6 +85,14 @@ export class AtlasManager {
     if (hasGlyphs) return config.snowletters;
     if (useDefaultGlyph) return ['❄'];
     return [];
+  }
+
+  _extractGlyphEntries(config, glyphs) {
+    const modes = Array.isArray(config?.snowglyphmodes) ? config.snowglyphmodes : [];
+    return glyphs.map((char, index) => ({
+      char,
+      mode: modes[index] === 'emoji' ? 'emoji' : 'text'
+    }));
   }
 
   /**

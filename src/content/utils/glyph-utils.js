@@ -85,18 +85,27 @@ export function computeGlyphMonotoneFlags(imageData, atlasWidth, atlasHeight, ce
   return flags;
 }
 
-const GLYPH_FONT_FAMILY = '"Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Times New Roman", serif';
+const GLYPH_TEXT_FONT_FAMILY = '"Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Times New Roman", serif';
+const GLYPH_EMOJI_FONT_FAMILY = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif';
 const GLYPH_FONT_WEIGHT = 'normal';
 const GLYPH_CELL_PADDING_RATIO = 0.08;
 
-function applyGlyphFont(ctx, fontSize) {
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  ctx.font = `${GLYPH_FONT_WEIGHT} ${Math.max(1, Math.floor(fontSize))}px ${GLYPH_FONT_FAMILY}`;
+function normalizeGlyphRenderMode(mode) {
+  return mode === 'emoji' ? 'emoji' : 'text';
 }
 
-function measureGlyphAtSize(ctx, glyph, fontSize) {
-  applyGlyphFont(ctx, fontSize);
+function getGlyphFontFamily(mode) {
+  return normalizeGlyphRenderMode(mode) === 'emoji' ? GLYPH_EMOJI_FONT_FAMILY : GLYPH_TEXT_FONT_FAMILY;
+}
+
+function applyGlyphFont(ctx, fontSize, mode = 'text') {
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = `${GLYPH_FONT_WEIGHT} ${Math.max(1, Math.floor(fontSize))}px ${getGlyphFontFamily(mode)}`;
+}
+
+function measureGlyphAtSize(ctx, glyph, fontSize, mode = 'text') {
+  applyGlyphFont(ctx, fontSize, mode);
   const metrics = ctx.measureText(glyph);
   const left = metrics.actualBoundingBoxLeft || 0;
   const right = metrics.actualBoundingBoxRight || 0;
@@ -113,7 +122,7 @@ function measureGlyphAtSize(ctx, glyph, fontSize) {
   };
 }
 
-function fitGlyphFontSize(ctx, glyph, cellSize) {
+function fitGlyphFontSize(ctx, glyph, cellSize, mode = 'text') {
   const availableSize = cellSize * (1 - GLYPH_CELL_PADDING_RATIO * 2);
   let low = Math.max(12, cellSize * 0.35);
   let high = Math.max(low, cellSize * 0.98);
@@ -121,7 +130,7 @@ function fitGlyphFontSize(ctx, glyph, cellSize) {
 
   for (let iteration = 0; iteration < 10; iteration += 1) {
     const mid = (low + high) * 0.5;
-    const metrics = measureGlyphAtSize(ctx, glyph, mid);
+    const metrics = measureGlyphAtSize(ctx, glyph, mid, mode);
     const fits = metrics.width <= availableSize && metrics.height <= availableSize;
 
     if (fits) {
@@ -136,19 +145,46 @@ function fitGlyphFontSize(ctx, glyph, cellSize) {
 }
 
 export function configureGlyphTextContext(ctx, cellSize, glyph = '❄') {
-  const fontSize = fitGlyphFontSize(ctx, glyph, cellSize);
-  applyGlyphFont(ctx, fontSize);
+  const fontSize = fitGlyphFontSize(ctx, glyph, cellSize, 'text');
+  applyGlyphFont(ctx, fontSize, 'text');
 }
 
-export function drawGlyphToCell(ctx, glyph, cellIndex, cellSize, atlasHeight) {
+export function drawGlyphToCell(ctx, glyph, cellIndex, cellSize, atlasHeight, mode = 'text') {
   const centerX = cellIndex * cellSize + cellSize / 2;
   const centerY = atlasHeight / 2;
 
-  const fittedFontSize = fitGlyphFontSize(ctx, glyph, cellSize);
-  const metrics = measureGlyphAtSize(ctx, glyph, fittedFontSize);
+  const normalizedMode = normalizeGlyphRenderMode(mode);
+  const fittedFontSize = fitGlyphFontSize(ctx, glyph, cellSize, normalizedMode);
+  const metrics = measureGlyphAtSize(ctx, glyph, fittedFontSize, normalizedMode);
   const x = centerX - metrics.width / 2;
   const y = centerY + (metrics.ascent - metrics.descent) / 2;
   ctx.fillText(glyph, x, y);
+}
+
+function normalizeGlyphEntries(glyphs = []) {
+  const source = Array.isArray(glyphs) ? glyphs : [];
+  const entries = source
+    .map((entry) => {
+      if (typeof entry === 'string') {
+        const char = String(entry || '').trim();
+        if (!char) return null;
+        return { char, mode: 'text' };
+      }
+
+      if (entry && typeof entry === 'object') {
+        const char = String(entry.char || entry.symbol || '').trim();
+        if (!char) return null;
+        return {
+          char,
+          mode: normalizeGlyphRenderMode(entry.mode || entry.renderMode)
+        };
+      }
+
+      return null;
+    })
+    .filter(Boolean);
+
+  return entries.length > 0 ? entries : [{ char: '❄', mode: 'text' }];
 }
 
 function edt1d(f, n) {
@@ -312,7 +348,8 @@ export function createSdfGlyphAtlas(sourceCanvas, cellSize, glyphCount) {
  * @returns {Promise<{canvas: HTMLCanvasElement, glyphCount: number, isMonotone: boolean, glyphMonotoneFlags: boolean[]}>}
  */
 export async function createGlyphAtlas(glyphs, cellSize) {
-  const glyphCount = Math.max(1, glyphs.length);
+  const glyphEntries = normalizeGlyphEntries(glyphs);
+  const glyphCount = glyphEntries.length;
   const width = cellSize * glyphCount;
   const height = cellSize;
 
@@ -327,9 +364,9 @@ export async function createGlyphAtlas(glyphs, cellSize) {
   ctx.fillStyle = '#fff';
 
   // Рендерим каждый глиф по центру своей ячейки
-  glyphs.forEach((g, i) => {
-    configureGlyphTextContext(ctx, cellSize, g);
-    drawGlyphToCell(ctx, g, i, cellSize, height);
+  glyphEntries.forEach((entry, i) => {
+    configureGlyphTextContext(ctx, cellSize, entry.char);
+    drawGlyphToCell(ctx, entry.char, i, cellSize, height, entry.mode);
   });
 
   // Проверка монотонности по каждому глифу отдельно

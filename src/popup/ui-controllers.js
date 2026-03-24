@@ -5,6 +5,49 @@
 import { t } from './localization.js';
 import { saveSettings } from './settings.js';
 
+const SYMBOL_MODE_TEXT = 'text';
+const SYMBOL_MODE_EMOJI = 'emoji';
+const SYMBOL_TEXT_FONT_STACK = '"Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Times New Roman", serif';
+const SYMBOL_EMOJI_FONT_STACK = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif';
+
+function normalizeSymbolMode(mode) {
+  return mode === SYMBOL_MODE_EMOJI ? SYMBOL_MODE_EMOJI : SYMBOL_MODE_TEXT;
+}
+
+function renderSymbolPreview(previewCanvas, symbol, mode) {
+  if (!previewCanvas || typeof previewCanvas.getContext !== 'function') return;
+
+  const ctx = previewCanvas.getContext('2d');
+  if (!ctx) return;
+
+  const width = previewCanvas.width || 48;
+  const height = previewCanvas.height || 48;
+  const centerX = width * 0.5;
+  const centerY = height * 0.56;
+  const text = String(symbol || '').trim() || '❄';
+  const renderMode = normalizeSymbolMode(mode);
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `normal ${Math.floor(height * 0.64)}px ${renderMode === SYMBOL_MODE_EMOJI ? SYMBOL_EMOJI_FONT_STACK : SYMBOL_TEXT_FONT_STACK}`;
+
+  if (renderMode === SYMBOL_MODE_TEXT) {
+    ctx.fillStyle = '#ffffff';
+  }
+
+  ctx.fillText(text, centerX, centerY);
+}
+
+function updateSymbolModeButton(button, mode) {
+  const normalizedMode = normalizeSymbolMode(mode);
+  button.dataset.mode = normalizedMode;
+  button.textContent = normalizedMode === SYMBOL_MODE_EMOJI ? '🙂' : 'Aa';
+  button.title = normalizedMode === SYMBOL_MODE_EMOJI
+    ? t('tooltipSymbolModeEmoji')
+    : t('tooltipSymbolModeText');
+}
+
 /**
  * Создает элемент цвета
  * @param {string} color - Цвет в формате HEX
@@ -61,33 +104,47 @@ export function createColorItem(color, container, onSave) {
  * @param {Function} onSave - Callback для сохранения
  * @returns {HTMLElement}
  */
-export function createSymbolItem(symbol, container, onSave) {
+export function createSymbolItem(symbol, container, onSave, mode = SYMBOL_MODE_TEXT) {
+  const initialMode = normalizeSymbolMode(mode);
   const div = document.createElement('div');
   div.className = 'item';
   div.innerHTML = `
-    <div class="symbol-preview">${symbol}</div>
+    <canvas class="symbol-preview" width="48" height="48"></canvas>
     <input type="text" value="${symbol}" placeholder="${t('placeholderSymbol')}" title="${t('tooltipSymbolInput')}">
+    <button type="button" class="symbol-mode-btn" title="${t('tooltipSymbolModeText')}">Aa</button>
     <button type="button" title="${t('delete')}"><i class="fas fa-trash"></i></button>
   `;
 
   const preview = div.querySelector('.symbol-preview');
   const textInput = div.querySelector('input[type="text"]');
-  const deleteBtn = div.querySelector('button');
+  const modeBtn = div.querySelector('.symbol-mode-btn');
+  const deleteBtn = div.querySelector('button:not(.symbol-mode-btn)');
 
-  preview.style.fontSize = '24px';
-  preview.style.width = '40px';
-  preview.style.textAlign = 'center';
+  div.dataset.symbolMode = initialMode;
+  updateSymbolModeButton(modeBtn, initialMode);
+  renderSymbolPreview(preview, symbol, initialMode);
 
   // Обновление превью и автоудаление пустых
   textInput.addEventListener('input', () => {
     const currentValue = textInput.value.trim();
-    preview.textContent = currentValue || '?';
+    renderSymbolPreview(preview, currentValue || '❄', div.dataset.symbolMode || SYMBOL_MODE_TEXT);
     if (currentValue === '' && container.children.length > 1) {
       div.remove();
       onSave();
     } else if (currentValue !== '') {
       onSave();
     }
+  });
+
+  modeBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const currentMode = normalizeSymbolMode(div.dataset.symbolMode);
+    const nextMode = currentMode === SYMBOL_MODE_TEXT ? SYMBOL_MODE_EMOJI : SYMBOL_MODE_TEXT;
+    div.dataset.symbolMode = nextMode;
+    updateSymbolModeButton(modeBtn, nextMode);
+    renderSymbolPreview(preview, textInput.value.trim() || '❄', nextMode);
+    onSave();
   });
 
   // Удаление символа

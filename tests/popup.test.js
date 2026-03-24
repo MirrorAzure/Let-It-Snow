@@ -10,6 +10,7 @@ if (typeof window !== 'undefined') {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const popupHtml = fs.readFileSync(path.join(__dirname, '../src/popup/popup.html'), 'utf-8');
+const originalCanvasGetContext = HTMLCanvasElement.prototype.getContext;
 
 // Загружаем локализацию для тестов
 const messagesJson = fs.readFileSync(path.join(__dirname, '../src/_locales/ru/messages.json'), 'utf-8');
@@ -72,6 +73,20 @@ describe('popup UI', () => {
   beforeEach(() => {
     vi.resetModules();
     document.documentElement.innerHTML = popupHtml;
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
+      clearRect: vi.fn(),
+      fillText: vi.fn(),
+      measureText: vi.fn().mockReturnValue({
+        actualBoundingBoxLeft: 5,
+        actualBoundingBoxRight: 24,
+        actualBoundingBoxAscent: 20,
+        actualBoundingBoxDescent: 4
+      }),
+      textAlign: 'center',
+      textBaseline: 'middle',
+      font: '',
+      fillStyle: '#fff'
+    }));
     // Устанавливаем флаг тестирования в document и global
     document.__TESTING__ = true;
     if (typeof global !== 'undefined') {
@@ -85,6 +100,11 @@ describe('popup UI', () => {
 
   afterEach(() => {
     document.documentElement.innerHTML = '';
+    if (originalCanvasGetContext) {
+      HTMLCanvasElement.prototype.getContext = originalCanvasGetContext;
+    } else {
+      delete HTMLCanvasElement.prototype.getContext;
+    }
     delete document.__TESTING__;
     if (typeof global !== 'undefined') {
       delete global.__TESTING__;
@@ -128,6 +148,7 @@ describe('popup UI', () => {
         snowmaxsize: 30,
         snowcolor: ['#111111', '#222222'],
         snowletters: ['❄', '*'],
+        snowglyphmodes: ['text', 'text'],
         snowsentences: [],
         sentenceCount: 0,
         gifUrls: [],
