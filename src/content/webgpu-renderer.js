@@ -32,6 +32,8 @@ export class WebGPURenderer {
     this.viewportHeight = 0;
     this.frameRequest = null;
     this.resizeObserver = null;
+    this.visualViewportResizeHandler = null;
+    this.visualViewportScrollHandler = null;
     this.lastTimestamp = 0;
     this.backgroundMonitor = null;
     
@@ -220,18 +222,20 @@ export class WebGPURenderer {
    */
   _getViewportSize() {
     const vv = window.visualViewport;
+    const vvWidth = Number(vv?.width);
+    const vvHeight = Number(vv?.height);
     const width =
+      (Number.isFinite(vvWidth) && vvWidth > 0 ? vvWidth : 0) ||
       window.innerWidth ||
       document.documentElement?.clientWidth ||
       document.body?.clientWidth ||
-      vv?.width ||
       this.viewportWidth ||
       1;
     const height =
+      (Number.isFinite(vvHeight) && vvHeight > 0 ? vvHeight : 0) ||
       window.innerHeight ||
       document.documentElement?.clientHeight ||
       document.body?.clientHeight ||
-      vv?.height ||
       this.viewportHeight ||
       1;
 
@@ -774,6 +778,13 @@ export class WebGPURenderer {
     resize();
     this.resizeObserver = new ResizeObserver(resize);
     this.resizeObserver.observe(document.documentElement);
+
+    if (window.visualViewport) {
+      this.visualViewportResizeHandler = () => resize();
+      this.visualViewportScrollHandler = () => resize();
+      window.visualViewport.addEventListener('resize', this.visualViewportResizeHandler, { passive: true });
+      window.visualViewport.addEventListener('scroll', this.visualViewportScrollHandler, { passive: true });
+    }
   }
 
   /**
@@ -1246,6 +1257,15 @@ export class WebGPURenderer {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
+    }
+
+    if (window.visualViewport && this.visualViewportResizeHandler) {
+      window.visualViewport.removeEventListener('resize', this.visualViewportResizeHandler);
+      this.visualViewportResizeHandler = null;
+    }
+    if (window.visualViewport && this.visualViewportScrollHandler) {
+      window.visualViewport.removeEventListener('scroll', this.visualViewportScrollHandler);
+      this.visualViewportScrollHandler = null;
     }
     
     // Очистка debug canvas

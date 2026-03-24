@@ -216,6 +216,37 @@ class SnowWebGPUController {
   }
 
   /**
+   * Приводит координаты указателя к системе координат симуляции (CSS px).
+   * Это устраняет рассинхрон при zoom/pinch и нестандартном viewport.
+   * @param {MouseEvent} event
+   * @returns {{x: number, y: number}}
+   */
+  normalizePointerPosition(event) {
+    const rawX = Number(event?.clientX);
+    const rawY = Number(event?.clientY);
+    let x = Number.isFinite(rawX) ? rawX : 0;
+    let y = Number.isFinite(rawY) ? rawY : 0;
+
+    const rect = this.canvas?.getBoundingClientRect?.();
+    const viewportWidth = this.renderer?.viewportWidth || window.innerWidth || 1;
+    const viewportHeight = this.renderer?.viewportHeight || window.innerHeight || 1;
+
+    if (rect && rect.width > 0 && rect.height > 0) {
+      const normalizedX = (x - rect.left) / rect.width;
+      const normalizedY = (y - rect.top) / rect.height;
+      x = normalizedX * viewportWidth;
+      y = normalizedY * viewportHeight;
+    }
+
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      x = 0;
+      y = 0;
+    }
+
+    return { x, y };
+  }
+
+  /**
    * Запуск слоя GIF анимаций
    */
   async startGifLayer() {
@@ -278,11 +309,12 @@ class SnowWebGPUController {
       const now = performance.now();
       const rawDt = this.lastMouseTime ? (now - this.lastMouseTime) / 1000 : 0.016;
       const dt = clamp(rawDt || 0.016, 1 / 240, 0.05);
+      const pointer = this.normalizePointerPosition(e);
       
       this.mousePrevX = this.mouseX;
       this.mousePrevY = this.mouseY;
-      this.mouseX = e.clientX;
-      this.mouseY = e.clientY;
+      this.mouseX = pointer.x;
+      this.mouseY = pointer.y;
       
       // Вычисляем скорость движения мыши
       if (dt > 0) {
@@ -322,13 +354,14 @@ class SnowWebGPUController {
 
     this.mouseDownHandler = (e) => {
       if (e.button !== 0 && e.button !== 2) return;
+      const pointer = this.normalizePointerPosition(e);
       if (e.button === 0) this.mouseLeftPressed = true;
       if (e.button === 2) this.mouseRightPressed = true;
       if (this.renderer && this.mouseInteractionEnabled) {
-        this.renderer.onMouseDown?.(e.clientX, e.clientY, e.button);
+        this.renderer.onMouseDown?.(pointer.x, pointer.y, e.button);
       }
       if (this.gifLayer && this.mouseInteractionEnabled) {
-        this.gifLayer.onMouseDown?.(e.clientX, e.clientY, e.button);
+        this.gifLayer.onMouseDown?.(pointer.x, pointer.y, e.button);
       }
     };
 

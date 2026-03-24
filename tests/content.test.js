@@ -298,4 +298,75 @@ describe('content script snow control', () => {
 
     controller.destroy();
   });
+
+  it('normalizes mouse coordinates to renderer viewport when canvas rect is scaled', async () => {
+    const { SnowWebGPUController } = await import('../src/content/index.js');
+    const controller = new SnowWebGPUController({
+      snowmax: 10,
+      mouseRadius: 100
+    });
+
+    await controller.start();
+
+    controller.canvas.getBoundingClientRect = vi.fn(() => ({
+      left: 100,
+      top: 50,
+      width: 1000,
+      height: 500
+    }));
+
+    if (controller.renderer) {
+      controller.renderer.viewportWidth = 500;
+      controller.renderer.viewportHeight = 250;
+    }
+
+    document.dispatchEvent(new MouseEvent('mousemove', {
+      clientX: 600,
+      clientY: 300,
+      bubbles: true
+    }));
+
+    expect(controller.mouseX).toBe(250);
+    expect(controller.mouseY).toBe(125);
+
+    document.dispatchEvent(new MouseEvent('mousedown', {
+      clientX: 600,
+      clientY: 300,
+      button: 0,
+      bubbles: true
+    }));
+
+    expect(controller.renderer.mouseX).toBe(250);
+    expect(controller.renderer.mouseY).toBe(125);
+
+    controller.destroy();
+  });
+
+  it('canvas2d applies fast mouse sweep influence along cursor path', async () => {
+    const { SnowWebGPUController } = await import('../src/content/index.js');
+    const controller = new SnowWebGPUController({
+      snowmax: 1,
+      mouseRadius: 100
+    });
+
+    await controller.start();
+
+    const renderer = controller.renderer;
+    const flake = renderer.flakes[0];
+    flake.x = 500;
+    flake.baseX = 500;
+    flake.y = 300;
+    flake.velocityX = 0;
+    flake.velocityY = 0;
+    flake.isAwaitingRespawn = false;
+
+    renderer.updateMousePosition(100, 300, 0, 0);
+    renderer.updateMousePosition(900, 300, 3500, 0);
+
+    renderer.drawCallback(performance.now() + 16);
+
+    expect(flake.velocityX).toBeGreaterThan(0);
+
+    controller.destroy();
+  });
 });

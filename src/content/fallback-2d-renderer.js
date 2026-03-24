@@ -45,15 +45,17 @@ export class Fallback2DRenderer {
     // Параметры взаимодействия с мышью
     this.mouseX = -1000;
     this.mouseY = -1000;
+    this.prevMouseX = -1000;
+    this.prevMouseY = -1000;
     this.mouseVelocityX = 0;
     this.mouseVelocityY = 0;
     this.mouseLeftPressed = false;
     this.mouseRightPressed = false;
     this.mouseRadius = config.mouseRadius ?? 100;
-    this.mouseForce = config.mouseForce ?? 300;
-    this.mouseImpulseStrength = config.mouseImpulseStrength ?? 0.5;
-    this.mouseDragThreshold = config.mouseDragThreshold ?? 500; // Порог скорости для эффекта затягивания
-    this.mouseDragStrength = config.mouseDragStrength ?? 1.0; // Сила затягивания в поток
+    this.mouseForce = config.mouseForce ?? 360;
+    this.mouseImpulseStrength = config.mouseImpulseStrength ?? 0.65;
+    this.mouseDragThreshold = config.mouseDragThreshold ?? 420; // Порог скорости для эффекта затягивания
+    this.mouseDragStrength = config.mouseDragStrength ?? 1.25; // Сила затягивания в поток
     this.mouseBurstDuration = 0.2;
     this.mouseBurstRadiusMultiplier = 3.5;
     this.mouseBurstTimer = 0;
@@ -61,7 +63,7 @@ export class Fallback2DRenderer {
     this.maxMouseVelocity = config.maxMouseVelocity ?? 3800;
     this.mouseVelocitySmoothing = config.mouseVelocitySmoothing ?? 0.35;
     this.mouseActivityThreshold = config.mouseActivityThreshold ?? 45;
-    this.maxFlakeSpeed = config.maxFlakeSpeed ?? 420;
+    this.maxFlakeSpeed = config.maxFlakeSpeed ?? 560;
     this.maxRotationSpeed = config.maxRotationSpeed ?? 8;
     this.canvas2dMaxDpr = config.canvas2dMaxDpr ?? 1.75;
     
@@ -111,17 +113,19 @@ export class Fallback2DRenderer {
    */
   _getViewportSize() {
     const vv = window.visualViewport;
+    const vvWidth = Number(vv?.width);
+    const vvHeight = Number(vv?.height);
     const width =
+      (Number.isFinite(vvWidth) && vvWidth > 0 ? vvWidth : 0) ||
       window.innerWidth ||
       document.documentElement?.clientWidth ||
       document.body?.clientWidth ||
-      vv?.width ||
       0;
     const height =
+      (Number.isFinite(vvHeight) && vvHeight > 0 ? vvHeight : 0) ||
       window.innerHeight ||
       document.documentElement?.clientHeight ||
       document.body?.clientHeight ||
-      vv?.height ||
       0;
 
     return {
@@ -684,6 +688,10 @@ export class Fallback2DRenderer {
       const mouseVx = this.mouseVelocityX;
       const mouseVy = this.mouseVelocityY;
       const mouseSpeed = Math.sqrt(mouseVx * mouseVx + mouseVy * mouseVy);
+      const mousePathX = this.mouseX - this.prevMouseX;
+      const mousePathY = this.mouseY - this.prevMouseY;
+      const mousePathLenSq = mousePathX * mousePathX + mousePathY * mousePathY;
+      const hasMouseSweep = mousePathLenSq > 0.0001;
       const isMouseActive = mouseSpeed > this.mouseActivityThreshold;
       const activityFactor = isMouseActive ? 1 : 0;
       const shouldApplyMouse = burstActive || isMouseActive;
@@ -714,7 +722,29 @@ export class Fallback2DRenderer {
         // Применяем физику взаимодействия с мышью
         const dx = flake.x - this.mouseX;
         const dy = flake.y - this.mouseY;
-        const distanceSq = dx * dx + dy * dy;
+        let effectiveDx = dx;
+        let effectiveDy = dy;
+        let distanceSq = dx * dx + dy * dy;
+
+        // При быстром движении учитываем весь путь курсора за кадр,
+        // чтобы снежинки реагировали на "свип", а не только на конечную точку.
+        if (isMouseFast && hasMouseSweep) {
+          const toFlakeX = flake.x - this.prevMouseX;
+          const toFlakeY = flake.y - this.prevMouseY;
+          const projection = (toFlakeX * mousePathX + toFlakeY * mousePathY) / mousePathLenSq;
+          const t = clamp(projection, 0, 1);
+          const closestX = this.prevMouseX + mousePathX * t;
+          const closestY = this.prevMouseY + mousePathY * t;
+          const sweepDx = flake.x - closestX;
+          const sweepDy = flake.y - closestY;
+          const sweepDistanceSq = sweepDx * sweepDx + sweepDy * sweepDy;
+
+          if (sweepDistanceSq < distanceSq) {
+            effectiveDx = sweepDx;
+            effectiveDy = sweepDy;
+            distanceSq = sweepDistanceSq;
+          }
+        }
 
         if (!this.mouseLeftPressed && !this.mouseRightPressed && flake.isGrabbed) {
           flake.isGrabbed = false;
@@ -730,15 +760,15 @@ export class Fallback2DRenderer {
           // Кратковременный взрыв/втягивание при клике
           if (burstActive && this.mouseBurstMode === 'explode') {
             const safeDistance = Math.max(distance, 0.0001);
-            const nx = dx / safeDistance;
-            const ny = dy / safeDistance;
+            const nx = effectiveDx / safeDistance;
+            const ny = effectiveDy / safeDistance;
             const burstAccel = activeInfluence * this.mouseForce * 10.0;
             flake.velocityX += nx * burstAccel * delta;
             flake.velocityY += ny * burstAccel * delta;
           } else if (burstActive && this.mouseBurstMode === 'suction') {
             const safeDistance = Math.max(distance, 0.0001);
-            const nx = dx / safeDistance;
-            const ny = dy / safeDistance;
+            const nx = effectiveDx / safeDistance;
+            const ny = effectiveDy / safeDistance;
             const pullAccel = activeInfluence * this.mouseForce * 10.0;
             flake.velocityX -= nx * pullAccel * delta;
             flake.velocityY -= ny * pullAccel * delta;
@@ -757,8 +787,8 @@ export class Fallback2DRenderer {
             // Обычное отталкивание при медленном движении
             const force = activeInfluence * this.mouseForce;
             const safeDistance = Math.max(distance, 0.0001);
-            const nx = dx / safeDistance;
-            const ny = dy / safeDistance;
+            const nx = effectiveDx / safeDistance;
+            const ny = effectiveDy / safeDistance;
             const verticalBias = ny < 0 ? 0.35 : 1.0;
             const accel = force * delta;
             flake.velocityX += nx * accel;
@@ -776,7 +806,7 @@ export class Fallback2DRenderer {
           // Применяем вращение только если скорость мыши выше порога (> 10 пиксели/сек)
           // Это предотвращает вращение от дрожания мыши
           if (mouseSpeed > 10) {
-            const cross = dx * mouseVy - dy * mouseVx;
+            const cross = effectiveDx * mouseVy - effectiveDy * mouseVx;
             const rotationDirection = Math.sign(cross); // +1 или -1
             const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
             flake.rotationSpeed = (flake.rotationSpeed || 0) + rotationForce * delta;
@@ -1049,6 +1079,8 @@ export class Fallback2DRenderer {
 
     // При idle-сигнале сразу гасим скорость, чтобы поле влияния не оставалось активным.
     if (Math.abs(vx) < 0.001 && Math.abs(vy) < 0.001) {
+      this.prevMouseX = x;
+      this.prevMouseY = y;
       this.mouseX = x;
       this.mouseY = y;
       this.mouseVelocityX = 0;
@@ -1059,6 +1091,8 @@ export class Fallback2DRenderer {
     const clampedVx = clamp(vx, -maxMouseV, maxMouseV);
     const clampedVy = clamp(vy, -maxMouseV, maxMouseV);
 
+    this.prevMouseX = this.mouseX;
+    this.prevMouseY = this.mouseY;
     this.mouseX = x;
     this.mouseY = y;
     this.mouseVelocityX = this.mouseVelocityX * (1 - smooth) + clampedVx * smooth;
@@ -1081,6 +1115,8 @@ export class Fallback2DRenderer {
       this.mouseBurstMode = 'suction';
       this.mouseBurstTimer = this.mouseBurstDuration;
     }
+    this.prevMouseX = x;
+    this.prevMouseY = y;
     this.mouseX = x;
     this.mouseY = y;
   }
@@ -1109,6 +1145,8 @@ export class Fallback2DRenderer {
     this.mouseBurstMode = null;
     this.mouseX = -1000;
     this.mouseY = -1000;
+    this.prevMouseX = -1000;
+    this.prevMouseY = -1000;
     this.mouseVelocityX = 0;
     this.mouseVelocityY = 0;
   }
