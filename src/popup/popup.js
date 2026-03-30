@@ -80,6 +80,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
+  // Инициализация под-вкладок внутри настроек
+  const subTabButtons = document.querySelectorAll('.sub-tab-button');
+  const subTabContents = document.querySelectorAll('.sub-tab-content');
+
+  subTabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const targetSubTab = button.dataset.subtab;
+
+      subTabButtons.forEach(btn => btn.classList.remove('active'));
+      subTabContents.forEach(content => content.classList.remove('active'));
+
+      button.classList.add('active');
+      const targetContent = document.getElementById(`subtab-${targetSubTab}`);
+      if (targetContent) {
+        targetContent.classList.add('active');
+      }
+    });
+  });
+
   // Получаем ссылки на все элементы UI
   const elements = {
     snowmax: document.getElementById('snowmax'),
@@ -512,7 +531,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.windStrengthValue.textContent = (config.windStrength || 0.5).toFixed(1);
     elements.windGustFrequency.value = config.windGustFrequency || 3;
     elements.windGustFrequencyValue.textContent = (config.windGustFrequency || 3).toFixed(1);
-    elements.windSettings.style.display = elements.windEnabled.checked ? 'block' : 'none';
+    elements.windSettings.classList.toggle('wind-controls-disabled', !elements.windEnabled.checked);
 
     elements.colorsList.innerHTML = '';
     elements.symbolsList.innerHTML = '';
@@ -829,7 +848,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Включение/отключение ветра
   elements.windEnabled.addEventListener('change', () => {
-    elements.windSettings.style.display = elements.windEnabled.checked ? 'block' : 'none';
+    elements.windSettings.classList.toggle('wind-controls-disabled', !elements.windEnabled.checked);
     saveAllSettings();
   });
 

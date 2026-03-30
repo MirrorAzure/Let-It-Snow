@@ -2,6 +2,9 @@ import { createServer } from 'vite';
 import { fileURLToPath } from 'url';
 import { resolve } from 'path';
 
+// Prevent CRX plugin initialization in playground mode.
+process.env.PLAYGROUND = 'true';
+
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const root = resolve(__dirname, '..');
 const port = Number(process.env.PORT || 5173);

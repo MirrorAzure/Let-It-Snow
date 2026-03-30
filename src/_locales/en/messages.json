@@ -340,5 +340,32 @@
   },
   "tooltipMouseRadius": {
     "message": "Mouse interaction radius"
+  },
+  "subTabSnow": {
+    "message": "Snow"
+  },
+  "subTabWind": {
+    "message": "Wind"
+  },
+  "subTabSymbols": {
+    "message": "Symbols"
+  },
+  "subTabPresets": {
+    "message": "Presets"
+  },
+  "windTabTitle": {
+    "message": "Wind Settings"
+  },
+  "tooltipSubTabSnow": {
+    "message": "Basic snowfall parameters"
+  },
+  "tooltipSubTabWind": {
+    "message": "Wind settings"
+  },
+  "tooltipSubTabSymbols": {
+    "message": "Colors, symbols, text and GIFs"
+  },
+  "tooltipSubTabPresets": {
+    "message": "Presets and settings transfer"
   }
 }

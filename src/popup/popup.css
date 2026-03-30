@@ -1241,3 +1241,73 @@ button:active {
     font-size: 12px;
   }
 }
+
+
+/* ===== Sub-tabs Navigation ===== */
+.sub-tabs-navigation {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  background: rgba(10, 20, 50, 0.45);
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(79, 195, 247, 0.12);
+}
+
+.sub-tab-button {
+  flex: 1 1 0;
+  padding: 8px 4px;
+  background: rgba(20, 30, 60, 0.5);
+  border: 1px solid rgba(100, 200, 255, 0.15);
+  border-radius: 7px;
+  color: #90caf9;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all 0.25s ease;
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.sub-tab-button:hover {
+  background: rgba(40, 60, 100, 0.65);
+  border-color: rgba(100, 200, 255, 0.35);
+  color: #e3f2fd;
+  transform: none;
+  box-shadow: none;
+}
+
+.sub-tab-button.active {
+  background: linear-gradient(135deg, rgba(79, 195, 247, 0.28), rgba(21, 101, 192, 0.4));
+  border-color: rgba(79, 195, 247, 0.7);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(79, 195, 247, 0.25);
+}
+
+.sub-tab-button i {
+  font-size: 13px;
+}
+
+/* Sub-tab Content */
+.sub-tab-content {
+  display: none;
+  animation: fadeIn 0.25s ease;
+}
+
+.sub-tab-content.active {
+  display: block;
+}
+
+/* Wind controls disabled state */
+.wind-controls-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}

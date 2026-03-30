@@ -250,6 +250,28 @@ async function initPlayground() {
     });
   });
 
+  // Инициализация под-вкладок внутри вкладки настроек
+  const subTabButtons = document.querySelectorAll('.sub-tab-button');
+  const subTabContents = document.querySelectorAll('.sub-tab-content');
+
+  console.log(`🧩 Found ${subTabButtons.length} sub-tab buttons and ${subTabContents.length} sub-tab contents`);
+
+  subTabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const targetSubTab = button.dataset.subtab;
+      console.log(`🧩 Switching to sub-tab: ${targetSubTab}`);
+
+      subTabButtons.forEach(btn => btn.classList.remove('active'));
+      subTabContents.forEach(content => content.classList.remove('active'));
+
+      button.classList.add('active');
+      const targetContent = document.getElementById(`subtab-${targetSubTab}`);
+      if (targetContent) {
+        targetContent.classList.add('active');
+      }
+    });
+  });
+
   // Загружаем версию расширения
   const versionElement = document.getElementById('versionNumber');
   if (versionElement) {
@@ -260,6 +282,8 @@ async function initPlayground() {
   const symbolsList = document.getElementById('symbolsList');
   const sentencesList = document.getElementById('sentencesList');
   const gifsList = document.getElementById('gifsList');
+  const windEnabled = document.getElementById('windEnabled');
+  const windSettings = document.getElementById('windSettings');
   const snowMinSize = document.getElementById('snowminsize');
   const snowMaxSize = document.getElementById('snowmaxsize');
   const minSizeValue = document.getElementById('minsizeValue');
@@ -317,6 +341,13 @@ async function initPlayground() {
   setupSlider('gifCount', 'gifCountValue');
   setupSlider('sentenceCount', 'sentenceCountValue');
   setupSlider('mouseRadius', 'mouseRadiusValue');
+
+  if (windEnabled && windSettings) {
+    windSettings.classList.toggle('wind-controls-disabled', !windEnabled.checked);
+    windEnabled.addEventListener('change', () => {
+      windSettings.classList.toggle('wind-controls-disabled', !windEnabled.checked);
+    });
+  }
 
   if (snowMinSize && snowMaxSize) {
     snowMinSize.addEventListener('input', () => {

@@ -340,5 +340,32 @@
   },
   "tooltipMouseRadius": {
     "message": "Радиус зоны взаимодействия с мышью"
+  },
+  "subTabSnow": {
+    "message": "Снег"
+  },
+  "subTabWind": {
+    "message": "Ветер"
+  },
+  "subTabSymbols": {
+    "message": "Символы"
+  },
+  "subTabPresets": {
+    "message": "Пресеты"
+  },
+  "windTabTitle": {
+    "message": "Настройки ветра"
+  },
+  "tooltipSubTabSnow": {
+    "message": "Основные параметры снегопада"
+  },
+  "tooltipSubTabWind": {
+    "message": "Настройки ветра"
+  },
+  "tooltipSubTabSymbols": {
+    "message": "Цвета, символы, текст и GIF"
+  },
+  "tooltipSubTabPresets": {
+    "message": "Пресеты и перенос настроек"
   }
 }
