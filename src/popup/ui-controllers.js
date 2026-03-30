@@ -14,6 +14,10 @@ function normalizeSymbolMode(mode) {
   return mode === SYMBOL_MODE_EMOJI ? SYMBOL_MODE_EMOJI : SYMBOL_MODE_TEXT;
 }
 
+export function getSymbolFontStack(mode) {
+  return mode === SYMBOL_MODE_EMOJI ? SYMBOL_EMOJI_FONT_STACK : SYMBOL_TEXT_FONT_STACK;
+}
+
 function renderSymbolPreview(previewCanvas, symbol, mode) {
   if (!previewCanvas || typeof previewCanvas.getContext !== 'function') return;
 

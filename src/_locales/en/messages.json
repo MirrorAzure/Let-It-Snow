@@ -228,10 +228,10 @@
     "message": "Adjust falling speed"
   },
   "tooltipSnowMinSize": {
-    "message": "Minimum snowflake size"
+    "message": "Minimum snowflake size (% of screen)"
   },
   "tooltipSnowMaxSize": {
-    "message": "Maximum snowflake size"
+    "message": "Maximum snowflake size (% of screen)"
   },
   "tooltipAddColor": {
     "message": "Add a new color"

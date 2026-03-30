@@ -67,14 +67,18 @@
           <small>Higher = faster descent.</small>
         </label>
         <label class="field">
-          <span>Min size</span>
-          <input id="snowminsize" type="number" min="6" max="80" value="18" />
-          <small>Smallest glyph size.</small>
+          <span>Min size (% of screen)</span>
+          <input id="snowminsize" type="number" min="0.2" max="6" step="0.1" value="1.5" />
+          <small>Smallest glyph size relative to viewport.</small>
         </label>
         <label class="field">
-          <span>Max size</span>
-          <input id="snowmaxsize" type="number" min="10" max="120" value="48" />
-          <small>Largest glyph size.</small>
+          <span>Max size (% of screen)</span>
+          <input id="snowmaxsize" type="number" min="0.3" max="6" step="0.1" value="4.0" />
+          <small>Largest glyph size relative to viewport.</small>
+        </label>
+        <label class="field">
+          <span>Current size preview</span>
+          <small id="size-preview-text">Approx: 16px - 43px</small>
         </label>
         <label class="field list-field">
           <span>Colors</span>

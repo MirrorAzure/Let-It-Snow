@@ -3,6 +3,7 @@
  */
 
 import { CollisionHandler } from './physics/collision-handler.js';
+import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
 
 const GIF_LAYER_ID = 'let-it-snow-gif-layer';
 const MAX_Z_INDEX = '2147483646';
@@ -259,14 +260,15 @@ export class GifLayer {
     layer.style.background = 'transparent';
     document.documentElement.appendChild(layer);
 
-    const sizeRange = this.config.snowmaxsize - this.config.snowminsize;
+    const { minPx: snowminsize, maxPx: snowmaxsize } = resolveGlyphSizeRangePx(this.config);
+    const sizeRange = snowmaxsize - snowminsize;
 
     const initialVisibleCount = Math.min(count, Math.max(1, Math.ceil(count * this.initialVisibleGifRatio)));
     const initialVisibleMask = this._buildDistributedSlotMask(count, initialVisibleCount);
 
     // Создаем GIF снежинки
     const flakes = new Array(count).fill(null).map((_, idx) => {
-      const size = this.config.snowminsize + Math.random() * sizeRange;
+      const size = snowminsize + Math.random() * sizeRange;
       const sinkspeed = this.config.sinkspeed ?? 1.0; // Default sink speed
       const speed = sinkspeed * (size / 20) * 20;
 

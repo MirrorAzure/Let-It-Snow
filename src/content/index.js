@@ -10,6 +10,7 @@ import { WebGPURenderer } from './webgpu-renderer.js';
 import { Fallback2DRenderer } from './fallback-2d-renderer.js';
 import { GifLayer } from './gif-layer.js';
 import { splitSentences } from './utils/glyph-utils.js';
+import { normalizeGlyphSizePercentRange } from './utils/size-utils.js';
 
 // Константы
 const OVERLAY_ID = 'let-it-snow-webgpu-canvas';
@@ -20,8 +21,8 @@ const PLAYGROUND_MESSAGE_TARGET = 'let-it-snow-playground';
 const DEFAULT_CONFIG = {
   snowmax: 80,
   sinkspeed: 0.4,
-  snowminsize: 15,
-  snowmaxsize: 40,
+  snowminsize: 1.5,
+  snowmaxsize: 4.0,
   snowcolor: ['#ffffff'],
   snowletters: ['❄'],
   snowsentences: [],
@@ -67,6 +68,19 @@ const normalizeSentences = (sentences, maxLength = MAX_SENTENCE_LENGTH) => {
   return result;
 };
 
+const normalizeSizeConfig = (rawConfig = {}) => {
+  const { minPercent, maxPercent } = normalizeGlyphSizePercentRange(
+    rawConfig.snowminsize,
+    rawConfig.snowmaxsize
+  );
+
+  return {
+    ...rawConfig,
+    snowminsize: minPercent,
+    snowmaxsize: maxPercent
+  };
+};
+
 // Глобальный контроллер
 let controller = null;
 
@@ -77,7 +91,7 @@ class SnowWebGPUController {
   constructor(userConfig = {}) {
     const mergedConfig = { ...DEFAULT_CONFIG, ...userConfig };
     mergedConfig.snowsentences = normalizeSentences(mergedConfig.snowsentences);
-    this.config = mergedConfig;
+    this.config = normalizeSizeConfig(mergedConfig);
     this.canvas = null;
     this.renderer = null;
     this.gifLayer = null;
@@ -464,7 +478,7 @@ function stopSnow() {
  */
 async function startSnow(config) {
   stopSnow();
-  controller = new SnowWebGPUController(config);
+  controller = new SnowWebGPUController(normalizeSizeConfig(config));
   await controller.start();
 }
 
@@ -572,11 +586,15 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
       ]);
 
       if (stored.autoStart) {
+        const sizeConfig = normalizeSizeConfig({
+          snowminsize: stored.snowminsize,
+          snowmaxsize: stored.snowmaxsize
+        });
         const config = {
           snowmax: stored.snowmax || 80,
           sinkspeed: stored.sinkspeed || 0.4,
-          snowminsize: stored.snowminsize || 15,
-          snowmaxsize: stored.snowmaxsize || 40,
+          snowminsize: sizeConfig.snowminsize,
+          snowmaxsize: sizeConfig.snowmaxsize,
           snowcolor: stored.colors || ['#ffffff'],
           snowletters: stored.symbols || ['❄'],
           snowglyphmodes: stored.symbolModes || ['text'],

@@ -1,6 +1,6 @@
 {
   "name": "let-it-snow",
-  "version": "1.9.4",
+  "version": "1.9.5",
   "description": "A magical snowfall extension for web pages",
   "type": "module",
   "scripts": {
@@ -27,9 +27,9 @@
     "archiver": "^7.0.1",
     "cross-env": "^10.1.0",
     "crx3": "^2.0.0",
-    "jsdom": "^29.0.0",
-    "npm-check-updates": "^19.6.3",
-    "vite": "^8.0.0",
-    "vitest": "^4.1.0"
+    "jsdom": "^29.0.1",
+    "npm-check-updates": "^19.6.6",
+    "vite": "^8.0.3",
+    "vitest": "^4.1.2"
   }
 }

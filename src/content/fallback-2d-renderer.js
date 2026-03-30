@@ -3,6 +3,7 @@
  */
 
 import { CollisionHandler } from './physics/collision-handler.js';
+import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
 
 const TEXT_GLYPH_FONT_STACK = '"Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Times New Roman", serif';
 const EMOJI_GLYPH_FONT_STACK = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif';
@@ -406,8 +407,6 @@ export class Fallback2DRenderer {
 
     const {
       snowmax,
-      snowminsize,
-      snowmaxsize,
       sinkspeed,
       snowcolor,
       snowletters,
@@ -416,6 +415,7 @@ export class Fallback2DRenderer {
       sentenceCount
     } = this.config;
 
+    const { minPx: snowminsize, maxPx: snowmaxsize } = resolveGlyphSizeRangePx(this.config);
     const sizeRange = snowmaxsize - snowminsize;
     
     const hasGlyphs = snowletters && snowletters.length > 0;
@@ -548,7 +548,6 @@ export class Fallback2DRenderer {
    */
   start() {
     const ctx = this.ctx;
-    const { snowminsize, snowmaxsize } = this.config;
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
     let lastFrameTime = performance.now();

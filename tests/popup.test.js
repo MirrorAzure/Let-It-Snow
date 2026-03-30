@@ -28,8 +28,8 @@ function createChromeMock(overrides = {}) {
   const stored = {
     snowmax: 80,
     sinkspeed: 0.4,
-    snowminsize: 15,
-    snowmaxsize: 40,
+    snowminsize: 1.5,
+    snowmaxsize: 4.0,
     colors: ['#ffffff'],
     symbols: ['❄'],
     sentenceCount: 0,
@@ -119,8 +119,8 @@ describe('popup UI', () => {
     global.chrome = createChromeMock({
       snowmax: 120,
       sinkspeed: 1.1,
-      snowminsize: 12,
-      snowmaxsize: 30,
+      snowminsize: 1.2,
+      snowmaxsize: 3.0,
       colors: ['#111111', '#222222'],
       symbols: ['❄', '*']
     });
@@ -144,8 +144,8 @@ describe('popup UI', () => {
       config: {
         snowmax: 120,
         sinkspeed: 1.1,
-        snowminsize: 12,
-        snowmaxsize: 30,
+        snowminsize: 1.2,
+        snowmaxsize: 3,
         snowcolor: ['#111111', '#222222'],
         snowletters: ['❄', '*'],
         snowglyphmodes: ['text', 'text'],

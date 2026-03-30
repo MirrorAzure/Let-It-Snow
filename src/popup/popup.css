@@ -350,6 +350,89 @@ h2, h3 {
   position: relative;
 }
 
+.size-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.size-preview-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 64px;
+  background: rgba(20, 30, 60, 0.6);
+  border: 1px solid rgba(100, 200, 255, 0.15);
+  border-radius: 10px;
+}
+
+.size-preview-flake {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #e3f2fd;
+  line-height: 1;
+  text-shadow: 0 0 8px rgba(79, 195, 247, 0.35);
+}
+
+.size-preview-flake.min {
+  color: #b3e5fc;
+}
+
+.size-preview-flake.max {
+  color: #4fc3f7;
+}
+
+.size-preview-meta {
+  font-size: 11px;
+  color: #bbdefb;
+  font-family: 'Courier New', monospace;
+}
+
+.size-preview-picker {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: center;
+  padding: 4px 2px 2px;
+}
+
+.size-preview-picker:empty {
+  display: none;
+}
+
+.glyph-chip {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  background: rgba(20, 30, 60, 0.6);
+  border: 1px solid rgba(100, 200, 255, 0.2);
+  border-radius: 7px;
+  color: #e3f2fd;
+  cursor: pointer;
+  font-size: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.glyph-chip:hover {
+  background: rgba(30, 50, 90, 0.8);
+  border-color: rgba(100, 200, 255, 0.5);
+}
+
+.glyph-chip.active {
+  background: rgba(79, 195, 247, 0.25);
+  border-color: #4fc3f7;
+  box-shadow: 0 0 8px rgba(79, 195, 247, 0.4);
+}
+
 
 .items-list {
   display: flex;

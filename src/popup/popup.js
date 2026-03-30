@@ -13,7 +13,8 @@ import {
   createSymbolItem,
   createSentenceItem,
   createGifItem,
-  setupSliderListener
+  setupSliderListener,
+  getSymbolFontStack
 } from './ui-controllers.js';
 
 const SETTINGS_KEYS = [
@@ -89,6 +90,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     snowmaxsize: document.getElementById('snowmaxsize'),
     minsizeValue: document.getElementById('minsizeValue'),
     maxsizeValue: document.getElementById('maxsizeValue'),
+    sizePreviewMinFlake: document.getElementById('sizePreviewMinFlake'),
+    sizePreviewMaxFlake: document.getElementById('sizePreviewMaxFlake'),
+    sizePreviewMinMeta: document.getElementById('sizePreviewMinMeta'),
+    sizePreviewMaxMeta: document.getElementById('sizePreviewMaxMeta'),
+    sizePreviewGlyphPicker: document.getElementById('sizePreviewGlyphPicker'),
     colorsList: document.getElementById('colorsList'),
     symbolsList: document.getElementById('symbolsList'),
     sentencesList: document.getElementById('sentencesList'),
@@ -125,6 +131,116 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   elements.presetNameInput.placeholder = t('presetNamePlaceholder');
+
+  const LEGACY_PIXEL_THRESHOLD = 6;
+  const SIZE_PERCENT_MIN = parseFloat(elements.snowminsize.min) || 0.2;
+  const SIZE_PERCENT_MAX = parseFloat(elements.snowmaxsize.max) || 6;
+  const SIZE_PERCENT_STEP = parseFloat(elements.snowminsize.step) || 0.1;
+
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+  const getViewportBaseForPreview = () => {
+    const width = Number(window?.screen?.width) || window.innerWidth || 1920;
+    const height = Number(window?.screen?.height) || window.innerHeight || 1080;
+    return Math.max(1, Math.min(width, height));
+  };
+
+  const formatPercent = (value) => {
+    const rounded = Math.round(value * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  };
+
+  const normalizeSizePercentRange = (rawMin, rawMax) => {
+    const viewportBase = getViewportBaseForPreview();
+    const toPercent = (value, fallback) => {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return fallback;
+      const converted = numeric > LEGACY_PIXEL_THRESHOLD
+        ? (numeric / viewportBase) * 100
+        : numeric;
+      return clamp(converted, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX);
+    };
+
+    const minPercent = toPercent(rawMin, DEFAULT_SETTINGS.snowminsize);
+    const maxPercent = toPercent(rawMax, DEFAULT_SETTINGS.snowmaxsize);
+
+    if (maxPercent <= minPercent) {
+      return {
+        minPercent,
+        maxPercent: clamp(minPercent + SIZE_PERCENT_STEP, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX)
+      };
+    }
+
+    return { minPercent, maxPercent };
+  };
+
+  let previewGlyph = { symbol: '❄', mode: 'text' };
+
+  const updateSizePreview = () => {
+    const minPercent = parseFloat(elements.snowminsize.value);
+    const maxPercent = parseFloat(elements.snowmaxsize.value);
+    const viewportBase = getViewportBaseForPreview();
+    const minPx = Math.max(1, Math.round((minPercent / 100) * viewportBase));
+    const maxPx = Math.max(1, Math.round((maxPercent / 100) * viewportBase));
+    const glyph = previewGlyph.symbol;
+    const fontFamily = getSymbolFontStack(previewGlyph.mode);
+
+    if (elements.sizePreviewMinFlake) {
+      elements.sizePreviewMinFlake.style.fontSize = `${clamp(minPx, 12, 44)}px`;
+      elements.sizePreviewMinFlake.style.fontFamily = fontFamily;
+      elements.sizePreviewMinFlake.textContent = glyph;
+    }
+    if (elements.sizePreviewMaxFlake) {
+      elements.sizePreviewMaxFlake.style.fontSize = `${clamp(maxPx, 16, 56)}px`;
+      elements.sizePreviewMaxFlake.style.fontFamily = fontFamily;
+      elements.sizePreviewMaxFlake.textContent = glyph;
+    }
+    if (elements.sizePreviewMinMeta) {
+      elements.sizePreviewMinMeta.textContent = `~${minPx}px`;
+    }
+    if (elements.sizePreviewMaxMeta) {
+      elements.sizePreviewMaxMeta.textContent = `~${maxPx}px`;
+    }
+  };
+
+  const getSymbolsFromPool = () => {
+    const items = Array.from(elements.symbolsList.querySelectorAll('.item'));
+    const seen = new Set();
+    const result = [];
+    for (const item of items) {
+      const input = item.querySelector('input[type="text"]');
+      if (!input) continue;
+      const symbol = input.value.trim();
+      if (!symbol || seen.has(symbol)) continue;
+      seen.add(symbol);
+      result.push({ symbol, mode: item.dataset.symbolMode || 'text' });
+    }
+    return result.length > 0 ? result : [{ symbol: '❄', mode: 'text' }];
+  };
+
+  const refreshGlyphPicker = () => {
+    if (!elements.sizePreviewGlyphPicker) return;
+    const entries = getSymbolsFromPool();
+    if (!entries.some(e => e.symbol === previewGlyph.symbol)) {
+      previewGlyph = entries[0];
+    }
+    elements.sizePreviewGlyphPicker.innerHTML = '';
+    entries.forEach(entry => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'glyph-chip' + (entry.symbol === previewGlyph.symbol ? ' active' : '');
+      chip.textContent = entry.symbol;
+      chip.style.fontFamily = getSymbolFontStack(entry.mode);
+      chip.addEventListener('click', () => {
+        previewGlyph = entry;
+        elements.sizePreviewGlyphPicker.querySelectorAll('.glyph-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        updateSizePreview();
+      });
+      elements.sizePreviewGlyphPicker.appendChild(chip);
+    });
+    updateSizePreview();
+  };
 
   const createPresetId = () => {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -164,15 +280,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       return rawSymbolModes[index] === 'emoji' ? 'emoji' : 'text';
     });
 
+    const { minPercent, maxPercent } = normalizeSizePercentRange(
+      config.snowminsize,
+      config.snowmaxsize
+    );
+
     return {
       snowmax: Number.isFinite(config.snowmax) ? config.snowmax : DEFAULT_SETTINGS.snowmax,
       sinkspeed: Number.isFinite(config.sinkspeed) ? config.sinkspeed : DEFAULT_SETTINGS.sinkspeed,
-      snowminsize: Number.isFinite(config.snowminsize)
-        ? config.snowminsize
-        : DEFAULT_SETTINGS.snowminsize,
-      snowmaxsize: Number.isFinite(config.snowmaxsize)
-        ? config.snowmaxsize
-        : DEFAULT_SETTINGS.snowmaxsize,
+      snowminsize: minPercent,
+      snowmaxsize: maxPercent,
       colors: Array.isArray(config.colors) && config.colors.length > 0
         ? config.colors
         : [...DEFAULT_SETTINGS.colors],
@@ -328,11 +445,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       .map((item) => item.querySelector('input[type="url"]').value.trim())
       .filter((s) => s !== '');
 
+    const { minPercent, maxPercent } = normalizeSizePercentRange(
+      elements.snowminsize.value,
+      elements.snowmaxsize.value
+    );
+
     return {
       snowmax: parseInt(elements.snowmax.value),
       sinkspeed: parseFloat(elements.sinkspeed.value),
-      snowminsize: parseInt(elements.snowminsize.value),
-      snowmaxsize: parseInt(elements.snowmaxsize.value),
+      snowminsize: minPercent,
+      snowmaxsize: maxPercent,
       colors: colors.length > 0 ? colors : ['#ffffff'],
       symbols: symbols.length > 0 ? symbols : ['❄'],
       symbolModes: symbolModes.length > 0 ? symbolModes : ['text'],
@@ -373,8 +495,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.sinkspeedValue.textContent = parseFloat(config.sinkspeed).toFixed(1);
     elements.snowminsize.value = config.snowminsize;
     elements.snowmaxsize.value = config.snowmaxsize;
-    elements.minsizeValue.textContent = config.snowminsize;
-    elements.maxsizeValue.textContent = config.snowmaxsize;
+    elements.minsizeValue.textContent = formatPercent(config.snowminsize);
+    elements.maxsizeValue.textContent = formatPercent(config.snowmaxsize);
+    updateSizePreview();
     elements.autoStart.checked = Boolean(config.autoStart);
     elements.gifCount.value = config.gifCount || 0;
     elements.gifCountValue.textContent = config.gifCount || 0;
@@ -415,6 +538,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (elements.gifsList.children.length === 0) {
       createGifItem('', elements.gifsList, saveAllSettings);
     }
+    refreshGlyphPicker();
   };
 
   /**
@@ -464,6 +588,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   refreshPresetSelect();
   applySettingsToUI(activePreset.settings);
+
+  // Обновляем пул глифов при добавлении/удалении символов или смене режима text/emoji
+  new MutationObserver(() => refreshGlyphPicker())
+    .observe(elements.symbolsList, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-symbol-mode'] });
+  // Обновляем пул глифов при редактировании существующего символа
+  elements.symbolsList.addEventListener('input', () => refreshGlyphPicker());
 
   // === Настройка обработчиков событий ===
 
@@ -673,21 +803,27 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Слайдер минимального размера
   elements.snowminsize.addEventListener('input', () => {
-    if (parseInt(elements.snowminsize.value) >= parseInt(elements.snowmaxsize.value)) {
-      elements.snowmaxsize.value = parseInt(elements.snowminsize.value) + 1;
-      elements.maxsizeValue.textContent = elements.snowmaxsize.value;
+    const minValue = parseFloat(elements.snowminsize.value);
+    const maxValue = parseFloat(elements.snowmaxsize.value);
+    if (minValue >= maxValue) {
+      elements.snowmaxsize.value = clamp(minValue + SIZE_PERCENT_STEP, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX).toFixed(1);
     }
-    elements.minsizeValue.textContent = elements.snowminsize.value;
+    elements.minsizeValue.textContent = formatPercent(parseFloat(elements.snowminsize.value));
+    elements.maxsizeValue.textContent = formatPercent(parseFloat(elements.snowmaxsize.value));
+    updateSizePreview();
     saveAllSettings();
   });
 
   // Слайдер максимального размера
   elements.snowmaxsize.addEventListener('input', () => {
-    if (parseInt(elements.snowmaxsize.value) <= parseInt(elements.snowminsize.value)) {
-      elements.snowminsize.value = parseInt(elements.snowmaxsize.value) - 1;
-      elements.minsizeValue.textContent = elements.snowminsize.value;
+    const minValue = parseFloat(elements.snowminsize.value);
+    const maxValue = parseFloat(elements.snowmaxsize.value);
+    if (maxValue <= minValue) {
+      elements.snowminsize.value = clamp(maxValue - SIZE_PERCENT_STEP, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX - SIZE_PERCENT_STEP).toFixed(1);
     }
-    elements.maxsizeValue.textContent = elements.snowmaxsize.value;
+    elements.minsizeValue.textContent = formatPercent(parseFloat(elements.snowminsize.value));
+    elements.maxsizeValue.textContent = formatPercent(parseFloat(elements.snowmaxsize.value));
+    updateSizePreview();
     saveAllSettings();
   });
 

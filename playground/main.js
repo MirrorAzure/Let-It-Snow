@@ -50,8 +50,8 @@ const els = {
 const defaults = {
   snowmax: 120,
   sinkspeed: 1.0,
-  snowminsize: 18,
-  snowmaxsize: 48,
+  snowminsize: 1.5,
+  snowmaxsize: 4.0,
   colors: ['#ffffff', '#b7e0ff', '#7dd3fc'],
   symbols: ['❄', '✺', '✴'],
   sentences: [],
@@ -78,6 +78,56 @@ const state = {
   pingAttempts: 0,
   rendererMode: defaults.rendererMode
 };
+
+const LEGACY_PIXEL_THRESHOLD = 6;
+const SIZE_PERCENT_MIN = Number(els.snowminsize.min) || 0.2;
+const SIZE_PERCENT_MAX = Number(els.snowmaxsize.max) || 6;
+const SIZE_PERCENT_STEP = Number(els.snowminsize.step) || 0.1;
+
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const getViewportBaseSize = () => {
+  const width = Number(window?.innerWidth) || 1920;
+  const height = Number(window?.innerHeight) || 1080;
+  return Math.max(1, Math.min(width, height));
+};
+const formatPercent = (value) => {
+  const rounded = Math.round(Number(value) * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+};
+
+function normalizeSizePercentRange(rawMin, rawMax) {
+  const viewportBase = getViewportBaseSize();
+  const toPercent = (value, fallback) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    const converted = numeric > LEGACY_PIXEL_THRESHOLD
+      ? (numeric / viewportBase) * 100
+      : numeric;
+    return clamp(converted, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX);
+  };
+
+  const minPercent = toPercent(rawMin, defaults.snowminsize);
+  const maxPercent = toPercent(rawMax, defaults.snowmaxsize);
+
+  if (maxPercent <= minPercent) {
+    return {
+      minPercent,
+      maxPercent: clamp(minPercent + SIZE_PERCENT_STEP, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX)
+    };
+  }
+
+  return { minPercent, maxPercent };
+}
+
+function updateSizePreview() {
+  const preview = document.getElementById('size-preview-text');
+  if (!preview) return;
+  const { minPercent, maxPercent } = normalizeSizePercentRange(els.snowminsize.value, els.snowmaxsize.value);
+  const viewportBase = getViewportBaseSize();
+  const minPx = Math.max(1, Math.round((minPercent / 100) * viewportBase));
+  const maxPx = Math.max(1, Math.round((maxPercent / 100) * viewportBase));
+  preview.textContent = `Approx: ${minPx}px - ${maxPx}px (${formatPercent(minPercent)}% - ${formatPercent(maxPercent)}%)`;
+}
 
 function setStatus(mode, text) {
   els.status.textContent = text;
@@ -180,10 +230,10 @@ function addSentence(value) {
 }
 
 function getConfigFromForm() {
-  const snowminsize = Number(els.snowminsize.value) || defaults.snowminsize;
-  const snowmaxsize = Number(els.snowmaxsize.value) || defaults.snowmaxsize;
-  const minSize = Math.min(snowminsize, snowmaxsize - 1);
-  const maxSize = Math.max(snowmaxsize, minSize + 1);
+  const { minPercent: minSize, maxPercent: maxSize } = normalizeSizePercentRange(
+    els.snowminsize.value,
+    els.snowmaxsize.value
+  );
 
   return {
     snowmax: Math.max(1, Math.min(400, Number(els.snowmax.value) || defaults.snowmax)),
@@ -255,6 +305,7 @@ function resetForm() {
   renderSymbols();
   renderSentences();
   updateDebugButton();
+  updateSizePreview();
 }
 
 function updateDebugButton() {
@@ -341,6 +392,24 @@ els.sentenceInput.addEventListener('keydown', (e) => {
   }
 });
 
+els.snowminsize.addEventListener('input', () => {
+  const minValue = Number(els.snowminsize.value);
+  const maxValue = Number(els.snowmaxsize.value);
+  if (minValue >= maxValue) {
+    els.snowmaxsize.value = clamp(minValue + SIZE_PERCENT_STEP, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX).toFixed(1);
+  }
+  updateSizePreview();
+});
+
+els.snowmaxsize.addEventListener('input', () => {
+  const minValue = Number(els.snowminsize.value);
+  const maxValue = Number(els.snowmaxsize.value);
+  if (maxValue <= minValue) {
+    els.snowminsize.value = clamp(maxValue - SIZE_PERCENT_STEP, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX - SIZE_PERCENT_STEP).toFixed(1);
+  }
+  updateSizePreview();
+});
+
 els.windEnabled.addEventListener('change', (e) => {
   state.windEnabled = e.target.checked;
 });
@@ -387,6 +456,7 @@ window.addEventListener('message', (event) => {
 resetForm();
 setTheme('dark');
 updateRendererButtons();
+updateSizePreview();
 
 // Initialize - playground uses direct source import
 setStatus('ready', 'Playground: ready - hot reload enabled');

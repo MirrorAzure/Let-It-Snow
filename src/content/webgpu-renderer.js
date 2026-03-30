@@ -11,6 +11,7 @@ import { UniformBufferManager } from './graphics/uniform-buffer.js';
 import { SimulationEngine } from './physics/simulation-engine.js';
 import { CollisionHandler } from './physics/collision-handler.js';
 import { MouseHandler } from './physics/mouse-handler.js';
+import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
 
 /**
  * Класс для рендеринга снега через WebGPU
@@ -141,7 +142,7 @@ export class WebGPURenderer {
     }
 
     const dpr = Number(window?.devicePixelRatio) || 1;
-    const maxFlakeSize = Number(this.config?.snowmaxsize) || 24;
+    const { maxPx: maxFlakeSize } = resolveGlyphSizeRangePx(this.config);
 
     return estimateGlyphAtlasCellSize({
       glyphs: snowLetters,
@@ -523,7 +524,8 @@ export class WebGPURenderer {
    * Настройка instance данных (снежинок)
    */
   setupInstances() {
-    const { snowmax, snowminsize, snowmaxsize, sinkspeed, snowcolor, snowletters, snowsentences, sentenceCount } = this.config;
+    const { snowmax, sinkspeed, snowcolor, snowletters, snowsentences, sentenceCount } = this.config;
+    const { minPx: snowminsize, maxPx: snowmaxsize } = resolveGlyphSizeRangePx(this.config);
 
     const sizeRange = snowmaxsize - snowminsize;
     const hasGlyphs = snowletters && snowletters.length > 0;

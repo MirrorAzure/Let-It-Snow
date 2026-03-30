@@ -260,6 +260,45 @@ async function initPlayground() {
   const symbolsList = document.getElementById('symbolsList');
   const sentencesList = document.getElementById('sentencesList');
   const gifsList = document.getElementById('gifsList');
+  const snowMinSize = document.getElementById('snowminsize');
+  const snowMaxSize = document.getElementById('snowmaxsize');
+  const minSizeValue = document.getElementById('minsizeValue');
+  const maxSizeValue = document.getElementById('maxsizeValue');
+  const sizePreviewMinFlake = document.getElementById('sizePreviewMinFlake');
+  const sizePreviewMaxFlake = document.getElementById('sizePreviewMaxFlake');
+  const sizePreviewMinMeta = document.getElementById('sizePreviewMinMeta');
+  const sizePreviewMaxMeta = document.getElementById('sizePreviewMaxMeta');
+
+  const SIZE_PERCENT_STEP = 0.1;
+  const SIZE_PERCENT_MIN = Number(snowMinSize?.min) || 0.2;
+  const SIZE_PERCENT_MAX = Number(snowMaxSize?.max) || 6;
+
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const formatPercent = (value) => {
+    const rounded = Math.round(Number(value) * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  };
+  const getPreviewViewportBase = () => {
+    const width = Number(window?.screen?.width) || window.innerWidth || 1920;
+    const height = Number(window?.screen?.height) || window.innerHeight || 1080;
+    return Math.max(1, Math.min(width, height));
+  };
+  const updateSizePreview = () => {
+    if (!snowMinSize || !snowMaxSize) return;
+
+    const minPercent = Number(snowMinSize.value);
+    const maxPercent = Number(snowMaxSize.value);
+    const viewportBase = getPreviewViewportBase();
+    const minPx = Math.max(1, Math.round((minPercent / 100) * viewportBase));
+    const maxPx = Math.max(1, Math.round((maxPercent / 100) * viewportBase));
+
+    if (minSizeValue) minSizeValue.textContent = formatPercent(minPercent);
+    if (maxSizeValue) maxSizeValue.textContent = formatPercent(maxPercent);
+    if (sizePreviewMinFlake) sizePreviewMinFlake.style.fontSize = `${clamp(minPx, 12, 44)}px`;
+    if (sizePreviewMaxFlake) sizePreviewMaxFlake.style.fontSize = `${clamp(maxPx, 16, 56)}px`;
+    if (sizePreviewMinMeta) sizePreviewMinMeta.textContent = `~${minPx}px`;
+    if (sizePreviewMaxMeta) sizePreviewMaxMeta.textContent = `~${maxPx}px`;
+  };
 
   // Обработчики для слайдеров
   const setupSlider = (sliderId, valueId, formatter = (v) => v) => {
@@ -275,11 +314,31 @@ async function initPlayground() {
 
   setupSlider('snowmax', 'snowmaxValue');
   setupSlider('sinkspeed', 'sinkspeedValue', (v) => parseFloat(v).toFixed(1));
-  setupSlider('snowminsize', 'minsizeValue');
-  setupSlider('snowmaxsize', 'maxsizeValue');
   setupSlider('gifCount', 'gifCountValue');
   setupSlider('sentenceCount', 'sentenceCountValue');
   setupSlider('mouseRadius', 'mouseRadiusValue');
+
+  if (snowMinSize && snowMaxSize) {
+    snowMinSize.addEventListener('input', () => {
+      const minValue = Number(snowMinSize.value);
+      const maxValue = Number(snowMaxSize.value);
+      if (minValue >= maxValue) {
+        snowMaxSize.value = clamp(minValue + SIZE_PERCENT_STEP, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX).toFixed(1);
+      }
+      updateSizePreview();
+    });
+
+    snowMaxSize.addEventListener('input', () => {
+      const minValue = Number(snowMinSize.value);
+      const maxValue = Number(snowMaxSize.value);
+      if (maxValue <= minValue) {
+        snowMinSize.value = clamp(maxValue - SIZE_PERCENT_STEP, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX - SIZE_PERCENT_STEP).toFixed(1);
+      }
+      updateSizePreview();
+    });
+
+    updateSizePreview();
+  }
 
   // Создание нового элемента цвета
   const createColorItem = () => {
