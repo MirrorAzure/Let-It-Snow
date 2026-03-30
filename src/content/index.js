@@ -280,12 +280,13 @@ class SnowWebGPUController {
   /**
    * Приводит координаты указателя к системе координат симуляции (CSS px).
    * Это устраняет рассинхрон при zoom/pinch и нестандартном viewport.
-   * @param {MouseEvent} event
+   * @param {MouseEvent|PointerEvent|TouchEvent} event
    * @returns {{x: number, y: number}}
    */
   normalizePointerPosition(event) {
-    const rawX = Number(event?.clientX);
-    const rawY = Number(event?.clientY);
+    const touchPoint = event?.touches?.[0] || event?.changedTouches?.[0] || null;
+    const rawX = Number(touchPoint?.clientX ?? event?.clientX);
+    const rawY = Number(touchPoint?.clientY ?? event?.clientY);
     let x = Number.isFinite(rawX) ? rawX : 0;
     let y = Number.isFinite(rawY) ? rawY : 0;
 
@@ -366,6 +367,17 @@ class SnowWebGPUController {
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const maxMouseVelocity = Number(this.config.maxMouseVelocity ?? 3800);
     const mouseVelocitySmoothing = Number(this.config.mouseVelocitySmoothing ?? 0.35);
+    const supportsPointerEvents = typeof window !== 'undefined' && 'PointerEvent' in window;
+    const getPointerButton = (event, isUp = false) => {
+      const button = Number(event?.button);
+      if (button === 0 || button === 2) return button;
+      const pointerType = String(event?.pointerType || '').toLowerCase();
+      if (pointerType === 'touch' || pointerType === 'pen') {
+        if (isUp && !this.mouseLeftPressed) return -1;
+        return 0;
+      }
+      return -1;
+    };
 
     this.mouseMoveHandler = (e) => {
       const now = performance.now();
@@ -415,24 +427,26 @@ class SnowWebGPUController {
     };
 
     this.mouseDownHandler = (e) => {
-      if (e.button !== 0 && e.button !== 2) return;
+      const button = getPointerButton(e);
+      if (button !== 0 && button !== 2) return;
       const pointer = this.normalizePointerPosition(e);
-      if (e.button === 0) this.mouseLeftPressed = true;
-      if (e.button === 2) this.mouseRightPressed = true;
+      if (button === 0) this.mouseLeftPressed = true;
+      if (button === 2) this.mouseRightPressed = true;
       if (this.renderer && this.mouseInteractionEnabled) {
-        this.renderer.onMouseDown?.(pointer.x, pointer.y, e.button);
+        this.renderer.onMouseDown?.(pointer.x, pointer.y, button);
       }
       if (this.gifLayer && this.mouseInteractionEnabled) {
-        this.gifLayer.onMouseDown?.(pointer.x, pointer.y, e.button);
+        this.gifLayer.onMouseDown?.(pointer.x, pointer.y, button);
       }
     };
 
     this.mouseUpHandler = (e) => {
-      if (e.button !== 0 && e.button !== 2) return;
-      if (e.button === 0) this.mouseLeftPressed = false;
-      if (e.button === 2) this.mouseRightPressed = false;
+      const button = getPointerButton(e, true);
+      if (button !== 0 && button !== 2) return;
+      if (button === 0) this.mouseLeftPressed = false;
+      if (button === 2) this.mouseRightPressed = false;
       if (this.renderer && this.mouseInteractionEnabled) {
-        this.renderer.onMouseUp?.(e.button);
+        this.renderer.onMouseUp?.(button);
       }
     };
 
@@ -453,7 +467,27 @@ class SnowWebGPUController {
       }
     };
 
-    // Отслеживаем события на document, чтобы не блокировать взаимодействие со страницей
+    // Отслеживаем события на document, чтобы не блокировать взаимодействие со страницей.
+    // Для мобильных/планшетов используем Pointer Events, с fallback на touch+mouse.
+    this.usingPointerEvents = supportsPointerEvents;
+    if (supportsPointerEvents) {
+      document.addEventListener('pointermove', this.mouseMoveHandler, { passive: true });
+      document.addEventListener('pointerdown', this.mouseDownHandler, { passive: true });
+      document.addEventListener('pointerup', this.mouseUpHandler, { passive: true });
+      document.addEventListener('pointercancel', this.mouseLeaveHandler, { passive: true });
+      document.addEventListener('pointerleave', this.mouseLeaveHandler, { passive: true });
+      return;
+    }
+
+    this.touchStartHandler = (e) => this.mouseDownHandler(e);
+    this.touchMoveHandler = (e) => this.mouseMoveHandler(e);
+    this.touchEndHandler = (e) => this.mouseUpHandler(e);
+
+    document.addEventListener('touchstart', this.touchStartHandler, { passive: true });
+    document.addEventListener('touchmove', this.touchMoveHandler, { passive: true });
+    document.addEventListener('touchend', this.touchEndHandler, { passive: true });
+    document.addEventListener('touchcancel', this.mouseLeaveHandler, { passive: true });
+
     document.addEventListener('mousemove', this.mouseMoveHandler, { passive: true });
     document.addEventListener('mousedown', this.mouseDownHandler, { passive: true });
     document.addEventListener('mouseup', this.mouseUpHandler, { passive: true });
@@ -464,6 +498,32 @@ class SnowWebGPUController {
    * Удаление обработчиков событий мыши
    */
   removeMouseInteraction() {
+    if (this.usingPointerEvents) {
+      if (this.mouseMoveHandler) {
+        document.removeEventListener('pointermove', this.mouseMoveHandler);
+      }
+      if (this.mouseDownHandler) {
+        document.removeEventListener('pointerdown', this.mouseDownHandler);
+      }
+      if (this.mouseUpHandler) {
+        document.removeEventListener('pointerup', this.mouseUpHandler);
+      }
+      if (this.mouseLeaveHandler) {
+        document.removeEventListener('pointercancel', this.mouseLeaveHandler);
+        document.removeEventListener('pointerleave', this.mouseLeaveHandler);
+      }
+    }
+
+    if (this.touchStartHandler) {
+      document.removeEventListener('touchstart', this.touchStartHandler);
+    }
+    if (this.touchMoveHandler) {
+      document.removeEventListener('touchmove', this.touchMoveHandler);
+    }
+    if (this.touchEndHandler) {
+      document.removeEventListener('touchend', this.touchEndHandler);
+    }
+
     if (this.mouseMoveHandler) {
       document.removeEventListener('mousemove', this.mouseMoveHandler);
     }
@@ -481,6 +541,10 @@ class SnowWebGPUController {
     this.mouseDownHandler = null;
     this.mouseUpHandler = null;
     this.mouseLeaveHandler = null;
+    this.touchStartHandler = null;
+    this.touchMoveHandler = null;
+    this.touchEndHandler = null;
+    this.usingPointerEvents = false;
   }
 
   /**

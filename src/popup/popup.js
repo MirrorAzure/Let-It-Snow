@@ -30,6 +30,7 @@ const SETTINGS_KEYS = [
   'sentences',
   'sentenceCount',
   'autoStart',
+  'popupWidth',
   'gifs',
   'gifCount',
   'mouseRadius',
@@ -42,6 +43,8 @@ const SETTINGS_KEYS = [
 const PRESETS_STORAGE_KEY = 'savedPresets';
 const ACTIVE_PRESET_STORAGE_KEY = 'activePresetId';
 const GLYPH_VISUAL_SCALE = 0.84;
+const POPUP_WIDTH_MIN = 320;
+const POPUP_WIDTH_MAX = 520;
 
 /**
  * Инициализация popup при загрузке DOM
@@ -143,6 +146,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     gifCountValue: document.getElementById('gifCountValue'),
     mouseRadius: document.getElementById('mouseRadius'),
     mouseRadiusValue: document.getElementById('mouseRadiusValue'),
+    popupWidth: document.getElementById('popupWidth'),
+    popupWidthValue: document.getElementById('popupWidthValue'),
     windEnabled: document.getElementById('windEnabled'),
     windSettings: document.getElementById('windSettings'),
     windDirection: document.getElementById('windDirection'),
@@ -159,6 +164,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   const SIZE_PERCENT_STEP = parseFloat(elements.snowminsize.step) || 0.1;
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const clampPopupWidth = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return DEFAULT_SETTINGS.popupWidth;
+    }
+    return clamp(Math.round(numeric), POPUP_WIDTH_MIN, POPUP_WIDTH_MAX);
+  };
+
+  const applyPopupWidth = (value) => {
+    const nextWidth = clampPopupWidth(value);
+    document.documentElement.style.setProperty('--popup-width', `${nextWidth}px`);
+    document.body.style.setProperty('--popup-width', `${nextWidth}px`);
+    if (elements.popupWidth) {
+      elements.popupWidth.value = String(nextWidth);
+    }
+    if (elements.popupWidthValue) {
+      elements.popupWidthValue.textContent = `${nextWidth}px`;
+    }
+    return nextWidth;
+  };
 
   let previewViewportBaseSize = 0;
 
@@ -360,6 +385,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       gifs: Array.isArray(config.gifs) ? config.gifs : [],
       gifCount: Number.isFinite(config.gifCount) ? config.gifCount : 0,
       autoStart: Boolean(config.autoStart),
+      popupWidth: clampPopupWidth(config.popupWidth),
       mouseRadius: Number.isFinite(config.mouseRadius) ? config.mouseRadius : DEFAULT_SETTINGS.mouseRadius,
       windEnabled: Boolean(config.windEnabled),
       windDirection: ['left', 'right', 'random'].includes(config.windDirection)
@@ -523,6 +549,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       gifs,
       gifCount: parseInt(elements.gifCount.value) || 0,
       autoStart: elements.autoStart.checked,
+      popupWidth: clampPopupWidth(elements.popupWidth.value),
       mouseRadius: parseInt(elements.mouseRadius.value),
       windEnabled: elements.windEnabled.checked,
       windDirection: elements.windDirection.value,
@@ -565,6 +592,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.sentenceCountValue.textContent = config.sentenceCount || 0;
     elements.mouseRadius.value = config.mouseRadius || 100;
     elements.mouseRadiusValue.textContent = config.mouseRadius || 100;
+    applyPopupWidth(config.popupWidth);
 
     elements.windEnabled.checked = Boolean(config.windEnabled);
     elements.windDirection.value = config.windDirection || 'left';
@@ -860,6 +888,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSliderListener(elements.sentenceCount, elements.sentenceCountValue, saveAllSettings);
 
   setupSliderListener(elements.mouseRadius, elements.mouseRadiusValue, saveAllSettings);
+
+  setupSliderListener(
+    elements.popupWidth,
+    elements.popupWidthValue,
+    () => {
+      applyPopupWidth(elements.popupWidth.value);
+      return saveAllSettings();
+    },
+    (val) => `${clampPopupWidth(val)}px`
+  );
 
   // Слайдер минимального размера
   elements.snowminsize.addEventListener('input', () => {

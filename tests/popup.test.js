@@ -33,6 +33,7 @@ function createChromeMock(overrides = {}) {
     colors: ['#ffffff'],
     symbols: ['❄'],
     sentenceCount: 0,
+    popupWidth: 380,
     mouseRadius: 100,
     windEnabled: false,
     windDirection: 'left',
@@ -222,6 +223,34 @@ describe('popup UI', () => {
     );
     expect(savedData).toBeDefined();
     expect(savedData[0].mouseRadius).toBe(200);
+  });
+
+  it('loads and saves popupWidth setting', async () => {
+    global.chrome = createChromeMock({ popupWidth: 460 });
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const popupWidthInput = document.getElementById('popupWidth');
+    const popupWidthValue = document.getElementById('popupWidthValue');
+
+    expect(popupWidthInput).not.toBeNull();
+    expect(popupWidthInput.value).toBe('460');
+    expect(popupWidthValue.textContent).toBe('460px');
+    expect(document.body.style.getPropertyValue('--popup-width')).toBe('460px');
+
+    popupWidthInput.value = '500';
+    popupWidthInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(global.chrome.storage.sync.set).toHaveBeenCalled();
+    const savedData = global.chrome.storage.sync.set.mock.calls.find(
+      call => call[0].popupWidth !== undefined
+    );
+    expect(savedData).toBeDefined();
+    expect(savedData[0].popupWidth).toBe(500);
+    expect(document.body.style.getPropertyValue('--popup-width')).toBe('500px');
   });
 
   it('loads and saves wind settings', async () => {

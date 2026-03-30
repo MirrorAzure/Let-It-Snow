@@ -4,6 +4,20 @@ const originalRandom = Math.random;
 const originalGpu = Object.getOwnPropertyDescriptor(global.navigator, 'gpu');
 const originalGetContext = HTMLCanvasElement.prototype.getContext;
 
+const createInputEvent = (baseType, { clientX = 0, clientY = 0, button = 0, pointerType = 'mouse' } = {}) => {
+  const usePointer = typeof global.PointerEvent === 'function';
+  const type = usePointer ? baseType.replace('mouse', 'pointer') : baseType;
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'clientX', { value: clientX, configurable: true });
+  Object.defineProperty(event, 'clientY', { value: clientY, configurable: true });
+  Object.defineProperty(event, 'button', { value: button, configurable: true });
+  if (usePointer) {
+    Object.defineProperty(event, 'pointerType', { value: pointerType, configurable: true });
+    Object.defineProperty(event, 'isPrimary', { value: true, configurable: true });
+  }
+  return event;
+};
+
 describe('content script snow control', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -121,11 +135,10 @@ describe('content script snow control', () => {
     await controller.start();
 
     // Simulate left mouse button down (button 0)
-    const mouseDownEvent = new MouseEvent('mousedown', {
+    const mouseDownEvent = createInputEvent('mousedown', {
       clientX: 500,
       clientY: 300,
-      button: 0,
-      bubbles: true
+      button: 0
     });
     document.dispatchEvent(mouseDownEvent);
 
@@ -146,11 +159,10 @@ describe('content script snow control', () => {
     await controller.start();
 
     // Simulate right mouse button down (button 2)
-    const mouseDownEvent = new MouseEvent('mousedown', {
+    const mouseDownEvent = createInputEvent('mousedown', {
       clientX: 500,
       clientY: 300,
-      button: 2,
-      bubbles: true
+      button: 2
     });
     document.dispatchEvent(mouseDownEvent);
 
@@ -274,10 +286,9 @@ describe('content script snow control', () => {
     await controller.start();
 
     // Simulate mouse move
-    const mouseMoveEvent = new MouseEvent('mousemove', {
+    const mouseMoveEvent = createInputEvent('mousemove', {
       clientX: 500,
-      clientY: 300,
-      bubbles: true
+      clientY: 300
     });
     document.dispatchEvent(mouseMoveEvent);
 
@@ -285,11 +296,10 @@ describe('content script snow control', () => {
     expect(controller.gifLayer.mouseY).toBe(300);
 
     // Simulate left click for explosion
-    const mouseDownEvent = new MouseEvent('mousedown', {
+    const mouseDownEvent = createInputEvent('mousedown', {
       clientX: 500,
       clientY: 300,
-      button: 0,
-      bubbles: true
+      button: 0
     });
     document.dispatchEvent(mouseDownEvent);
 
@@ -320,20 +330,18 @@ describe('content script snow control', () => {
       controller.renderer.viewportHeight = 250;
     }
 
-    document.dispatchEvent(new MouseEvent('mousemove', {
+    document.dispatchEvent(createInputEvent('mousemove', {
       clientX: 600,
-      clientY: 300,
-      bubbles: true
+      clientY: 300
     }));
 
     expect(controller.mouseX).toBe(250);
     expect(controller.mouseY).toBe(125);
 
-    document.dispatchEvent(new MouseEvent('mousedown', {
+    document.dispatchEvent(createInputEvent('mousedown', {
       clientX: 600,
       clientY: 300,
-      button: 0,
-      bubbles: true
+      button: 0
     }));
 
     expect(controller.renderer.mouseX).toBe(250);
@@ -366,6 +374,74 @@ describe('content script snow control', () => {
     renderer.drawCallback(performance.now() + 16);
 
     expect(flake.velocityX).toBeGreaterThan(0);
+
+    controller.destroy();
+  });
+
+  it('updates interaction state from touch events for mobile devices', async () => {
+    const { SnowWebGPUController } = await import('../src/content/index.js');
+    const controller = new SnowWebGPUController({
+      snowmax: 10,
+      mouseRadius: 120
+    });
+
+    await controller.start();
+
+    const usePointer = typeof global.PointerEvent === 'function';
+
+    if (usePointer) {
+      document.dispatchEvent(createInputEvent('mousemove', {
+        clientX: 420,
+        clientY: 260,
+        pointerType: 'touch'
+      }));
+    } else {
+      const touchMoveEvent = new Event('touchmove', { bubbles: true, cancelable: true });
+      Object.defineProperty(touchMoveEvent, 'touches', {
+        value: [{ clientX: 420, clientY: 260 }],
+        configurable: true
+      });
+      document.dispatchEvent(touchMoveEvent);
+    }
+
+    expect(controller.mouseX).toBe(420);
+    expect(controller.mouseY).toBe(260);
+
+    if (usePointer) {
+      document.dispatchEvent(createInputEvent('mousedown', {
+        clientX: 420,
+        clientY: 260,
+        button: 0,
+        pointerType: 'touch'
+      }));
+    } else {
+      const touchStartEvent = new Event('touchstart', { bubbles: true, cancelable: true });
+      Object.defineProperty(touchStartEvent, 'touches', {
+        value: [{ clientX: 420, clientY: 260 }],
+        configurable: true
+      });
+      document.dispatchEvent(touchStartEvent);
+    }
+
+    expect(controller.renderer.mouseBurstMode).toBe('explode');
+
+    if (usePointer) {
+      document.dispatchEvent(createInputEvent('mouseup', {
+        clientX: 420,
+        clientY: 260,
+        button: 0,
+        pointerType: 'touch'
+      }));
+    } else {
+      const touchEndEvent = new Event('touchend', { bubbles: true, cancelable: true });
+      Object.defineProperty(touchEndEvent, 'changedTouches', {
+        value: [{ clientX: 420, clientY: 260 }],
+        configurable: true
+      });
+      document.dispatchEvent(touchEndEvent);
+    }
+
+    expect(controller.mouseLeftPressed).toBe(false);
 
     controller.destroy();
   });

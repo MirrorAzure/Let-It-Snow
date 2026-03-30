@@ -338,6 +338,9 @@
   "mouseRadius": {
     "message": "Радиус мыши (50–250):"
   },
+  "popupWidth": {
+    "message": "Ширина меню (320–520):"
+  },
   "tooltipWindEnabled": {
     "message": "Включить или отключить ветер"
   },
@@ -352,6 +355,9 @@
   },
   "tooltipMouseRadius": {
     "message": "Радиус зоны взаимодействия с мышью"
+  },
+  "tooltipPopupWidth": {
+    "message": "Настроить ширину всплывающего меню"
   },
   "subTabSnow": {
     "message": "Снег"

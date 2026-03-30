@@ -36,6 +36,7 @@ export const DEFAULT_SETTINGS = {
   gifs: [],
   gifCount: 0,
   autoStart: false,
+  popupWidth: 380,
   mouseRadius: 100,
   windEnabled: false,
   windDirection: 'left', // 'left', 'right', 'random'

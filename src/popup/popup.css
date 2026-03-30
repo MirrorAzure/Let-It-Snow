@@ -1,6 +1,13 @@
 
+html,
 body {
-  width: 380px;
+  --popup-width: 380px;
+  width: var(--popup-width);
+  max-width: none;
+  min-width: 320px;
+}
+
+body {
   padding: 0;
   margin: 0;
   font-family: 'Nunito', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -10,6 +17,10 @@ body {
   position: relative;
   overflow-x: hidden;
   box-sizing: border-box;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
 }
 
 body::before {
@@ -226,6 +237,7 @@ h2, h3 {
   cursor: pointer;
   transition: background 0.3s ease;
   border: 2px solid rgba(255, 255, 255, 0.2);
+  touch-action: manipulation;
 }
 
 .toggle-switch::after {
@@ -283,7 +295,7 @@ h2, h3 {
 
 .snow-slider {
   width: 100%;
-  height: 8px;
+  height: 10px;
   -webkit-appearance: none;
   appearance: none;
   background: linear-gradient(to right, #1565c0, #4fc3f7, #80deea);
@@ -318,6 +330,18 @@ h2, h3 {
   cursor: pointer;
   border: 3px solid #4fc3f7;
   box-shadow: 0 0 10px rgba(79, 195, 247, 0.8);
+}
+
+.snow-slider,
+button,
+.tab-button,
+.sub-tab-button,
+.glyph-chip,
+.item .delete-btn,
+.gif-file-btn,
+.symbol-mode-btn,
+.repo-link {
+  touch-action: manipulation;
 }
 
 .range-dual {
@@ -1210,7 +1234,8 @@ button:active {
   }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 420px) and (pointer: coarse) {
+  html,
   body {
     width: 100%;
     min-width: 320px;
@@ -1234,6 +1259,53 @@ button:active {
   .item {
     gap: 6px;
     padding: 6px;
+  }
+
+  .tab-button,
+  .sub-tab-button,
+  .item .delete-btn,
+  .gif-file-btn,
+  .symbol-mode-btn,
+  .toggle-switch {
+    min-height: 44px;
+  }
+
+  .tabs-navigation {
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .tab-button i {
+    font-size: 15px;
+  }
+
+  .gif-item {
+    flex-wrap: wrap;
+  }
+
+  .gif-controls {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .gif-url-row {
+    flex-wrap: wrap;
+  }
+
+  .gif-item .gif-url {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .item .color-text,
+  .item input[type="text"]:not(.color-text) {
+    width: 100%;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .value-display {
+    margin-left: 0;
   }
   
   button {
