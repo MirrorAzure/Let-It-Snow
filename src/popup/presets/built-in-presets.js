@@ -67,6 +67,22 @@ export const BUILT_IN_PRESET_TEMPLATES = [
       windStrength: 1.0,
       windGustFrequency: 2.4
     }
+  },
+  {
+    nameKey: 'presetTemplateChess',
+    settings: {
+      snowmax: 42,
+      sinkspeed: 1,
+      snowminsize: 15,
+      snowmaxsize: 40,
+      colors: ['#fffac7','#454545'],
+      symbols: ['♚','♛','♜','♝','♞','♟'],
+      symbolModes: ['text','text','text','text','text','text'],
+      windEnabled: false,
+      windDirection: 'left',
+      windStrength: 0.5,
+      windGustFrequency: 3
+    }
   }
 ];
 
