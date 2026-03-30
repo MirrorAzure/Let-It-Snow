@@ -11,7 +11,10 @@ import { UniformBufferManager } from './graphics/uniform-buffer.js';
 import { SimulationEngine } from './physics/simulation-engine.js';
 import { CollisionHandler } from './physics/collision-handler.js';
 import { MouseHandler } from './physics/mouse-handler.js';
+import { stepWindState, createWindVortexField, applyVortexWindImpulse } from './physics/wind-field.js';
 import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
+import { getStableViewportSize } from './utils/viewport-utils.js';
+import { nextCircularIndex } from './utils/circular-cursor.js';
 
 /**
  * Класс для рендеринга снега через WebGPU
@@ -81,11 +84,15 @@ export class WebGPURenderer {
     this.windDirection = config.windDirection ?? 'left';
     this.windStrength = config.windStrength ?? 0.5;
     this.windGustFrequency = config.windGustFrequency ?? 3;
+    this.windVortexStrength = config.windVortexStrength ?? 0.35;
     this.windTime = 0;
     this.currentWindForce = 0;
     this.currentWindLift = 0;
+    this.currentWindVortex = 0;
     this.prevWindForce = 0;
     this.prevWindLift = 0;
+    this.prevWindVortex = 0;
+    this.windVortexSeed = Math.random() * 1000000;
     this.windDirectionPhase = Math.random() * Math.PI * 2;
     this.lastWindLogged = false;
 
@@ -222,28 +229,7 @@ export class WebGPURenderer {
    * @private
    */
   _getViewportSize() {
-    const vv = window.visualViewport;
-    const vvWidth = Number(vv?.width);
-    const vvHeight = Number(vv?.height);
-    const width =
-      (Number.isFinite(vvWidth) && vvWidth > 0 ? vvWidth : 0) ||
-      window.innerWidth ||
-      document.documentElement?.clientWidth ||
-      document.body?.clientWidth ||
-      this.viewportWidth ||
-      1;
-    const height =
-      (Number.isFinite(vvHeight) && vvHeight > 0 ? vvHeight : 0) ||
-      window.innerHeight ||
-      document.documentElement?.clientHeight ||
-      document.body?.clientHeight ||
-      this.viewportHeight ||
-      1;
-
-    return {
-      width: Math.max(1, Math.floor(width)),
-      height: Math.max(1, Math.floor(height))
-    };
+    return getStableViewportSize(this.viewportWidth || 1, this.viewportHeight || 1);
   }
 
   /**
@@ -961,62 +947,47 @@ export class WebGPURenderer {
 
     // Обновляем параметры ветра
     if (this.windEnabled) {
-      this.windTime += delta;
+      const windState = stepWindState({
+        enabled: true,
+        delta,
+        windTime: this.windTime,
+        windDirection: this.windDirection,
+        windDirectionPhase: this.windDirectionPhase,
+        windStrength: this.windStrength,
+        windGustFrequency: this.windGustFrequency,
+        windVortexStrength: this.windVortexStrength,
+        prevWindForce: this.prevWindForce,
+        prevWindLift: this.prevWindLift,
+        prevWindVortex: this.prevWindVortex,
+        highFreq3Scale: 0.02,
+        windSmoothFactor: 0.05
+      });
+      this.windTime = windState.windTime;
+      this.currentWindForce = windState.currentWindForce;
+      this.currentWindLift = windState.currentWindLift;
+      this.currentWindVortex = windState.currentWindVortex;
+      this.prevWindForce = windState.prevWindForce;
+      this.prevWindLift = windState.prevWindLift;
+      this.prevWindVortex = windState.prevWindVortex;
 
-      // Реалистичный ветер: смесь долгих циклов, порывов и турбулентности
-      const baseFreq = Math.max(0.1, this.windGustFrequency * 0.5);
-      const baseTime = (this.windTime / (20 / baseFreq)) % 1.0;
-      const baseWind = Math.sin(baseTime * Math.PI) * 0.6;
-
-      const midFreq = this.windGustFrequency;
-      const midTime = (this.windTime / (10 / midFreq)) % 1.0;
-      const midWind = Math.sin(midTime * Math.PI * 2) * Math.cos(this.windTime * 0.3) * 0.25;
-
-      const highFreq1 = Math.sin(this.windTime * 1.7) * Math.exp(-0.1 * (this.windTime % 5)) * 0.06;
-      const highFreq2 = Math.sin(this.windTime * 2.9 + Math.cos(this.windTime)) * 0.04;
-      const highFreq3 = Math.sin(this.windTime * 4.1) * Math.sin(this.windTime * 0.7) * 0.02;
-      const turbulence = highFreq1 + highFreq2 + highFreq3;
-
-      let gust = baseWind + midWind + turbulence;
-      gust = Math.max(-1, Math.min(1, gust));
-      const gustIntensity = Math.min(1, Math.abs(gust));
-
-      let directionFactor = 1;
-      if (this.windDirection === 'left') {
-        directionFactor = -1;
-      } else if (this.windDirection === 'right') {
-        directionFactor = 1;
-      } else {
-        const dirTime = this.windTime * 0.12 + this.windDirectionPhase;
-        const dirNoise = Math.sin(dirTime) + Math.sin(dirTime * 0.23 + Math.cos(this.windTime * 0.05)) * 0.35;
-        directionFactor = Math.max(-1, Math.min(1, dirNoise));
-      }
-
-      const targetWindForce = directionFactor * gustIntensity * this.windStrength;
-      const targetWindLift = gustIntensity * 0.3 * this.windStrength;
-
-      const windSmoothFactor = 0.05;
-      this.currentWindForce = this.prevWindForce * (1 - windSmoothFactor) + targetWindForce * windSmoothFactor;
-      this.currentWindLift = this.prevWindLift * (1 - windSmoothFactor) + targetWindLift * windSmoothFactor;
-      this.prevWindForce = this.currentWindForce;
-      this.prevWindLift = this.currentWindLift;
-
-      if (this.windDebugLoggingEnabled && gustIntensity > 0.5 && !this.lastWindLogged) {
+      if (this.windDebugLoggingEnabled && windState.gustIntensity > 0.5 && !this.lastWindLogged) {
         console.log('🌬️ Wind is blowing with turbulence:', {
           direction: this.windDirection,
           strength: this.windStrength,
           force: this.currentWindForce.toFixed(2),
-          turbulence: gustIntensity.toFixed(2)
+          turbulence: windState.gustIntensity.toFixed(2)
         });
         this.lastWindLogged = true;
-      } else if (gustIntensity <= 0.5) {
+      } else if (windState.gustIntensity <= 0.5) {
         this.lastWindLogged = false;
       }
     } else {
       this.currentWindForce = 0;
       this.currentWindLift = 0;
+      this.currentWindVortex = 0;
       this.prevWindForce = 0;
       this.prevWindLift = 0;
+      this.prevWindVortex = 0;
     }
 
     if (this.mouseBurstTimer > 0) {
@@ -1025,6 +996,9 @@ export class WebGPURenderer {
         this.mouseBurstMode = null;
       }
     }
+
+    const vortexActive = this.currentWindVortex !== 0;
+    const vortexField = createWindVortexField(width, height, this.windTime, this.windVortexSeed);
 
     this.instances.forEach((flake, idx) => {
       // Вычисляем скорость движения мыши
@@ -1127,7 +1101,7 @@ export class WebGPURenderer {
       flake.y += flake.fallSpeed * delta;
 
       // Применяем ветер как горизонтальное и вертикальное воздействие
-      if ((this.currentWindForce !== 0 || this.currentWindLift !== 0)) {
+      if ((this.currentWindForce !== 0 || this.currentWindLift !== 0 || this.currentWindVortex !== 0)) {
         // Площадь поперечного сечения пропорциональна размеру
         // Маленькие объекты поддаются ветру сильнее
         const sizeRatio = Math.sqrt(flake.size / 20);
@@ -1142,6 +1116,11 @@ export class WebGPURenderer {
         if (this.currentWindLift !== 0) {
           const liftAccel = -this.currentWindLift * sizeRatio * 70;
           flake.y += liftAccel * delta;
+        }
+
+        if (vortexActive) {
+          const vortexAccel = this.currentWindVortex * sizeRatio * 420;
+          applyVortexWindImpulse(flake, delta, vortexAccel, vortexField);
         }
       }
 
@@ -1442,9 +1421,8 @@ export class WebGPURenderer {
    * @private
    */
   _nextSentenceIndex(sentenceCount) {
-    if (!sentenceCount) return 0;
-    const index = this.sentenceCursor % sentenceCount;
-    this.sentenceCursor = (this.sentenceCursor + 1) % sentenceCount;
-    return index;
+    const next = nextCircularIndex(this.sentenceCursor, sentenceCount);
+    this.sentenceCursor = next.nextCursor;
+    return next.index;
   }
 }

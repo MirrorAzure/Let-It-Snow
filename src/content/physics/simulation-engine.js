@@ -2,6 +2,8 @@
  * Движок симуляции для WebGPU рендерера
  */
 
+import { nextCircularIndex } from '../utils/circular-cursor.js';
+
 export class SimulationEngine {
   constructor(config = {}) {
     this.glyphCount = 0;
@@ -155,10 +157,9 @@ export class SimulationEngine {
    * @private
    */
   _nextSentenceIndex(sentenceCount) {
-    if (!sentenceCount) return 0;
-    const index = this.sentenceCursor % sentenceCount;
-    this.sentenceCursor = (this.sentenceCursor + 1) % sentenceCount;
-    return index;
+    const next = nextCircularIndex(this.sentenceCursor, sentenceCount);
+    this.sentenceCursor = next.nextCursor;
+    return next.index;
   }
 
   /**

@@ -80,7 +80,8 @@ Project Architecture:
 - **Content Script** — main extension script with the snowfall engine
 - **Renderers** — WebGPU (modern) and Fallback 2D (compatibility)
 - **Graphics Layer** — atlas and uniform buffer management for WebGPU
-- **Physics Layer** — simulation, collisions, and mouse interactions
+- **Physics Layer** — simulation, collisions, mouse interactions, and shared wind field
+- **Shared Utilities** — viewport stability and circular cursor helpers used across renderers
 - **Popup UI** — extension control interface
 - **Settings Manager** — settings management and saving
 - **Localization** — support for English and Russian languages
@@ -104,11 +105,14 @@ src/
 │   ├── physics/
 │   │   ├── simulation-engine.js  # Frame simulation logic
 │   │   ├── collision-handler.js  # Flake collisions
-│   │   └── mouse-handler.js      # Mouse interaction
+│   │   ├── mouse-handler.js      # Mouse interaction
+│   │   └── wind-field.js         # Shared wind + vortex field physics
 │   └── utils/
 │       ├── background-monitor.js  # Background monitoring
 │       ├── color-utils.js         # Color utilities
-│       └── glyph-utils.js         # Glyph/symbol utilities
+│       ├── glyph-utils.js         # Glyph/symbol utilities
+│       ├── viewport-utils.js      # Stable viewport size resolver
+│       └── circular-cursor.js     # Shared circular index helper
 ├── popup/
 │   ├── popup.html        # Popup UI
 │   ├── popup.js          # Popup logic
@@ -142,6 +146,9 @@ src/
   - Wind applies as force/acceleration (not just displacement)
   - Size-dependent wind resistance (smaller flakes affected more)
   - Vertical lift effect during strong winds
+  - Dual moving vortex field with opposite rotation directions
+  - Per-session randomized vortex trajectories to avoid static hotspot patterns
+  - Shared wind physics module used by both WebGPU and Fallback 2D renderers
 - **About tab**: Version, authors, repository, and tech stack in popup
 - **Settings persistence**: All settings are automatically saved
 - **Multi-language support**: English and Russian translations

@@ -3,7 +3,10 @@
  */
 
 import { CollisionHandler } from './physics/collision-handler.js';
+import { stepWindState, createWindVortexField, applyVortexWindImpulse } from './physics/wind-field.js';
 import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
+import { getStableViewportSize } from './utils/viewport-utils.js';
+import { nextCircularIndex } from './utils/circular-cursor.js';
 
 const TEXT_GLYPH_FONT_STACK = '"Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Times New Roman", serif';
 const EMOJI_GLYPH_FONT_STACK = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif';
@@ -130,11 +133,15 @@ export class Fallback2DRenderer {
     this.windDirection = config.windDirection ?? 'left';
     this.windStrength = config.windStrength ?? 0.5;
     this.windGustFrequency = config.windGustFrequency ?? 3;
+    this.windVortexStrength = config.windVortexStrength ?? 0.35;
     this.windTime = 0;
     this.currentWindForce = 0;
     this.currentWindLift = 0; // Вертикальная составляющая ветра
+    this.currentWindVortex = 0;
     this.prevWindForce = 0;
     this.prevWindLift = 0;
+    this.prevWindVortex = 0;
+    this.windVortexSeed = Math.random() * 1000000;
     this.windDirectionPhase = Math.random() * Math.PI * 2;
     this.lastWindLogged = false;
 
@@ -143,7 +150,8 @@ export class Fallback2DRenderer {
         windEnabled: this.windEnabled,
         windDirection: this.windDirection,
         windStrength: this.windStrength,
-        windGustFrequency: this.windGustFrequency
+        windGustFrequency: this.windGustFrequency,
+        windVortexStrength: this.windVortexStrength
       });
     }
   }
@@ -154,26 +162,7 @@ export class Fallback2DRenderer {
    * @private
    */
   _getViewportSize() {
-    const vv = window.visualViewport;
-    const vvWidth = Number(vv?.width);
-    const vvHeight = Number(vv?.height);
-    const width =
-      (Number.isFinite(vvWidth) && vvWidth > 0 ? vvWidth : 0) ||
-      window.innerWidth ||
-      document.documentElement?.clientWidth ||
-      document.body?.clientWidth ||
-      0;
-    const height =
-      (Number.isFinite(vvHeight) && vvHeight > 0 ? vvHeight : 0) ||
-      window.innerHeight ||
-      document.documentElement?.clientHeight ||
-      document.body?.clientHeight ||
-      0;
-
-    return {
-      width: Math.max(1, Math.floor(width)),
-      height: Math.max(1, Math.floor(height))
-    };
+    return getStableViewportSize(0, 0);
   }
 
   _rescaleFlakeSizes() {
@@ -757,62 +746,47 @@ export class Fallback2DRenderer {
 
       // Обновляем параметры ветра
       if (this.windEnabled) {
-        this.windTime += delta;
+        const windState = stepWindState({
+          enabled: true,
+          delta,
+          windTime: this.windTime,
+          windDirection: this.windDirection,
+          windDirectionPhase: this.windDirectionPhase,
+          windStrength: this.windStrength,
+          windGustFrequency: this.windGustFrequency,
+          windVortexStrength: this.windVortexStrength,
+          prevWindForce: this.prevWindForce,
+          prevWindLift: this.prevWindLift,
+          prevWindVortex: this.prevWindVortex,
+          highFreq3Scale: 0.018,
+          windSmoothFactor: 0.05
+        });
+        this.windTime = windState.windTime;
+        this.currentWindForce = windState.currentWindForce;
+        this.currentWindLift = windState.currentWindLift;
+        this.currentWindVortex = windState.currentWindVortex;
+        this.prevWindForce = windState.prevWindForce;
+        this.prevWindLift = windState.prevWindLift;
+        this.prevWindVortex = windState.prevWindVortex;
 
-        // Реалистичный ветер: смесь долгих циклов, порывов и турбулентности
-        const baseFreq = Math.max(0.1, this.windGustFrequency * 0.5);
-        const baseTime = (this.windTime / (20 / baseFreq)) % 1.0;
-        const baseWind = Math.sin(baseTime * Math.PI) * 0.6;
-
-        const midFreq = this.windGustFrequency;
-        const midTime = (this.windTime / (10 / midFreq)) % 1.0;
-        const midWind = Math.sin(midTime * Math.PI * 2) * Math.cos(this.windTime * 0.3) * 0.25;
-
-        const highFreq1 = Math.sin(this.windTime * 1.7) * Math.exp(-0.1 * (this.windTime % 5)) * 0.06;
-        const highFreq2 = Math.sin(this.windTime * 2.9 + Math.cos(this.windTime)) * 0.04;
-        const highFreq3 = Math.sin(this.windTime * 4.1) * Math.sin(this.windTime * 0.7) * 0.018; // значение 0.016 приводит к вращению
-        const turbulence = highFreq1 + highFreq2 + highFreq3;
-
-        let gust = baseWind + midWind + turbulence;
-        gust = Math.max(-1, Math.min(1, gust));
-        const gustIntensity = Math.min(1, Math.abs(gust));
-
-        let directionFactor = 1;
-        if (this.windDirection === 'left') {
-          directionFactor = -1;
-        } else if (this.windDirection === 'right') {
-          directionFactor = 1;
-        } else {
-          const dirTime = this.windTime * 0.12 + this.windDirectionPhase;
-          const dirNoise = Math.sin(dirTime) + Math.sin(dirTime * 0.23 + Math.cos(this.windTime * 0.05)) * 0.35;
-          directionFactor = Math.max(-1, Math.min(1, dirNoise));
-        }
-
-        const targetWindForce = directionFactor * gustIntensity * this.windStrength;
-        const targetWindLift = gustIntensity * 0.3 * this.windStrength;
-
-        const windSmoothFactor = 0.05;
-        this.currentWindForce = this.prevWindForce * (1 - windSmoothFactor) + targetWindForce * windSmoothFactor;
-        this.currentWindLift = this.prevWindLift * (1 - windSmoothFactor) + targetWindLift * windSmoothFactor;
-        this.prevWindForce = this.currentWindForce;
-        this.prevWindLift = this.currentWindLift;
-
-        if (this.windDebugLoggingEnabled && gustIntensity > 0.5 && !this.lastWindLogged) {
+        if (this.windDebugLoggingEnabled && windState.gustIntensity > 0.5 && !this.lastWindLogged) {
           console.log('🌬️ Wind is blowing with turbulence:', {
             direction: this.windDirection,
             strength: this.windStrength,
             force: this.currentWindForce.toFixed(2),
-            turbulence: gustIntensity.toFixed(2)
+            turbulence: windState.gustIntensity.toFixed(2)
           });
           this.lastWindLogged = true;
-        } else if (gustIntensity <= 0.5) {
+        } else if (windState.gustIntensity <= 0.5) {
           this.lastWindLogged = false;
         }
       } else {
         this.currentWindForce = 0;
         this.currentWindLift = 0;
+        this.currentWindVortex = 0;
         this.prevWindForce = 0;
         this.prevWindLift = 0;
+        this.prevWindVortex = 0;
       }
 
       if (this.mouseBurstTimer > 0) {
@@ -1011,15 +985,23 @@ export class Fallback2DRenderer {
       }
       
       // Применяем ветер как горизонтальное ускорение (и вертикальный лифт)
-      if (this.currentWindForce !== 0 || this.currentWindLift !== 0) {
+      if (this.currentWindForce !== 0 || this.currentWindLift !== 0 || this.currentWindVortex !== 0) {
         const wf = this.currentWindForce;
         const wl = this.currentWindLift;
+        const wv = this.currentWindVortex;
+        const vortexField = createWindVortexField(worldWidth, worldHeight, this.windTime, this.windVortexSeed);
+
         for (let wi = 0; wi < flakes.length; wi++) {
           const flake = flakes[wi];
           if (flake.isAwaitingRespawn || flake.isGrabbed) continue;
           const sr = flake._sizeRatio;
           if (wf !== 0) flake.velocityX += wf * sr * 40 * delta;
           if (wl !== 0) flake.velocityY += -wl * sr * 70 * delta;
+
+          if (wv !== 0) {
+            const vortexAccel = wv * sr * 420;
+            applyVortexWindImpulse(flake, delta, vortexAccel, vortexField);
+          }
         }
       }
       
@@ -1254,8 +1236,9 @@ export class Fallback2DRenderer {
   _nextSentence() {
     const count = this.sentenceQueue.length;
     if (!count) return '';
-    const index = this.sentenceCursor % count;
-    this.sentenceCursor = (this.sentenceCursor + 1) % count;
+    const next = nextCircularIndex(this.sentenceCursor, count);
+    const index = next.index;
+    this.sentenceCursor = next.nextCursor;
     return this.sentenceQueue[index];
   }
 

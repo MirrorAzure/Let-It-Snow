@@ -30,12 +30,15 @@ graph TB
             SimulationEngine["simulation-engine.js<br/>Frame simulation"]
             CollisionHandler["collision-handler.js<br/>Soft collisions"]
             MouseHandler["mouse-handler.js<br/>Mouse interaction"]
+            WindField["wind-field.js<br/>Shared wind + vortices"]
         end
         
         subgraph Utils["🛠️ Utilities"]
             BgMonitor["background-monitor.js<br/>Background detection"]
             ColorUtils["color-utils.js<br/>Color processing"]
             GlyphUtils["glyph-utils.js<br/>Text rendering"]
+            ViewportUtils["viewport-utils.js<br/>Stable viewport resolver"]
+            CircularCursor["circular-cursor.js<br/>Shared circular index"]
         end
     end
 
@@ -74,6 +77,9 @@ graph TB
     WebGPU -->|Uses| Graphics
     WebGPU -->|Uses| Physics
     Fallback2D -.->|Uses| Physics
+    GIFLayer -.->|Uses| WindField
+    WebGPU -.->|Uses| WindField
+    Fallback2D -.->|Uses| WindField
     MainContent -.->|Uses| Utils
     
     PopupMain -->|Manages| Settings
@@ -108,7 +114,7 @@ graph TB
     class BrowserStorage storage
     class Manifest,ManifestChrome,ManifestEdge,ManifestFirefox config
     class Utils,BgMonitor,ColorUtils,GlyphUtils,Localization utility
-    class Physics,SimulationEngine,CollisionHandler,MouseHandler physics
+    class Physics,SimulationEngine,CollisionHandler,MouseHandler,WindField physics
     class Graphics,AtlasManager,UniformBuffer graphics
 ```
 
@@ -129,11 +135,14 @@ graph TB
 - **simulation-engine.js** - симуляция движения снежинок
 - **collision-handler.js** - мягкие коллизии между снежинками
 - **mouse-handler.js** - взаимодействие с курсором и жестами мыши
+- **wind-field.js** - общий расчёт ветра и вихревого поля для всех рендереров
 
 #### Утилиты
 - **background-monitor.js** - мониторинг фона страницы для адаптивного рендеринга
 - **color-utils.js** - обработка и конвертация цветов
 - **glyph-utils.js** - рендеринг текстовых символов (снежинок)
+- **viewport-utils.js** - стабильное получение viewport размеров с fallback источниками
+- **circular-cursor.js** - единый циклический индексатор для очередей предложений
 
 ### Extension Popup
 - **popup.html/js/css** - пользовательский интерфейс расширения
