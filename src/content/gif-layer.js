@@ -49,6 +49,15 @@ export class GifLayer {
     this.backgroundGifFetchTimeoutMs = Math.max(500, Number(config.backgroundGifFetchTimeoutMs ?? 2500));
   }
 
+  _wrapInitialYPosition(y, size, viewportHeight) {
+    const minY = -size;
+    const maxY = viewportHeight + size;
+    const span = maxY - minY;
+    if (!Number.isFinite(span) || span <= 0) return minY;
+    const wrapped = ((y - minY) % span + span) % span;
+    return minY + wrapped;
+  }
+
   /**
    * Строит маску равномерно распределенных слотов.
    * @private
@@ -261,6 +270,7 @@ export class GifLayer {
     document.documentElement.appendChild(layer);
 
     const { minPx: snowminsize, maxPx: snowmaxsize } = resolveGlyphSizeRangePx(this.config);
+    const initialOffsetSeconds = Math.max(0, Number(this.config.initialTimeOffsetSeconds) || 0);
     const sizeRange = snowmaxsize - snowminsize;
 
     const initialVisibleCount = Math.min(count, Math.max(1, Math.ceil(count * this.initialVisibleGifRatio)));
@@ -271,6 +281,12 @@ export class GifLayer {
       const size = snowminsize + Math.random() * sizeRange;
       const sinkspeed = this.config.sinkspeed ?? 1.0; // Default sink speed
       const speed = sinkspeed * (size / 20) * 20;
+      const baseY = initialVisibleMask[idx]
+        ? (-size * 0.5 + Math.random() * size)
+        : (-size * 0.5 - Math.random() * window.innerHeight);
+      const startY = initialOffsetSeconds > 0
+        ? this._wrapInitialYPosition(baseY + speed * initialOffsetSeconds, size, window.innerHeight)
+        : baseY;
 
       const img = document.createElement('img');
       img.src = safeUrls[Math.floor(Math.random() * safeUrls.length)];
@@ -291,9 +307,7 @@ export class GifLayer {
         size,
         speed,
         x: Math.random() * window.innerWidth,
-        y: initialVisibleMask[idx]
-          ? (-size * 0.5 + Math.random() * size)
-          : (-size * 0.5 - Math.random() * window.innerHeight),
+        y: startY,
         velocityX: 0,
         velocityY: 0,
         rotationSpeed: 0,

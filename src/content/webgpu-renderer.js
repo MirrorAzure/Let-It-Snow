@@ -526,6 +526,8 @@ export class WebGPURenderer {
   setupInstances() {
     const { snowmax, sinkspeed, snowcolor, snowletters, snowsentences, sentenceCount } = this.config;
     const { minPx: snowminsize, maxPx: snowmaxsize } = resolveGlyphSizeRangePx(this.config);
+    const initialOffsetSeconds = Math.max(0, Number(this.config.initialTimeOffsetSeconds) || 0);
+    const viewportHeight = Math.max(1, window.innerHeight || 1);
 
     const sizeRange = snowmaxsize - snowminsize;
     const hasGlyphs = snowletters && snowletters.length > 0;
@@ -567,10 +569,14 @@ export class WebGPURenderer {
       const speed = sinkspeed * (size / 20) * 20;
       const spawnX = this._findSafeSpawnX(collisionSize);
       const initialRotation = Math.random() * Math.PI * 2; // Случайный начальный угол для разнообразия
+      const baseY = -size - Math.random() * viewportHeight;
+      const startY = initialOffsetSeconds > 0
+        ? this._wrapInitialYPosition(baseY + speed * initialOffsetSeconds, size, viewportHeight)
+        : baseY;
 
       this.instances.push({
         x: spawnX,
-        y: -size - Math.random() * window.innerHeight,
+        y: startY,
         size,
         collisionSize,
         fallSpeed: speed,
@@ -624,6 +630,15 @@ export class WebGPURenderer {
     }
 
     return Math.random() * width;
+  }
+
+  _wrapInitialYPosition(y, size, viewportHeight) {
+    const minY = -size;
+    const maxY = viewportHeight + size;
+    const span = maxY - minY;
+    if (!Number.isFinite(span) || span <= 0) return minY;
+    const wrapped = ((y - minY) % span + span) % span;
+    return minY + wrapped;
   }
 
   /**
@@ -749,6 +764,27 @@ export class WebGPURenderer {
   /**
    * Обработка изменения размеров окна
    */
+  _rescaleFlakeSizes() {
+    const { minPx: snowminsize, maxPx: snowmaxsize } = resolveGlyphSizeRangePx(this.config);
+    const sizeRange = snowmaxsize - snowminsize;
+    
+    for (let i = 0; i < this.instances.length; i++) {
+      const flake = this.instances[i];
+      if (!flake) continue;
+      
+      const isSentence = flake.isSentence ?? false;
+      const newSize = isSentence
+        ? Math.max(snowmaxsize * 1.2, 60) + Math.random() * 20
+        : snowminsize + Math.random() * sizeRange;
+      
+      flake.size = newSize;
+      flake.fallSpeed = this.config.sinkspeed * (newSize / 20) * 20;
+      
+      const sentenceHorizontalScale = 2.0;
+      flake.collisionSize = isSentence ? newSize * sentenceHorizontalScale : newSize;
+    }
+  }
+
   handleResize() {
     const resize = () => {
       const viewport = this._getViewportSize();
@@ -771,7 +807,8 @@ export class WebGPURenderer {
         size: { width, height }
       });
       
-      // Обновляем debug canvas если включен
+      this._rescaleFlakeSizes();
+      
       if (this.debugCollisions) {
         this.setupDebugCanvas();
       }

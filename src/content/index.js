@@ -10,18 +10,20 @@ import { WebGPURenderer } from './webgpu-renderer.js';
 import { Fallback2DRenderer } from './fallback-2d-renderer.js';
 import { GifLayer } from './gif-layer.js';
 import { splitSentences } from './utils/glyph-utils.js';
-import { normalizeGlyphSizePercentRange } from './utils/size-utils.js';
+import { normalizeGlyphSizePercentRange, getViewportBaseSize } from './utils/size-utils.js';
 
 // Константы
 const OVERLAY_ID = 'let-it-snow-webgpu-canvas';
 const MAX_Z_INDEX = '2147483646';
 const PLAYGROUND_MESSAGE_TARGET = 'let-it-snow-playground';
+const SNOW_PROGRESS_STORAGE_KEY = 'snowProgressV1';
+const MAX_INITIAL_OFFSET_SECONDS = 6 * 60 * 60;
 
 // Конфигурация по умолчанию
 const DEFAULT_CONFIG = {
   snowmax: 80,
   sinkspeed: 0.4,
-  snowminsize: 1.5,
+  snowminsize: 2.0,
   snowmaxsize: 4.0,
   snowcolor: ['#ffffff'],
   snowletters: ['❄'],
@@ -79,6 +81,52 @@ const normalizeSizeConfig = (rawConfig = {}) => {
     snowminsize: minPercent,
     snowmaxsize: maxPercent
   };
+};
+
+const getSnowStorageArea = () => {
+  if (typeof chrome === 'undefined' || !chrome.storage) return null;
+  return chrome.storage.local || chrome.storage.sync || null;
+};
+
+const resolveInitialOffsetSeconds = async (reuseExistingProgress = true) => {
+  const storage = getSnowStorageArea();
+  if (!storage) return 0;
+
+  const now = Date.now();
+
+  try {
+    const stored = await storage.get([SNOW_PROGRESS_STORAGE_KEY]);
+    const progress = stored?.[SNOW_PROGRESS_STORAGE_KEY] || null;
+    const savedStartedAt = Number(progress?.startedAt);
+    const canReuseSavedStart =
+      reuseExistingProgress && Number.isFinite(savedStartedAt) && savedStartedAt > 0;
+
+    const startedAt = canReuseSavedStart ? savedStartedAt : now;
+
+    await storage.set({
+      [SNOW_PROGRESS_STORAGE_KEY]: {
+        version: 1,
+        startedAt,
+        lastSeenAt: now
+      }
+    });
+
+    const elapsed = Math.max(0, (now - startedAt) / 1000);
+    return Math.min(MAX_INITIAL_OFFSET_SECONDS, elapsed);
+  } catch (err) {
+    console.warn('[Let It Snow] Failed to resolve snow progress offset:', err);
+    return 0;
+  }
+};
+
+const clearSnowProgress = async () => {
+  const storage = getSnowStorageArea();
+  if (!storage) return;
+  try {
+    await storage.remove(SNOW_PROGRESS_STORAGE_KEY);
+  } catch (err) {
+    console.warn('[Let It Snow] Failed to clear snow progress:', err);
+  }
 };
 
 // Глобальный контроллер
@@ -465,10 +513,15 @@ class SnowWebGPUController {
 /**
  * Остановить снегопад
  */
-function stopSnow() {
+function stopSnow(options = {}) {
+  const { preserveProgress = false } = options;
   if (controller) {
     controller.destroy();
     controller = null;
+  }
+
+  if (!preserveProgress) {
+    clearSnowProgress().catch(() => {});
   }
 }
 
@@ -476,9 +529,16 @@ function stopSnow() {
  * Запустить снегопад с заданной конфигурацией
  * @param {Object} config - Конфигурация снегопада
  */
-async function startSnow(config) {
-  stopSnow();
-  controller = new SnowWebGPUController(normalizeSizeConfig(config));
+async function startSnow(config, options = {}) {
+  const { reuseExistingProgress = true } = options;
+  const initialTimeOffsetSeconds = await resolveInitialOffsetSeconds(reuseExistingProgress);
+  const runtimeConfig = normalizeSizeConfig({
+    ...config,
+    initialTimeOffsetSeconds
+  });
+
+  stopSnow({ preserveProgress: true });
+  controller = new SnowWebGPUController(runtimeConfig);
   await controller.start();
 }
 
@@ -538,6 +598,11 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
         return;
       }
 
+      if (message.action === 'getViewportBaseSize') {
+        respond({ ok: true, viewportBaseSize: getViewportBaseSize() });
+        return;
+      }
+
       respond({ ok: false, reason: 'unknown_action' });
     } catch (err) {
       console.error(err);
@@ -547,7 +612,9 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 }
 
 // Очистка при закрытии страницы
-window.addEventListener('beforeunload', stopSnow);
+window.addEventListener('beforeunload', () => {
+  stopSnow({ preserveProgress: true });
+});
 
 // Пауза/возобновление при смене вкладки
 const handleVisibilityChange = () => {

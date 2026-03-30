@@ -26,7 +26,7 @@ export async function loadSettings(keys) {
 export const DEFAULT_SETTINGS = {
   snowmax: 80,
   sinkspeed: 0.4,
-  snowminsize: 1.5,
+  snowminsize: 2.0,
   snowmaxsize: 4.0,
   colors: ['#ffffff', '#4fc3f7', '#bbdefb', '#e1f5fe'],
   symbols: ['❄', '❅', '❆', '＊', '⋅', '✦'],

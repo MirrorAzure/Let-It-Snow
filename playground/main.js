@@ -50,7 +50,7 @@ const els = {
 const defaults = {
   snowmax: 120,
   sinkspeed: 1.0,
-  snowminsize: 1.5,
+  snowminsize: 2.0,
   snowmaxsize: 4.0,
   colors: ['#ffffff', '#b7e0ff', '#7dd3fc'],
   symbols: ['❄', '✺', '✴'],
@@ -80,8 +80,8 @@ const state = {
 };
 
 const LEGACY_PIXEL_THRESHOLD = 6;
-const SIZE_PERCENT_MIN = Number(els.snowminsize.min) || 0.2;
-const SIZE_PERCENT_MAX = Number(els.snowmaxsize.max) || 6;
+const SIZE_PERCENT_MIN = Number(els.snowminsize.min) || 2;
+const SIZE_PERCENT_MAX = Number(els.snowmaxsize.max) || 10;
 const SIZE_PERCENT_STEP = Number(els.snowminsize.step) || 0.1;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));

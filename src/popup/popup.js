@@ -16,6 +16,8 @@ import {
   setupSliderListener,
   getSymbolFontStack
 } from './ui-controllers.js';
+import { normalizeGlyphSizePercentRange } from '../content/utils/size-utils.js';
+import { createBuiltInPresets } from './presets/built-in-presets.js';
 
 const SETTINGS_KEYS = [
   'snowmax',
@@ -39,6 +41,7 @@ const SETTINGS_KEYS = [
 
 const PRESETS_STORAGE_KEY = 'savedPresets';
 const ACTIVE_PRESET_STORAGE_KEY = 'activePresetId';
+const GLYPH_VISUAL_SCALE = 0.84;
 
 /**
  * Инициализация popup при загрузке DOM
@@ -151,17 +154,56 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   elements.presetNameInput.placeholder = t('presetNamePlaceholder');
 
-  const LEGACY_PIXEL_THRESHOLD = 6;
-  const SIZE_PERCENT_MIN = parseFloat(elements.snowminsize.min) || 0.2;
-  const SIZE_PERCENT_MAX = parseFloat(elements.snowmaxsize.max) || 6;
+  const SIZE_PERCENT_MIN = parseFloat(elements.snowminsize.min) || 2;
+  const SIZE_PERCENT_MAX = parseFloat(elements.snowmaxsize.max) || 10;
   const SIZE_PERCENT_STEP = parseFloat(elements.snowminsize.step) || 0.1;
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+  let previewViewportBaseSize = 0;
+
   const getViewportBaseForPreview = () => {
+    if (Number.isFinite(previewViewportBaseSize) && previewViewportBaseSize > 0) {
+      return previewViewportBaseSize;
+    }
     const width = Number(window?.screen?.width) || window.innerWidth || 1920;
     const height = Number(window?.screen?.height) || window.innerHeight || 1080;
     return Math.max(1, Math.min(width, height));
+  };
+
+  const refreshPreviewViewportBaseSize = async () => {
+    try {
+      if (!chrome?.tabs?.query || !chrome?.tabs?.sendMessage) return;
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id || String(tab.url || '').startsWith('chrome:')) return;
+      const response = await chrome.tabs.sendMessage(tab.id, { action: 'getViewportBaseSize' });
+      const value = Number(response?.viewportBaseSize);
+      if (response?.ok && Number.isFinite(value) && value > 0) {
+        previewViewportBaseSize = value;
+      }
+    } catch {
+      // Нормальный сценарий: content-script может быть не инжектирован до первого запуска.
+    }
+  };
+
+  const setupCanvasResizeListener = () => {
+    if (typeof chrome === 'undefined' || !chrome?.tabs?.query) return;
+    try {
+      let resizeTimeout = null;
+      const handleCanvasResize = async () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(async () => {
+          await refreshPreviewViewportBaseSize();
+          updateSizePreview();
+        }, 100);
+      };
+      window.addEventListener('resize', handleCanvasResize, { passive: true });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', handleCanvasResize, { passive: true });
+      }
+    } catch {
+      // Игнорируем ошибки инициализации
+    }
   };
 
   const formatPercent = (value) => {
@@ -171,17 +213,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const normalizeSizePercentRange = (rawMin, rawMax) => {
     const viewportBase = getViewportBaseForPreview();
-    const toPercent = (value, fallback) => {
-      const numeric = Number(value);
-      if (!Number.isFinite(numeric)) return fallback;
-      const converted = numeric > LEGACY_PIXEL_THRESHOLD
-        ? (numeric / viewportBase) * 100
-        : numeric;
-      return clamp(converted, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX);
-    };
-
-    const minPercent = toPercent(rawMin, DEFAULT_SETTINGS.snowminsize);
-    const maxPercent = toPercent(rawMax, DEFAULT_SETTINGS.snowmaxsize);
+    const { minPercent, maxPercent } = normalizeGlyphSizePercentRange(rawMin, rawMax, viewportBase);
 
     if (maxPercent <= minPercent) {
       return {
@@ -190,7 +222,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       };
     }
 
-    return { minPercent, maxPercent };
+    return {
+      minPercent: clamp(minPercent, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX),
+      maxPercent: clamp(maxPercent, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX)
+    };
   };
 
   let previewGlyph = { symbol: '❄', mode: 'text' };
@@ -199,26 +234,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     const minPercent = parseFloat(elements.snowminsize.value);
     const maxPercent = parseFloat(elements.snowmaxsize.value);
     const viewportBase = getViewportBaseForPreview();
-    const minPx = Math.max(1, Math.round((minPercent / 100) * viewportBase));
-    const maxPx = Math.max(1, Math.round((maxPercent / 100) * viewportBase));
+    const minPx = Math.max(0.1, (minPercent / 100) * viewportBase);
+    const maxPx = Math.max(0.1, (maxPercent / 100) * viewportBase);
+    const minGlyphPx = Math.max(0.1, minPx * GLYPH_VISUAL_SCALE);
+    const maxGlyphPx = Math.max(0.1, maxPx * GLYPH_VISUAL_SCALE);
+    const formatPx = (value) => {
+      const rounded = Math.round(value * 10) / 10;
+      return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+    };
     const glyph = previewGlyph.symbol;
     const fontFamily = getSymbolFontStack(previewGlyph.mode);
 
     if (elements.sizePreviewMinFlake) {
-      elements.sizePreviewMinFlake.style.fontSize = `${clamp(minPx, 12, 44)}px`;
+      elements.sizePreviewMinFlake.style.fontSize = `${minGlyphPx.toFixed(2)}px`;
       elements.sizePreviewMinFlake.style.fontFamily = fontFamily;
       elements.sizePreviewMinFlake.textContent = glyph;
     }
     if (elements.sizePreviewMaxFlake) {
-      elements.sizePreviewMaxFlake.style.fontSize = `${clamp(maxPx, 16, 56)}px`;
+      elements.sizePreviewMaxFlake.style.fontSize = `${maxGlyphPx.toFixed(2)}px`;
       elements.sizePreviewMaxFlake.style.fontFamily = fontFamily;
       elements.sizePreviewMaxFlake.textContent = glyph;
     }
     if (elements.sizePreviewMinMeta) {
-      elements.sizePreviewMinMeta.textContent = `~${minPx}px`;
+      elements.sizePreviewMinMeta.textContent = `~${formatPx(minGlyphPx)}px`;
     }
     if (elements.sizePreviewMaxMeta) {
-      elements.sizePreviewMaxMeta.textContent = `~${maxPx}px`;
+      elements.sizePreviewMaxMeta.textContent = `~${formatPx(maxGlyphPx)}px`;
     }
   };
 
@@ -599,7 +640,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const config = normalizeSettings(saved);
   presets = loadedPresets.length > 0
     ? loadedPresets
-    : [createPresetObject(t('presetDefaultName'), config)];
+    : createBuiltInPresets(config, { createPresetObject, t });
   activePresetId = saved[ACTIVE_PRESET_STORAGE_KEY] || presets[0].id;
 
   const activePreset = findPresetById(activePresetId) || presets[0];
@@ -822,6 +863,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Слайдер минимального размера
   elements.snowminsize.addEventListener('input', () => {
+    refreshPreviewViewportBaseSize().finally(() => {
+      updateSizePreview();
+    });
     const minValue = parseFloat(elements.snowminsize.value);
     const maxValue = parseFloat(elements.snowmaxsize.value);
     if (minValue >= maxValue) {
@@ -835,6 +879,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Слайдер максимального размера
   elements.snowmaxsize.addEventListener('input', () => {
+    refreshPreviewViewportBaseSize().finally(() => {
+      updateSizePreview();
+    });
     const minValue = parseFloat(elements.snowminsize.value);
     const maxValue = parseFloat(elements.snowmaxsize.value);
     if (maxValue <= minValue) {
@@ -872,6 +919,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveAllSettings,
     (val) => parseFloat(val).toFixed(1)
   );
+
+  // Инициализируем слушатель resize canvas для обновления превью
+  setupCanvasResizeListener();
 
   /**
    * Запуск снегопада на активной вкладке

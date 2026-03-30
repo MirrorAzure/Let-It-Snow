@@ -14,7 +14,7 @@ function normalizeGlyphMode(mode) {
 
 function getFallbackGlyphFont(size, mode) {
   const family = normalizeGlyphMode(mode) === 'emoji' ? EMOJI_GLYPH_FONT_STACK : TEXT_GLYPH_FONT_STACK;
-  return `${Math.max(16, size)}px ${family}`;
+  return `${Math.max(1, size)}px ${family}`;
 }
 
 function computeGlyphDrawOffsets(ctx, glyph, font) {
@@ -119,6 +119,10 @@ export class Fallback2DRenderer {
       debugCollisions: this.debugCollisions
     });
     this._collisionFrameStride = 1;
+    this.resizeObserver = null;
+    this.windowResizeHandler = null;
+    this.visualViewportResizeHandler = null;
+    this.visualViewportScrollHandler = null;
     this._collisionFrameCounter = 0;
     
     // Параметры ветра
@@ -170,6 +174,65 @@ export class Fallback2DRenderer {
       width: Math.max(1, Math.floor(width)),
       height: Math.max(1, Math.floor(height))
     };
+  }
+
+  _rescaleFlakeSizes() {
+    const { minPx: snowminsize, maxPx: snowmaxsize } = resolveGlyphSizeRangePx(this.config);
+    const sizeRange = snowmaxsize - snowminsize;
+    
+    for (let i = 0; i < this.flakes.length; i++) {
+      const flake = this.flakes[i];
+      if (!flake) continue;
+      
+      const isSentence = flake.isSentence ?? false;
+      const newSize = isSentence
+        ? Math.max(snowmaxsize * 1.2, 60) + Math.random() * 20
+        : snowminsize + Math.random() * sizeRange;
+      
+      flake.size = newSize;
+      flake.collisionSize = newSize;
+      flake.speed = this.config.sinkspeed * (newSize / 20) * 20;
+      flake.fallSpeed = flake.speed;
+      
+      if (!flake.isSentence && this.ctx) {
+        flake.glyphFont = getFallbackGlyphFont(flake.size, flake.glyphRenderMode);
+        const offsets = computeGlyphDrawOffsets(this.ctx, flake.char, flake.glyphFont);
+        flake.glyphDrawX = offsets.x;
+        flake.glyphDrawY = offsets.y;
+      }
+    }
+  }
+
+  _setupResizeHandler() {
+    const resize = () => {
+      const viewport = this._getViewportSize();
+      const ratio = Math.min(window.devicePixelRatio || 1, this.canvas2dMaxDpr);
+      const width = Math.floor(viewport.width * ratio);
+      const height = Math.floor(viewport.height * ratio);
+      
+      if (this.canvas.width === width && this.canvas.height === height) return;
+      
+      this.canvas.width = width;
+      this.canvas.height = height;
+      
+      this._rescaleFlakeSizes();
+    };
+    
+    resize();
+    if (typeof ResizeObserver === 'function') {
+      this.resizeObserver = new ResizeObserver(resize);
+      this.resizeObserver.observe(document.documentElement);
+    } else {
+      this.windowResizeHandler = () => resize();
+      window.addEventListener('resize', this.windowResizeHandler, { passive: true });
+    }
+    
+    if (window.visualViewport) {
+      this.visualViewportResizeHandler = () => resize();
+      this.visualViewportScrollHandler = () => resize();
+      window.visualViewport.addEventListener('resize', this.visualViewportResizeHandler, { passive: true });
+      window.visualViewport.addEventListener('scroll', this.visualViewportScrollHandler, { passive: true });
+    }
   }
 
   /**
@@ -324,6 +387,15 @@ export class Fallback2DRenderer {
     return Number.isFinite(value);
   }
 
+  _wrapInitialYPosition(y, size, viewportHeight) {
+    const minY = -size;
+    const maxY = viewportHeight + size;
+    const span = maxY - minY;
+    if (!Number.isFinite(span) || span <= 0) return minY;
+    const wrapped = ((y - minY) % span + span) % span;
+    return minY + wrapped;
+  }
+
   /**
    * Санитизация состояния снежинки. Возвращает true, если был выполнен аварийный сброс.
    * @private
@@ -416,6 +488,7 @@ export class Fallback2DRenderer {
     } = this.config;
 
     const { minPx: snowminsize, maxPx: snowmaxsize } = resolveGlyphSizeRangePx(this.config);
+    const initialOffsetSeconds = Math.max(0, Number(this.config.initialTimeOffsetSeconds) || 0);
     const sizeRange = snowmaxsize - snowminsize;
     
     const hasGlyphs = snowletters && snowletters.length > 0;
@@ -486,6 +559,11 @@ export class Fallback2DRenderer {
         ? (((activeCursor + Math.random()) / Math.max(1, initialActive)) * initialDepthSpan)
         : 0;
 
+      const baseY = -size - initialDepth;
+      const startY = isInitiallyActive && initialOffsetSeconds > 0
+        ? this._wrapInitialYPosition(baseY + speed * initialOffsetSeconds, size, viewportHeight)
+        : baseY;
+
       if (isInitiallyActive) {
         activeCursor++;
       }
@@ -494,7 +572,7 @@ export class Fallback2DRenderer {
         x,
         baseX: x,
         y: isInitiallyActive
-          ? (-size - initialDepth)
+          ? startY
           : (viewportHeight + size * 2),
         size,
         collisionSize,
@@ -531,6 +609,8 @@ export class Fallback2DRenderer {
       }
 
     }
+
+    this._setupResizeHandler();
 
     return true;
   }
@@ -1146,6 +1226,29 @@ export class Fallback2DRenderer {
     if (this.drawCallback) {
       this.frameRequest = requestAnimationFrame(this.drawCallback);
     }
+  }
+
+  /**
+   * Очистка ресурсов
+   */
+  cleanup() {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+    if (this.windowResizeHandler) {
+      window.removeEventListener('resize', this.windowResizeHandler);
+      this.windowResizeHandler = null;
+    }
+    if (window.visualViewport) {
+      if (this.visualViewportResizeHandler) {
+        window.visualViewport.removeEventListener('resize', this.visualViewportResizeHandler);
+      }
+      if (this.visualViewportScrollHandler) {
+        window.visualViewport.removeEventListener('scroll', this.visualViewportScrollHandler);
+      }
+    }
+    this.frameRequest = null;
   }
 
   _nextSentence() {

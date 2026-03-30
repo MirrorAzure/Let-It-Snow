@@ -191,7 +191,7 @@ describe('Snow Animation System', () => {
 
       expect(controller.config.snowmax).toBe(80);
       expect(controller.config.sinkspeed).toBe(0.4);
-      expect(controller.config.snowminsize).toBe(1.5);
+      expect(controller.config.snowminsize).toBe(2.0);
     });
 
     it('should merge user config with defaults', async () => {
@@ -203,7 +203,7 @@ describe('Snow Animation System', () => {
 
       expect(controller.config.snowmax).toBe(100);
       expect(controller.config.sinkspeed).toBe(0.8);
-      expect(controller.config.snowminsize).toBe(1.5);
+      expect(controller.config.snowminsize).toBe(2.0);
     });
 
     it('should create canvas with correct styles', async () => {

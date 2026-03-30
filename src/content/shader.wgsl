@@ -113,17 +113,27 @@ fn fs(
 
   // Семплируем оба атласа (uniform control flow), затем выбираем нужный
   let glyphAtlasWidth = max(1.0, uniforms.glyphSize * uniforms.glyphCount);
+  let glyphInset = vec2<f32>(
+    0.5 / glyphAtlasWidth,
+    0.5 / max(1.0, uniforms.glyphSize)
+  );
+  let safeGlyphUV = mix(glyphInset, vec2<f32>(1.0, 1.0) - glyphInset, uv);
   let glyphUV = vec2<f32>(
-    (uv.x * uniforms.glyphSize + uniforms.glyphSize * f32(glyphIdx)) / glyphAtlasWidth,
-    uv.y
+    (safeGlyphUV.x * uniforms.glyphSize + uniforms.glyphSize * f32(glyphIdx)) / glyphAtlasWidth,
+    safeGlyphUV.y
   );
   let glyphSample = textureSample(glyphTexture, glyphSampler, glyphUV);
 
   let localIdx = max(0, glyphIdx - i32(uniforms.glyphCount));
   let sentenceAtlasHeight = max(1.0, uniforms.sentenceSize * uniforms.sentenceCount);
+  let sentenceInset = vec2<f32>(
+    0.5 / max(1.0, uniforms.sentenceSize * 2.0),
+    0.5 / sentenceAtlasHeight
+  );
+  let safeSentenceUV = mix(sentenceInset, vec2<f32>(1.0, 1.0) - sentenceInset, uv);
   let sentenceUV = vec2<f32>(
-    uv.x,
-    (uv.y * uniforms.sentenceSize + uniforms.sentenceSize * f32(localIdx)) / sentenceAtlasHeight
+    safeSentenceUV.x,
+    (safeSentenceUV.y * uniforms.sentenceSize + uniforms.sentenceSize * f32(localIdx)) / sentenceAtlasHeight
   );
   let sentenceSample = textureSample(sentenceTexture, sentenceSampler, sentenceUV);
 
@@ -136,7 +146,7 @@ fn fs(
   
   let rawAlpha = glyphSampleFinal.a;
   let isSdfGlyph = isGlyph && monotone > 0.5 && uniforms.isMonotone > 0.5;
-  let encodedCoverage = clamp(dot(glyphSampleFinal.rgb, vec3<f32>(0.2, 0.2, 0.2)), 0.0, 1.0); // 0.33333334
+  let encodedCoverage = clamp((glyphSampleFinal.r + glyphSampleFinal.g + glyphSampleFinal.b) / 3.0, 0.0, 1.0);
   let glyphTexelFootprint = max(length(fwidth(uv * uniforms.glyphSize)), 1.0);
   let sdfSpread = clamp(uniforms.glyphSize * 0.16, 7.0, 28.0);
   let sdfWidth = clamp((0.5 * glyphTexelFootprint) / max(1.0, sdfSpread), 0.02, 0.25);

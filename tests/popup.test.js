@@ -28,7 +28,7 @@ function createChromeMock(overrides = {}) {
   const stored = {
     snowmax: 80,
     sinkspeed: 0.4,
-    snowminsize: 1.5,
+    snowminsize: 2.0,
     snowmaxsize: 4.0,
     colors: ['#ffffff'],
     symbols: ['❄'],
@@ -119,7 +119,7 @@ describe('popup UI', () => {
     global.chrome = createChromeMock({
       snowmax: 120,
       sinkspeed: 1.1,
-      snowminsize: 1.2,
+      snowminsize: 2.2,
       snowmaxsize: 3.0,
       colors: ['#111111', '#222222'],
       symbols: ['❄', '*']
@@ -144,7 +144,7 @@ describe('popup UI', () => {
       config: {
         snowmax: 120,
         sinkspeed: 1.1,
-        snowminsize: 1.2,
+        snowminsize: 2.2,
         snowmaxsize: 3,
         snowcolor: ['#111111', '#222222'],
         snowletters: ['❄', '*'],
@@ -266,6 +266,9 @@ describe('popup UI', () => {
     document.dispatchEvent(new Event('DOMContentLoaded'));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
+    const presetSelect = document.getElementById('presetSelect');
+    const initialPresetCount = presetSelect.options.length;
+
     const importInput = document.getElementById('importSettingsInput');
     const importedFile = new File(
       [JSON.stringify({
@@ -289,8 +292,7 @@ describe('popup UI', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const presetSelect = document.getElementById('presetSelect');
-    expect(presetSelect.options).toHaveLength(2);
+    expect(presetSelect.options).toHaveLength(initialPresetCount + 1);
     expect(presetSelect.options[presetSelect.selectedIndex].textContent).toBe('Импортированный пресет');
     expect(document.getElementById('snowmax').value).toBe('150');
 

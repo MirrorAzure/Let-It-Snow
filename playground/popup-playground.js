@@ -294,8 +294,8 @@ async function initPlayground() {
   const sizePreviewMaxMeta = document.getElementById('sizePreviewMaxMeta');
 
   const SIZE_PERCENT_STEP = 0.1;
-  const SIZE_PERCENT_MIN = Number(snowMinSize?.min) || 0.2;
-  const SIZE_PERCENT_MAX = Number(snowMaxSize?.max) || 6;
+  const SIZE_PERCENT_MIN = Number(snowMinSize?.min) || 2;
+  const SIZE_PERCENT_MAX = Number(snowMaxSize?.max) || 10;
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const formatPercent = (value) => {
