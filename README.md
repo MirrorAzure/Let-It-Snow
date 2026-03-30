@@ -2,6 +2,8 @@
 
 A beautiful customizable snowfall effect extension for any website.
 
+Current version: **2.0.1** (March 2026)
+
 ## Installation & Setup
 
 ### Prerequisites
@@ -68,6 +70,8 @@ Use these if you want to regenerate specific artifacts after a build.
 5. Select the `dist/chrome` folder from your project
 
 ## Architecture Diagram
+
+Architecture materials in `diagrams/` are up to date for version **2.0.1**.
   
 ![ScheemProject](./diagrams/architecture.drawio.svg)
 
