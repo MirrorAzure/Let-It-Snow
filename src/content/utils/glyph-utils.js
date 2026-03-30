@@ -328,10 +328,14 @@ export function createSdfGlyphAtlas(sourceCanvas, cellSize, glyphCount) {
         const normalized = Math.max(0, Math.min(1, 0.5 + signedDistance * invRange));
         const alphaByte = Math.round(normalized * 255);
         const dstPixelIndex = (dstRowOffset + cellX + x) * 4;
+        const srcPixelIndex = (dstRowOffset + cellX + x) * 4;
+        const coverageByte = srcData[srcPixelIndex + 3];
 
-        outData[dstPixelIndex] = 255;
-        outData[dstPixelIndex + 1] = 255;
-        outData[dstPixelIndex + 2] = 255;
+        // Сохраняем исходное покрытие в RGB, чтобы шейдер мог подмешать его
+        // при сильном уменьшении и не потерять тонкие детали глифа.
+        outData[dstPixelIndex] = coverageByte;
+        outData[dstPixelIndex + 1] = coverageByte;
+        outData[dstPixelIndex + 2] = coverageByte;
         outData[dstPixelIndex + 3] = alphaByte;
       }
     }

@@ -136,14 +136,20 @@ fn fs(
   
   let rawAlpha = glyphSampleFinal.a;
   let isSdfGlyph = isGlyph && monotone > 0.5 && uniforms.isMonotone > 0.5;
-  let sdfWidth = max(fwidth(rawAlpha) * 0.85, 0.75 / max(16.0, uniforms.glyphSize));
+  let encodedCoverage = clamp(dot(glyphSampleFinal.rgb, vec3<f32>(0.2, 0.2, 0.2)), 0.0, 1.0); // 0.33333334
+  let glyphTexelFootprint = max(length(fwidth(uv * uniforms.glyphSize)), 1.0);
+  let sdfSpread = clamp(uniforms.glyphSize * 0.16, 7.0, 28.0);
+  let sdfWidth = clamp((0.5 * glyphTexelFootprint) / max(1.0, sdfSpread), 0.02, 0.25);
   let sdfAlpha = smoothstep(0.5 - sdfWidth, 0.5 + sdfWidth, rawAlpha);
+  let preservedCoverage = max(sdfAlpha, encodedCoverage);
+  let minifiedCoverageBlend = smoothstep(1.0, 1.9, glyphTexelFootprint);
+  let resolvedSdfAlpha = mix(sdfAlpha, preservedCoverage, minifiedCoverageBlend);
 
   // Для SDF используем реконструкцию покрытия по distance field,
   // для остальных кейсов оставляем мягкое усиление кромки.
   let edgeBoost = 0.18;
   let boostedAlpha = clamp(rawAlpha + rawAlpha * (1.0 - rawAlpha) * edgeBoost, 0.0, 1.0);
-  let surfaceAlpha = select(boostedAlpha, sdfAlpha, isSdfGlyph);
+  let surfaceAlpha = select(boostedAlpha, resolvedSdfAlpha, isSdfGlyph);
 
   // Canvas настроен в premultiplied alpha, поэтому отдаём premultiplied цвет.
   // Для цветных глифов тоже умножаем RGB на alpha, иначе при premultiplied blend
