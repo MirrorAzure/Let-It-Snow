@@ -2,7 +2,7 @@
 
 A beautiful customizable snowfall effect extension for any website.
 
-Current version: **2.0.1** (March 2026)
+Current version: **2.0.3** (March 2026)
 
 ## Installation & Setup
 
@@ -71,9 +71,7 @@ Use these if you want to regenerate specific artifacts after a build.
 
 ## Architecture Diagram
 
-Architecture materials in `diagrams/` are up to date for version **2.0.1**.
-  
-![ScheemProject](./diagrams/architecture.drawio.svg)
+Architecture materials in `diagrams/` are up to date for version **2.0.3**.
 
 Project Architecture:
 - **Web Pages** — web pages where the extension works
@@ -108,18 +106,22 @@ src/
 │   │   ├── mouse-handler.js      # Mouse interaction
 │   │   └── wind-field.js         # Shared wind + vortex field physics
 │   └── utils/
-│       ├── background-monitor.js  # Background monitoring
-│       ├── color-utils.js         # Color utilities
-│       ├── glyph-utils.js         # Glyph/symbol utilities
-│       ├── viewport-utils.js      # Stable viewport size resolver
-│       └── circular-cursor.js     # Shared circular index helper
+       ├── background-monitor.js      # Background monitoring
+       ├── color-utils.js             # Color utilities
+       ├── glyph-utils.js             # Glyph/symbol utilities
+       ├── glyph-quality-estimator.js # Glyph complexity analysis for atlas sizing
+       ├── size-utils.js              # Viewport/canvas size resolution
+       ├── viewport-utils.js          # Stable viewport size resolver
+       └── circular-cursor.js         # Shared circular index helper
 ├── popup/
 │   ├── popup.html        # Popup UI
 │   ├── popup.js          # Popup logic
 │   ├── settings.js       # Settings management
 │   ├── ui-controllers.js # UI controls
 │   ├── localization.js   # Localization logic
-│   └── popup.css         # Popup styles
+│   ├── popup.css         # Popup styles
+│   └── presets/
+│       └── built-in-presets.js  # Built-in preset templates
 ├── _locales/
 │   ├── en/
 │   │   └── messages.json # English translations
@@ -129,15 +131,15 @@ src/
 │   ├── manifest.chrome.json   # Chrome manifest
 │   ├── manifest.firefox.json  # Firefox manifest
 │   └── manifest.edge.json     # Edge manifest
-├── icons/                     # Extension icons
-└── assets/                    # Static assets
+└── icons/                     # Extension icons
 ```
 
 ## Features
 
 - **Customizable snowflakes**: Adjust count, size, and falling speed
 - **Color selection**: Choose multiple colors for snowflakes
-- **Symbol customization**: Use different characters as snowflakes
+- **Symbol customization**: Use different characters as snowflakes, with per-symbol text/emoji render mode toggle
+- **Presets**: Save and load custom presets; built-in seasonal templates (Winter, Spring, etc.)
 - **GIF support**: Add GIFs by URL or local file upload
 - **Mouse interaction**: Push, swirl, and drag snow with pointer movement
 - **Soft collisions**: Snowflakes gently bounce off each other
@@ -149,11 +151,11 @@ src/
   - Dual moving vortex field with opposite rotation directions
   - Per-session randomized vortex trajectories to avoid static hotspot patterns
   - Shared wind physics module used by both WebGPU and Fallback 2D renderers
+- **Atlas quality estimation**: Automatic glyph complexity analysis for optimal WebGPU atlas cell sizing
 - **About tab**: Version, authors, repository, and tech stack in popup
+- **Configurable popup width**: Adjustable popup panel width (320–520 px)
 - **Settings persistence**: All settings are automatically saved
 - **Multi-language support**: English and Russian translations
-
-[**Learn more about wind physics improvements →**](./WIND_PHYSICS_IMPROVEMENTS.md)
 
 ## Building with Vite
 

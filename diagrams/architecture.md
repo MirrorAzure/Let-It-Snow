@@ -1,7 +1,7 @@
 # Let It Snow - Architecture
 
-Версия: 2.0.1
-Обновлено: 30 марта 2026
+Версия: 2.0.3
+Обновлено: 31 марта 2026
 
 ## Диаграмма архитектуры
 
@@ -37,7 +37,9 @@ graph TB
             BgMonitor["background-monitor.js<br/>Background detection"]
             ColorUtils["color-utils.js<br/>Color processing"]
             GlyphUtils["glyph-utils.js<br/>Text rendering"]
+            GlyphQuality["glyph-quality-estimator.js<br/>Atlas cell size estimator"]
             ViewportUtils["viewport-utils.js<br/>Stable viewport resolver"]
+            SizeUtils["size-utils.js<br/>Viewport/canvas size"]
             CircularCursor["circular-cursor.js<br/>Shared circular index"]
         end
     end
@@ -49,6 +51,7 @@ graph TB
         Settings["settings.js<br/>Settings manager"]
         UIControllers["ui-controllers.js<br/>UI interactions"]
         Localization["localization.js<br/>i18n handler"]
+        BuiltInPresets["presets/built-in-presets.js<br/>Seasonal preset templates"]
     end
 
     subgraph Storage["💾 Persistent Storage"]
@@ -66,7 +69,6 @@ graph TB
 
     subgraph Assets["🎨 Static Assets"]
         Icons["icons/*<br/>Extension icons"]
-        OtherAssets["assets/*<br/>Other resources"]
     end
 
     WebPages -->|Injected into| MainContent
@@ -80,11 +82,13 @@ graph TB
     GIFLayer -.->|Uses| WindField
     WebGPU -.->|Uses| WindField
     Fallback2D -.->|Uses| WindField
+    WebGPU -.->|Uses| GlyphQuality
     MainContent -.->|Uses| Utils
     
     PopupMain -->|Manages| Settings
     PopupMain -->|Controls| UIControllers
     PopupMain -.->|Uses| Localization
+    PopupMain -.->|Uses| BuiltInPresets
     Settings <-->|Read/Write| BrowserStorage
     MainContent -.->|Reads| BrowserStorage
     
@@ -99,7 +103,6 @@ graph TB
     Manifest -->|Extends| ManifestFirefox
     
     Config -.->|Defines| Icons
-    Config -.->|References| OtherAssets
 
     classDef primary fill:#4A90E2,stroke:#2E5C8A,color:#fff
     classDef secondary fill:#F5A623,stroke:#C67E00,color:#fff
@@ -110,10 +113,10 @@ graph TB
     classDef graphics fill:#F8E71C,stroke:#B8A000,color:#000
     
     class MainContent,WebGPU,Fallback2D primary
-    class PopupMain,Settings,UIControllers secondary
+    class PopupMain,Settings,UIControllers,BuiltInPresets secondary
     class BrowserStorage storage
     class Manifest,ManifestChrome,ManifestEdge,ManifestFirefox config
-    class Utils,BgMonitor,ColorUtils,GlyphUtils,Localization utility
+    class Utils,BgMonitor,ColorUtils,GlyphUtils,GlyphQuality,SizeUtils,ViewportUtils,Localization utility
     class Physics,SimulationEngine,CollisionHandler,MouseHandler,WindField physics
     class Graphics,AtlasManager,UniformBuffer graphics
 ```
@@ -141,14 +144,17 @@ graph TB
 - **background-monitor.js** - мониторинг фона страницы для адаптивного рендеринга
 - **color-utils.js** - обработка и конвертация цветов
 - **glyph-utils.js** - рендеринг текстовых символов (снежинок)
+- **glyph-quality-estimator.js** - анализ сложности глифов для автоматического подбора оптимального размера (в пикселях) ячейки WebGPU атласа
+- **size-utils.js** - разрешение размеров viewport/canvas и преобразование процентов в пиксели
 - **viewport-utils.js** - стабильное получение viewport размеров с fallback источниками
 - **circular-cursor.js** - единый циклический индексатор для очередей предложений
 
 ### Extension Popup
-- **popup.html/js/css** - пользовательский интерфейс расширения
+- **popup.html/js/css** - пользовательский интерфейс расширения с вкладками: Snow, Wind, Symbols, Presets
 - **settings.js** - менеджер настроек
-- **ui-controllers.js** - контроллеры UI взаимодействий
+- **ui-controllers.js** - контроллеры UI взаимодействий, включая переключение text/emoji для символов
 - **localization.js** - обработка интернационализации
+- **presets/built-in-presets.js** - встроенные сезонные шаблоны пресетов (Winter, Spring и др.)
 
 ### Configuration
 - **manifest.json** - базовая конфигурация
