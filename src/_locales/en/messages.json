@@ -119,6 +119,9 @@
   "deletePreset": {
     "message": "Delete"
   },
+  "restorePresetTemplates": {
+    "message": "Load templates"
+  },
   "presetNamePlaceholder": {
     "message": "New preset"
   },
@@ -139,6 +142,9 @@
   },
   "presetTemplateAutumn": {
     "message": "Autumn"
+  },
+  "presetTemplateChess": {
+    "message": "Chess"
   },
   "confirmDeletePreset": {
     "message": "Delete selected preset?"
@@ -287,6 +293,9 @@
   "tooltipRenamePreset": {
     "message": "Rename selected preset"
   },
+  "tooltipRestorePresetTemplates": {
+    "message": "Load built-in preset templates"
+  },
   "tooltipApplyPreset": {
     "message": "Apply selected preset"
   },
@@ -339,7 +348,7 @@
     "message": "Mouse radius (50–250):"
   },
   "popupWidth": {
-    "message": "Menu width (320–520):"
+    "message": "Menu width (% of screen):"
   },
   "tooltipWindEnabled": {
     "message": "Enable or disable wind"
@@ -357,7 +366,7 @@
     "message": "Mouse interaction radius"
   },
   "tooltipPopupWidth": {
-    "message": "Adjust popup menu width"
+    "message": "Adjust popup width as a fraction of the screen width"
   },
   "subTabSnow": {
     "message": "Snow"

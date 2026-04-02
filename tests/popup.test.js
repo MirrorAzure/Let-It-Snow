@@ -33,6 +33,7 @@ function createChromeMock(overrides = {}) {
     colors: ['#ffffff'],
     symbols: ['❄'],
     sentenceCount: 0,
+    popupWidthPercent: 20,
     popupWidth: 380,
     mouseRadius: 100,
     windEnabled: false,
@@ -226,7 +227,7 @@ describe('popup UI', () => {
   });
 
   it('loads and saves popupWidth setting', async () => {
-    global.chrome = createChromeMock({ popupWidth: 460 });
+    global.chrome = createChromeMock({ popupWidthPercent: 25, popupWidth: undefined });
 
     await import('../src/popup/popup.js?t=' + Date.now());
     document.dispatchEvent(new Event('DOMContentLoaded'));
@@ -234,23 +235,32 @@ describe('popup UI', () => {
 
     const popupWidthInput = document.getElementById('popupWidth');
     const popupWidthValue = document.getElementById('popupWidthValue');
+    const minPercent = parseFloat(popupWidthInput.min);
+    const maxPercent = parseFloat(popupWidthInput.max);
+    const normalizedInitialPercent = Math.max(minPercent, Math.min(maxPercent, 25));
+    const initialWidthCss = document.body.style.getPropertyValue('--popup-width');
+    const expectedInitialPx = parseInt(initialWidthCss, 10);
+    const screenWidth = Number(window?.screen?.width) || window.innerWidth || 1920;
 
     expect(popupWidthInput).not.toBeNull();
-    expect(popupWidthInput.value).toBe('460');
-    expect(popupWidthValue.textContent).toBe('460px');
-    expect(document.body.style.getPropertyValue('--popup-width')).toBe('460px');
+    expect(popupWidthInput.value).toBe(normalizedInitialPercent.toFixed(1));
+    expect(popupWidthValue.textContent).toBe(`${normalizedInitialPercent.toFixed(1)}% (~${expectedInitialPx}px)`);
+    expect(initialWidthCss).toBe(`${expectedInitialPx}px`);
 
-    popupWidthInput.value = '500';
+    popupWidthInput.value = '26.4';
     popupWidthInput.dispatchEvent(new Event('input', { bubbles: true }));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(global.chrome.storage.sync.set).toHaveBeenCalled();
     const savedData = global.chrome.storage.sync.set.mock.calls.find(
-      call => call[0].popupWidth !== undefined
+      call => call[0].popupWidthPercent !== undefined
     );
+    const normalizedUpdatedPercent = Math.max(minPercent, Math.min(maxPercent, 26.4));
     expect(savedData).toBeDefined();
-    expect(savedData[0].popupWidth).toBe(500);
-    expect(document.body.style.getPropertyValue('--popup-width')).toBe('500px');
+    expect(savedData[0].popupWidthPercent).toBeCloseTo(normalizedUpdatedPercent, 5);
+
+    const expectedUpdatedPx = Math.round(screenWidth * (normalizedUpdatedPercent / 100));
+    expect(document.body.style.getPropertyValue('--popup-width')).toBe(`${expectedUpdatedPx}px`);
   });
 
   it('loads and saves wind settings', async () => {
@@ -432,5 +442,139 @@ describe('popup UI', () => {
       writable: true
     });
     clickSpy.mockRestore();
+  });
+
+  it('restores built-in templates and overwrites existing presets by name', async () => {
+    global.chrome = createChromeMock({
+      savedPresets: [
+        {
+          id: 'custom-winter-id',
+          name: 'Зимний',
+          settings: {
+            snowmax: 12,
+            sinkspeed: 0.2,
+            snowminsize: 2,
+            snowmaxsize: 3,
+            colors: ['#101010'],
+            symbols: ['*'],
+            symbolModes: ['text'],
+            sentences: [],
+            sentenceCount: 0,
+            gifs: [],
+            gifCount: 0,
+            autoStart: false,
+            popupWidth: 380,
+            mouseRadius: 100,
+            windEnabled: false,
+            windDirection: 'left',
+            windStrength: 0.5,
+            windGustFrequency: 3
+          },
+          updatedAt: Date.now()
+        },
+        {
+          id: 'my-custom-id',
+          name: 'Мой уникальный',
+          settings: {
+            snowmax: 77,
+            sinkspeed: 0.5,
+            snowminsize: 2,
+            snowmaxsize: 4,
+            colors: ['#abcdef'],
+            symbols: ['❄'],
+            symbolModes: ['text'],
+            sentences: [],
+            sentenceCount: 0,
+            gifs: [],
+            gifCount: 0,
+            autoStart: false,
+            popupWidth: 380,
+            mouseRadius: 100,
+            windEnabled: false,
+            windDirection: 'left',
+            windStrength: 0.5,
+            windGustFrequency: 3
+          },
+          updatedAt: Date.now()
+        }
+      ],
+      activePresetId: 'custom-winter-id'
+    });
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    document.getElementById('restorePresetTemplates').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const presetsCall = global.chrome.storage.sync.set.mock.calls.findLast(
+      (call) => Array.isArray(call[0].savedPresets)
+    );
+    expect(presetsCall).toBeDefined();
+
+    const savedPresets = presetsCall[0].savedPresets;
+    const winterPresets = savedPresets.filter((preset) => preset.name === 'Зимний');
+    expect(winterPresets).toHaveLength(1);
+    expect(winterPresets[0].settings.snowmax).toBe(120);
+
+    const customPreset = savedPresets.find((preset) => preset.name === 'Мой уникальный');
+    expect(customPreset).toBeDefined();
+    expect(customPreset.settings.snowmax).toBe(77);
+  });
+
+  it('keeps popup width separate when applying presets', async () => {
+    global.chrome = createChromeMock({
+      popupWidthPercent: 26,
+      savedPresets: [
+        {
+          id: 'preset-1',
+          name: 'Preset One',
+          settings: {
+            snowmax: 111,
+            sinkspeed: 0.7,
+            snowminsize: 2,
+            snowmaxsize: 4,
+            colors: ['#ffffff'],
+            symbols: ['❄'],
+            symbolModes: ['text'],
+            sentences: [],
+            sentenceCount: 0,
+            gifs: [],
+            gifCount: 0,
+            autoStart: false,
+            popupWidthPercent: 18,
+            windEnabled: false,
+            windDirection: 'left',
+            windStrength: 0.5,
+            windGustFrequency: 3
+          },
+          updatedAt: Date.now()
+        }
+      ],
+      activePresetId: 'preset-1'
+    });
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const popupWidthInput = document.getElementById('popupWidth');
+    const minPercent = parseFloat(popupWidthInput.min);
+    const maxPercent = parseFloat(popupWidthInput.max);
+    const normalizedPercent = Math.max(minPercent, Math.min(maxPercent, 26));
+    expect(popupWidthInput.value).toBe(normalizedPercent.toFixed(1));
+
+    document.getElementById('applyPreset').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.getElementById('popupWidth').value).toBe(normalizedPercent.toFixed(1));
+
+    const presetsCall = global.chrome.storage.sync.set.mock.calls.findLast(
+      (call) => Array.isArray(call[0].savedPresets)
+    );
+    expect(presetsCall).toBeDefined();
+    expect(presetsCall[0].savedPresets[0].settings.popupWidthPercent).toBeUndefined();
   });
 });

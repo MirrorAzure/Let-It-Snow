@@ -30,6 +30,7 @@ const SETTINGS_KEYS = [
   'sentences',
   'sentenceCount',
   'autoStart',
+  'popupWidthPercent',
   'popupWidth',
   'gifs',
   'gifCount',
@@ -43,8 +44,10 @@ const SETTINGS_KEYS = [
 const PRESETS_STORAGE_KEY = 'savedPresets';
 const ACTIVE_PRESET_STORAGE_KEY = 'activePresetId';
 const GLYPH_VISUAL_SCALE = 0.84;
-const POPUP_WIDTH_MIN = 320;
-const POPUP_WIDTH_MAX = 520;
+const POPUP_WIDTH_MIN_PX = 320;
+const POPUP_WIDTH_MAX_PX = 520;
+const POPUP_WIDTH_PERCENT_FLOOR = 10;
+const POPUP_WIDTH_PERCENT_CEIL = 90;
 
 /**
  * Инициализация popup при загрузке DOM
@@ -136,6 +139,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renamePreset: document.getElementById('renamePreset'),
     applyPreset: document.getElementById('applyPreset'),
     deletePreset: document.getElementById('deletePreset'),
+    restorePresetTemplates: document.getElementById('restorePresetTemplates'),
     exportSettings: document.getElementById('exportSettings'),
     importSettings: document.getElementById('importSettings'),
     importSettingsInput: document.getElementById('importSettingsInput'),
@@ -164,25 +168,75 @@ document.addEventListener('DOMContentLoaded', async () => {
   const SIZE_PERCENT_STEP = parseFloat(elements.snowminsize.step) || 0.1;
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-  const clampPopupWidth = (value) => {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) {
-      return DEFAULT_SETTINGS.popupWidth;
-    }
-    return clamp(Math.round(numeric), POPUP_WIDTH_MIN, POPUP_WIDTH_MAX);
+  const getScreenWidthBase = () => {
+    const width = Number(window?.screen?.width) || window.innerWidth || 1920;
+    return Math.max(1, width);
   };
 
-  const applyPopupWidth = (value) => {
-    const nextWidth = clampPopupWidth(value);
-    document.documentElement.style.setProperty('--popup-width', `${nextWidth}px`);
-    document.body.style.setProperty('--popup-width', `${nextWidth}px`);
+  const getPopupWidthPercentBounds = () => {
+    const screenWidth = getScreenWidthBase();
+    const rawMinPercent = (POPUP_WIDTH_MIN_PX / screenWidth) * 100;
+    const rawMaxPercent = (POPUP_WIDTH_MAX_PX / screenWidth) * 100;
+    const minPercent = clamp(rawMinPercent, POPUP_WIDTH_PERCENT_FLOOR, POPUP_WIDTH_PERCENT_CEIL - 1);
+    const maxPercent = clamp(rawMaxPercent, minPercent + 1, POPUP_WIDTH_PERCENT_CEIL);
+    return { minPercent, maxPercent };
+  };
+
+  const getDefaultPopupWidthPercent = () => {
+    if (Number.isFinite(DEFAULT_SETTINGS.popupWidthPercent)) {
+      return DEFAULT_SETTINGS.popupWidthPercent;
+    }
+    if (Number.isFinite(DEFAULT_SETTINGS.popupWidth)) {
+      return (DEFAULT_SETTINGS.popupWidth / getScreenWidthBase()) * 100;
+    }
+    return 20;
+  };
+
+  const setupPopupWidthSliderBounds = () => {
+    const { minPercent, maxPercent } = getPopupWidthPercentBounds();
+    elements.popupWidth.min = minPercent.toFixed(1);
+    elements.popupWidth.max = maxPercent.toFixed(1);
+    elements.popupWidth.step = '0.1';
+  };
+
+  const clampPopupWidthPercent = (value) => {
+    const { minPercent, maxPercent } = getPopupWidthPercentBounds();
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return clamp(getDefaultPopupWidthPercent(), minPercent, maxPercent);
+    }
+    return clamp(numeric, minPercent, maxPercent);
+  };
+
+  const popupWidthPercentToPx = (percent) => {
+    const screenWidth = getScreenWidthBase();
+    const percentValue = clampPopupWidthPercent(percent);
+    return Math.max(1, Math.round((percentValue / 100) * screenWidth));
+  };
+
+  const popupWidthPxToPercent = (px) => {
+    const screenWidth = getScreenWidthBase();
+    const numeric = Number(px);
+    if (!Number.isFinite(numeric)) {
+      return clampPopupWidthPercent(getDefaultPopupWidthPercent());
+    }
+    return clampPopupWidthPercent((numeric / screenWidth) * 100);
+  };
+
+  const formatPopupWidthValue = (percent, px) => `${percent.toFixed(1)}% (~${px}px)`;
+
+  const applyPopupWidthPercent = (value) => {
+    const nextPercent = clampPopupWidthPercent(value);
+    const nextWidthPx = popupWidthPercentToPx(nextPercent);
+    document.documentElement.style.setProperty('--popup-width', `${nextWidthPx}px`);
+    document.body.style.setProperty('--popup-width', `${nextWidthPx}px`);
     if (elements.popupWidth) {
-      elements.popupWidth.value = String(nextWidth);
+      elements.popupWidth.value = nextPercent.toFixed(1);
     }
     if (elements.popupWidthValue) {
-      elements.popupWidthValue.textContent = `${nextWidth}px`;
+      elements.popupWidthValue.textContent = formatPopupWidthValue(nextPercent, nextWidthPx);
     }
-    return nextWidth;
+    return { percent: nextPercent, px: nextWidthPx };
   };
 
   let previewViewportBaseSize = 0;
@@ -370,6 +424,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       config.snowmaxsize
     );
 
+    const popupWidthPercent = Number.isFinite(config.popupWidthPercent)
+      ? clampPopupWidthPercent(config.popupWidthPercent)
+      : popupWidthPxToPercent(config.popupWidth);
+
     return {
       snowmax: Number.isFinite(config.snowmax) ? config.snowmax : DEFAULT_SETTINGS.snowmax,
       sinkspeed: Number.isFinite(config.sinkspeed) ? config.sinkspeed : DEFAULT_SETTINGS.sinkspeed,
@@ -385,7 +443,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       gifs: Array.isArray(config.gifs) ? config.gifs : [],
       gifCount: Number.isFinite(config.gifCount) ? config.gifCount : 0,
       autoStart: Boolean(config.autoStart),
-      popupWidth: clampPopupWidth(config.popupWidth),
+      popupWidthPercent,
+      popupWidth: popupWidthPercentToPx(popupWidthPercent),
       mouseRadius: Number.isFinite(config.mouseRadius) ? config.mouseRadius : DEFAULT_SETTINGS.mouseRadius,
       windEnabled: Boolean(config.windEnabled),
       windDirection: ['left', 'right', 'random'].includes(config.windDirection)
@@ -398,12 +457,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
   };
 
+  const normalizePresetSettings = (rawConfig = {}) => {
+    const normalized = normalizeSettings(rawConfig);
+    const { popupWidth, popupWidthPercent, ...presetSettings } = normalized;
+    return presetSettings;
+  };
+
   const createPresetObject = (name, settings) => ({
     id: createPresetId(),
     name: (name || '').trim() || `${t('presetNameFallback')} ${new Date().toLocaleDateString()}`,
-    settings: normalizeSettings(settings),
+    settings: normalizePresetSettings(settings),
     updatedAt: Date.now()
   });
+
+  const normalizePresetNameForMatch = (name) => String(name || '').trim().toLowerCase();
 
   const getPresetDisplayName = (name, fallbackIndex = null) => {
     const normalizedName = (name || '').trim();
@@ -438,13 +505,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (parsed.settings && typeof parsed.settings === 'object' && !Array.isArray(parsed.settings)) {
       return {
         name: getPresetDisplayName(parsed.name || parsed.presetName || stripFileExtension(fileName)),
-        settings: normalizeSettings(parsed.settings)
+        settings: normalizePresetSettings(parsed.settings)
       };
     }
 
     return {
       name: getPresetDisplayName(parsed.name || parsed.presetName || stripFileExtension(fileName)),
-      settings: normalizeSettings(parsed)
+      settings: normalizePresetSettings(parsed)
     };
   };
 
@@ -491,6 +558,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const findPresetById = (presetId) => presets.find((preset) => preset.id === presetId);
+
+  const mergeBuiltInPresetTemplates = () => {
+    const builtInPresets = createBuiltInPresets(DEFAULT_SETTINGS, { createPresetObject, t });
+    const indexByName = new Map();
+
+    presets.forEach((preset, index) => {
+      const normalized = normalizePresetNameForMatch(preset.name);
+      if (normalized && !indexByName.has(normalized)) {
+        indexByName.set(normalized, index);
+      }
+    });
+
+    for (const builtInPreset of builtInPresets) {
+      const normalizedName = normalizePresetNameForMatch(builtInPreset.name);
+
+      if (normalizedName && indexByName.has(normalizedName)) {
+        const existingIndex = indexByName.get(normalizedName);
+        presets[existingIndex] = {
+          ...presets[existingIndex],
+          settings: builtInPreset.settings,
+          updatedAt: Date.now()
+        };
+        continue;
+      }
+
+      presets.push(builtInPreset);
+      if (normalizedName) {
+        indexByName.set(normalizedName, presets.length - 1);
+      }
+    }
+  };
 
   const persistPresets = async () => {
     await saveSettings({
@@ -549,7 +647,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       gifs,
       gifCount: parseInt(elements.gifCount.value) || 0,
       autoStart: elements.autoStart.checked,
-      popupWidth: clampPopupWidth(elements.popupWidth.value),
+      popupWidthPercent: clampPopupWidthPercent(elements.popupWidth.value),
       mouseRadius: parseInt(elements.mouseRadius.value),
       windEnabled: elements.windEnabled.checked,
       windDirection: elements.windDirection.value,
@@ -562,7 +660,7 @@ document.addEventListener('DOMContentLoaded', async () => {
    * Применяет объект настроек к UI
    * @param {Object} rawConfig
    */
-  const applySettingsToUI = (rawConfig = {}) => {
+  const applySettingsToUI = (rawConfig = {}, { preservePopupWidth = false } = {}) => {
     const config = normalizeSettings(rawConfig);
     const colors = Array.isArray(config.colors) && config.colors.length > 0
       ? config.colors
@@ -592,7 +690,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.sentenceCountValue.textContent = config.sentenceCount || 0;
     elements.mouseRadius.value = config.mouseRadius || 100;
     elements.mouseRadiusValue.textContent = config.mouseRadius || 100;
-    applyPopupWidth(config.popupWidth);
+    if (!preservePopupWidth) {
+      applyPopupWidthPercent(config.popupWidthPercent);
+    }
 
     elements.windEnabled.checked = Boolean(config.windEnabled);
     elements.windDirection.value = config.windDirection || 'left';
@@ -641,7 +741,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (presetIndex !== -1) {
         presets[presetIndex] = {
           ...presets[presetIndex],
-          settings: normalizeSettings(payload),
+          settings: normalizePresetSettings(payload),
           updatedAt: Date.now()
         };
         await persistPresets();
@@ -660,11 +760,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         .map((preset) => ({
           id: typeof preset.id === 'string' && preset.id.trim() ? preset.id : createPresetId(),
           name: typeof preset.name === 'string' && preset.name.trim() ? preset.name.trim() : t('presetNameFallback'),
-          settings: normalizeSettings(preset.settings),
+          settings: normalizePresetSettings(preset.settings),
           updatedAt: Number.isFinite(preset.updatedAt) ? preset.updatedAt : Date.now()
         }))
     : [];
 
+  setupPopupWidthSliderBounds();
   const config = normalizeSettings(saved);
   presets = loadedPresets.length > 0
     ? loadedPresets
@@ -675,7 +776,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   activePresetId = activePreset.id;
 
   refreshPresetSelect();
-  applySettingsToUI(activePreset.settings);
+  applyPopupWidthPercent(config.popupWidthPercent);
+  applySettingsToUI(activePreset.settings, { preservePopupWidth: true });
 
   // Обновляем пул глифов при добавлении/удалении символов или смене режима text/emoji
   new MutationObserver(() => refreshGlyphPicker())
@@ -770,7 +872,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     activePresetId = selectedPreset.id;
-    applySettingsToUI(selectedPreset.settings);
+    applySettingsToUI(selectedPreset.settings, { preservePopupWidth: true });
     await saveAllSettings(false);
     await persistPresets();
   });
@@ -795,14 +897,36 @@ document.addEventListener('DOMContentLoaded', async () => {
       const fallbackPreset = createPresetObject(t('presetDefaultName'), payload);
       presets = [fallbackPreset];
       activePresetId = fallbackPreset.id;
-      applySettingsToUI(fallbackPreset.settings);
+      applySettingsToUI(fallbackPreset.settings, { preservePopupWidth: true });
     } else {
       activePresetId = presets[0].id;
-      applySettingsToUI(presets[0].settings);
+      applySettingsToUI(presets[0].settings, { preservePopupWidth: true });
       await saveAllSettings(false);
     }
 
     refreshPresetSelect();
+    await persistPresets();
+  });
+
+  elements.restorePresetTemplates.addEventListener('click', async () => {
+    const selectedIdBeforeRestore = elements.presetSelect.value;
+
+    mergeBuiltInPresetTemplates();
+
+    if (findPresetById(selectedIdBeforeRestore)) {
+      activePresetId = selectedIdBeforeRestore;
+    } else if (!findPresetById(activePresetId) && presets.length > 0) {
+      activePresetId = presets[0].id;
+    }
+
+    refreshPresetSelect();
+
+    const activePreset = findPresetById(activePresetId);
+    if (activePreset) {
+      applySettingsToUI(activePreset.settings, { preservePopupWidth: true });
+      await saveAllSettings(false);
+    }
+
     await persistPresets();
   });
 
@@ -862,7 +986,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       presets.push(preset);
       activePresetId = preset.id;
       refreshPresetSelect();
-      applySettingsToUI(preset.settings);
+      applySettingsToUI(preset.settings, { preservePopupWidth: true });
       await saveAllSettings(false);
       await persistPresets();
     } catch (error) {
@@ -893,10 +1017,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.popupWidth,
     elements.popupWidthValue,
     () => {
-      applyPopupWidth(elements.popupWidth.value);
+      applyPopupWidthPercent(elements.popupWidth.value);
       return saveAllSettings();
     },
-    (val) => `${clampPopupWidth(val)}px`
+    (val) => {
+      const normalizedPercent = clampPopupWidthPercent(val);
+      const widthPx = popupWidthPercentToPx(normalizedPercent);
+      return formatPopupWidthValue(normalizedPercent, widthPx);
+    }
   );
 
   // Слайдер минимального размера

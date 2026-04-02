@@ -119,6 +119,9 @@
   "deletePreset": {
     "message": "Удалить"
   },
+  "restorePresetTemplates": {
+    "message": "Загрузить шаблоны"
+  },
   "presetNamePlaceholder": {
     "message": "Новый пресет"
   },
@@ -139,6 +142,9 @@
   },
   "presetTemplateAutumn": {
     "message": "Осенний"
+  },
+  "presetTemplateChess": {
+    "message": "Шахматный"
   },
   "confirmDeletePreset": {
     "message": "Удалить выбранный пресет?"
@@ -287,6 +293,9 @@
   "tooltipRenamePreset": {
     "message": "Переименовать выбранный пресет"
   },
+  "tooltipRestorePresetTemplates": {
+    "message": "Загрузить встроенные шаблоны пресетов"
+  },
   "tooltipApplyPreset": {
     "message": "Применить выбранный пресет"
   },
@@ -339,7 +348,7 @@
     "message": "Радиус мыши (50–250):"
   },
   "popupWidth": {
-    "message": "Ширина меню (320–520):"
+    "message": "Ширина меню (% экрана):"
   },
   "tooltipWindEnabled": {
     "message": "Включить или отключить ветер"
@@ -357,7 +366,7 @@
     "message": "Радиус зоны взаимодействия с мышью"
   },
   "tooltipPopupWidth": {
-    "message": "Настроить ширину всплывающего меню"
+    "message": "Настроить ширину всплывающего меню как долю от ширины экрана"
   },
   "subTabSnow": {
     "message": "Снег"

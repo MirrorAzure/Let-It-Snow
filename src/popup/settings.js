@@ -36,6 +36,7 @@ export const DEFAULT_SETTINGS = {
   gifs: [],
   gifCount: 0,
   autoStart: false,
+  popupWidthPercent: 20,
   popupWidth: 380,
   mouseRadius: 100,
   windEnabled: false,
