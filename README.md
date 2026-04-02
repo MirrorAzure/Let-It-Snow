@@ -2,7 +2,69 @@
 
 A beautiful customizable snowfall effect extension for any website.
 
-Current version: **2.0.3** (March 2026)
+Current version: **2.0.4** (April 2026)
+
+## Store Description (v2.0.4)
+
+### English
+
+Let it snow adds a festive snowfall effect to any website and gives you full control over the animation style.
+
+Create your own winter look:
+- Adjust snowflake count, fall speed, and size range
+- Use custom symbols, long phrases, and multiple colors
+- Add animated GIF flakes from URLs or local files
+- Interact with snow using mouse and touch gestures
+- Save and switch presets for different moods
+- Import and export settings in JSON
+- Transfer all presets during import/export with one toggle
+- Restore built-in preset templates in one click
+- Enjoy smooth rendering with WebGPU and a reliable Canvas 2D fallback
+- Use the extension in English and Russian
+
+Perfect for holiday vibes, stream styling, demos, and everyday beautiful browsing.
+
+Changes in version 2.0.4 (from 2.0.3):
+- Added an option to transfer all presets in JSON import/export
+- Added popup width control in screen percentage with instant percent+pixel preview
+- Improved popup width persistence and adaptive behavior across screen sizes
+- Restored and streamlined built-in preset templates workflow
+
+Privacy
+Let it snow does not collect, sell, or share personal data.
+The extension works locally in your browser and stores only your visual settings (for example: snowflake count, symbols, colors, presets, popup width) in browser storage (chrome.storage).
+No account, registration, analytics, or tracking is required.
+If you manually add GIF URLs, these files are requested directly from the specified source in your browser to display animation.
+
+### Русский
+
+Let it snow добавляет праздничный эффект снегопада на любой сайт и позволяет гибко настроить внешний вид анимации.
+
+Создайте свой зимний стиль:
+- Настраивайте количество снежинок, скорость падения и диапазон размеров
+- Используйте собственные символы, длинные фразы и несколько цветов
+- Добавляйте анимированные GIF-снежинки по ссылке или из локальных файлов
+- Взаимодействуйте со снегом мышью и touch-жестами
+- Сохраняйте и переключайте пресеты под разное настроение
+- Импортируйте и экспортируйте настройки в JSON
+- Переносите все пресеты при импорте/экспорте одним переключателем
+- Восстанавливайте встроенные шаблоны пресетов в один клик
+- Получайте плавный рендеринг в WebGPU и надежный Canvas 2D fallback
+- Пользуйтесь расширением на английском и русском языках
+
+Идеально для праздничной атмосферы, оформления стримов, демо и просто красивого повседневного браузинга.
+
+Изменения в версии 2.0.4 (с 2.0.3):
+- Добавлена опция переноса всех пресетов при импорте/экспорте JSON
+- Добавлена настройка ширины popup в процентах от экрана с мгновенным предпросмотром в процентах и пикселях
+- Улучшено сохранение ширины popup и адаптивное поведение на разных размерах экрана
+- Восстановлена и упрощена работа со встроенными шаблонами пресетов
+
+Конфиденциальность
+Let it snow не собирает, не продает и не передает персональные данные.
+Расширение работает локально в браузере и сохраняет только ваши визуальные настройки (например: количество снежинок, символы, цвета, пресеты, ширину popup) в хранилище браузера (chrome.storage).
+Аккаунт, регистрация, аналитика и трекинг не требуются.
+Если вы вручную добавляете URL GIF, эти файлы запрашиваются напрямую с указанного источника в вашем браузере для отображения анимации.
 
 ## Installation & Setup
 
@@ -71,7 +133,7 @@ Use these if you want to regenerate specific artifacts after a build.
 
 ## Architecture Diagram
 
-Architecture materials in `diagrams/` are up to date for version **2.0.3**.
+Architecture materials in `diagrams/` are up to date for version **2.0.4**.
 
 Project Architecture:
 - **Web Pages** — web pages where the extension works
