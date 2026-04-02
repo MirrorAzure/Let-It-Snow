@@ -98,6 +98,9 @@
   "importSettings": {
     "message": "Import"
   },
+  "transferAllPresets": {
+    "message": "Transfer all presets"
+  },
   "presetsSection": {
     "message": "Presets"
   },
@@ -280,6 +283,9 @@
   },
   "tooltipImportSettings": {
     "message": "Load settings from a JSON file"
+  },
+  "tooltipTransferAllPresets": {
+    "message": "Export and import all presets in a single file"
   },
   "tooltipPresetSelect": {
     "message": "Choose a saved preset"

@@ -444,6 +444,122 @@ describe('popup UI', () => {
     clickSpy.mockRestore();
   });
 
+  it('exports all presets when transfer-all checkbox is enabled', async () => {
+    const createObjectURL = vi.fn(() => 'blob:test-all');
+    const revokeObjectURL = vi.fn();
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: createObjectURL,
+      configurable: true,
+      writable: true
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: revokeObjectURL,
+      configurable: true,
+      writable: true
+    });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    global.chrome = createChromeMock({
+      savedPresets: [
+        {
+          id: 'preset-1',
+          name: 'First',
+          settings: { snowmax: 100, colors: ['#111111'], symbols: ['A'] },
+          updatedAt: Date.now()
+        },
+        {
+          id: 'preset-2',
+          name: 'Second',
+          settings: { snowmax: 120, colors: ['#222222'], symbols: ['B'] },
+          updatedAt: Date.now()
+        }
+      ],
+      activePresetId: 'preset-1'
+    });
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    document.getElementById('transferAllPresets').checked = true;
+    const appendSpy = vi.spyOn(document.body, 'appendChild');
+
+    document.getElementById('exportSettings').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const exportedLink = appendSpy.mock.calls.at(-1)[0];
+    expect(exportedLink.download).toMatch(/^let-it-snow-all-presets-\d{4}-\d{2}-\d{2}\.json$/);
+
+    const exportedBlob = createObjectURL.mock.calls[0][0];
+    const exportedText = await exportedBlob.text();
+    const exportedJson = JSON.parse(exportedText);
+
+    expect(exportedJson.exportScope).toBe('all-presets');
+    expect(Array.isArray(exportedJson.presets)).toBe(true);
+    expect(exportedJson.presets).toHaveLength(2);
+    expect(exportedJson.presets.map((preset) => preset.name)).toEqual(['First', 'Second']);
+
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: originalCreateObjectURL,
+      configurable: true,
+      writable: true
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: originalRevokeObjectURL,
+      configurable: true,
+      writable: true
+    });
+    clickSpy.mockRestore();
+  });
+
+  it('imports all presets from multi-preset JSON payload', async () => {
+    global.chrome = createChromeMock();
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const presetSelect = document.getElementById('presetSelect');
+    const initialPresetCount = presetSelect.options.length;
+
+    const importInput = document.getElementById('importSettingsInput');
+    const importedFile = new File(
+      [JSON.stringify({
+        exportScope: 'all-presets',
+        presets: [
+          { name: 'Pack One', settings: { snowmax: 130, colors: ['#123456'], symbols: ['1'] } },
+          { name: 'Pack Two', settings: { snowmax: 140, colors: ['#654321'], symbols: ['2'] } }
+        ]
+      })],
+      'imported-preset-pack.json',
+      { type: 'application/json' }
+    );
+
+    Object.defineProperty(importInput, 'files', {
+      value: [importedFile],
+      configurable: true
+    });
+
+    importInput.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(presetSelect.options).toHaveLength(initialPresetCount + 2);
+    const optionNames = Array.from(presetSelect.options).map((option) => option.textContent);
+    expect(optionNames).toContain('Pack One');
+    expect(optionNames).toContain('Pack Two');
+
+    const presetsCall = global.chrome.storage.sync.set.mock.calls.findLast(
+      (call) => Array.isArray(call[0].savedPresets)
+    );
+    expect(presetsCall).toBeDefined();
+    const savedNames = presetsCall[0].savedPresets.map((preset) => preset.name);
+    expect(savedNames).toContain('Pack One');
+    expect(savedNames).toContain('Pack Two');
+  });
+
   it('restores built-in templates and overwrites existing presets by name', async () => {
     global.chrome = createChromeMock({
       savedPresets: [

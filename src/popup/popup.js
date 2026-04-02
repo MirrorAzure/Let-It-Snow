@@ -143,6 +143,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     exportSettings: document.getElementById('exportSettings'),
     importSettings: document.getElementById('importSettings'),
     importSettingsInput: document.getElementById('importSettingsInput'),
+    transferAllPresets: document.getElementById('transferAllPresets'),
     autoStart: document.getElementById('autoStart'),
     gifsList: document.getElementById('gifsList'),
     addGif: document.getElementById('addGif'),
@@ -513,6 +514,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       name: getPresetDisplayName(parsed.name || parsed.presetName || stripFileExtension(fileName)),
       settings: normalizePresetSettings(parsed)
     };
+  };
+
+  const extractImportedPresets = (parsed, fileName = '') => {
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.presets)) {
+      return parsed.presets
+        .map((item, index) => {
+          try {
+            return extractImportedPreset(item, `${stripFileExtension(fileName)}-${index + 1}`);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
+    }
+
+    return [extractImportedPreset(parsed, fileName)];
   };
 
   let presets = [];
@@ -938,24 +955,39 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Экспорт настроек в JSON
   elements.exportSettings.addEventListener('click', async () => {
     const payload = await saveAllSettings();
+    const transferAllPresets = Boolean(elements.transferAllPresets?.checked);
     const activePreset = findPresetById(activePresetId);
     const presetName = getPresetDisplayName(
       activePreset?.name || elements.presetNameInput.value,
       presets.indexOf(activePreset) + 1
     );
-    const exportData = {
-      name: presetName,
-      presetName,
-      exportedAt: new Date().toISOString(),
-      settings: normalizeSettings(payload)
-    };
+    const exportData = transferAllPresets
+      ? {
+          exportScope: 'all-presets',
+          exportedAt: new Date().toISOString(),
+          activePresetId,
+          presets: presets.map((preset, index) => ({
+            name: getPresetDisplayName(preset.name, index + 1),
+            settings: normalizePresetSettings(preset.settings)
+          }))
+        }
+      : {
+          exportScope: 'single-preset',
+          name: presetName,
+          presetName,
+          exportedAt: new Date().toISOString(),
+          settings: activePreset
+            ? normalizePresetSettings(activePreset.settings)
+            : normalizePresetSettings(payload)
+        };
     const data = JSON.stringify(exportData, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     const date = new Date().toISOString().slice(0, 10);
     link.href = url;
-    link.download = `let-it-snow-${sanitizeFilenamePart(presetName)}-${date}.json`;
+    const fileNamePart = transferAllPresets ? 'all-presets' : sanitizeFilenamePart(presetName);
+    link.download = `let-it-snow-${fileNamePart}-${date}.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -977,16 +1009,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
-      const importedPreset = extractImportedPreset(parsed, file.name);
-      const preset = createPresetObject(
-        getPresetDisplayName(importedPreset.name, presets.length + 1),
-        importedPreset.settings
-      );
+      const importedPresets = extractImportedPresets(parsed, file.name);
+      if (importedPresets.length === 0) {
+        throw new Error('invalid_settings');
+      }
 
-      presets.push(preset);
-      activePresetId = preset.id;
+      const createdPresets = importedPresets.map((importedPreset, index) => {
+        return createPresetObject(
+          getPresetDisplayName(importedPreset.name, presets.length + index + 1),
+          importedPreset.settings
+        );
+      });
+
+      presets.push(...createdPresets);
+      activePresetId = createdPresets[createdPresets.length - 1].id;
       refreshPresetSelect();
-      applySettingsToUI(preset.settings, { preservePopupWidth: true });
+      applySettingsToUI(createdPresets[createdPresets.length - 1].settings, { preservePopupWidth: true });
       await saveAllSettings(false);
       await persistPresets();
     } catch (error) {
