@@ -4,7 +4,6 @@
 
 const DEFAULT_MIN_SIZE_PERCENT = 2.0;
 const DEFAULT_MAX_SIZE_PERCENT = 4.0;
-const LEGACY_PIXEL_THRESHOLD = 6;
 const MIN_PERCENT = 2;
 const MAX_PERCENT = 10;
 const MIN_PERCENT_GAP = 0.1;
@@ -60,7 +59,8 @@ function toPercentValue(value, fallbackPercent, baseSize) {
     return fallbackPercent;
   }
 
-  const asPercent = numeric > LEGACY_PIXEL_THRESHOLD
+  // Values above the current percent ceiling are treated as legacy pixel inputs.
+  const asPercent = numeric > MAX_PERCENT
     ? (numeric / baseSize) * 100
     : numeric;
 
@@ -70,15 +70,17 @@ function toPercentValue(value, fallbackPercent, baseSize) {
 export function normalizeGlyphSizePercentRange(rawMin, rawMax, viewportBaseSize = getViewportBaseSize()) {
   const minPercent = toPercentValue(rawMin, DEFAULT_MIN_SIZE_PERCENT, viewportBaseSize);
   const maxPercent = toPercentValue(rawMax, DEFAULT_MAX_SIZE_PERCENT, viewportBaseSize);
+  const clampedMin = clamp(minPercent, MIN_PERCENT, MAX_PERCENT);
 
-  if (maxPercent <= minPercent) {
+  if (maxPercent <= clampedMin) {
+    const nextMax = clampedMin + MIN_PERCENT_GAP;
     return {
-      minPercent,
-      maxPercent: clamp(minPercent + MIN_PERCENT_GAP, minPercent + MIN_PERCENT_GAP, MAX_PERCENT)
+      minPercent: clampedMin,
+      maxPercent: nextMax <= MAX_PERCENT ? nextMax : clampedMin
     };
   }
 
-  return { minPercent, maxPercent };
+  return { minPercent: clampedMin, maxPercent };
 }
 
 export function resolveGlyphSizeRangePx(config = {}) {

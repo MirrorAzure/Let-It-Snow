@@ -138,6 +138,55 @@ body.theme-light .background-layer { opacity: 0.12; }
 .pill button { border: none; background: transparent; color: inherit; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
 .pill button:hover { background: rgba(255, 255, 255, 0.15); }
 
+.size-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.size-preview-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.size-preview-flake {
+  line-height: 1;
+  min-width: 28px;
+  text-align: center;
+}
+
+.size-preview-meta {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.size-preview-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.glyph-chip {
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  cursor: pointer;
+  min-width: 34px;
+}
+
+.glyph-chip.active {
+  background: rgba(34, 211, 238, 0.22);
+  border-color: rgba(34, 211, 238, 0.5);
+}
+
 input, textarea {
   width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.25);

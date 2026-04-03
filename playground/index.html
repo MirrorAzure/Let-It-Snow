@@ -78,6 +78,17 @@
         </label>
         <label class="field">
           <span>Current size preview</span>
+          <div class="size-preview" id="size-preview" aria-live="polite">
+            <div class="size-preview-item">
+              <span class="size-preview-flake min" id="size-preview-min-flake">❄</span>
+              <span class="size-preview-meta" id="size-preview-min-meta">~16px</span>
+            </div>
+            <div class="size-preview-item">
+              <span class="size-preview-flake max" id="size-preview-max-flake">❄</span>
+              <span class="size-preview-meta" id="size-preview-max-meta">~43px</span>
+            </div>
+            <div class="size-preview-picker" id="size-preview-glyph-picker" role="group" aria-label="Preview glyph picker"></div>
+          </div>
           <small id="size-preview-text">Approx: 16px - 43px</small>
         </label>
         <label class="field list-field">

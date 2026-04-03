@@ -2,6 +2,7 @@ const target = 'let-it-snow-playground';
 
 // Import content script with hot reload support
 import { startSnow, stopSnow } from './content-script.js';
+import { normalizeGlyphSizePercentRange } from '../src/content/utils/size-utils.js';
 
 // HMR support indicator
 if (import.meta.hot) {
@@ -44,7 +45,13 @@ const els = {
   windGustFrequency: document.getElementById('windGustFrequency'),
   rendererAuto: document.getElementById('renderer-auto'),
   rendererWebgpu: document.getElementById('renderer-webgpu'),
-  renderer2d: document.getElementById('renderer-2d')
+  renderer2d: document.getElementById('renderer-2d'),
+  sizePreviewText: document.getElementById('size-preview-text'),
+  sizePreviewMinFlake: document.getElementById('size-preview-min-flake'),
+  sizePreviewMaxFlake: document.getElementById('size-preview-max-flake'),
+  sizePreviewMinMeta: document.getElementById('size-preview-min-meta'),
+  sizePreviewMaxMeta: document.getElementById('size-preview-max-meta'),
+  sizePreviewGlyphPicker: document.getElementById('size-preview-glyph-picker')
 };
 
 const defaults = {
@@ -79,10 +86,10 @@ const state = {
   rendererMode: defaults.rendererMode
 };
 
-const LEGACY_PIXEL_THRESHOLD = 6;
 const SIZE_PERCENT_MIN = Number(els.snowminsize.min) || 2;
 const SIZE_PERCENT_MAX = Number(els.snowmaxsize.max) || 10;
 const SIZE_PERCENT_STEP = Number(els.snowminsize.step) || 0.1;
+const GLYPH_VISUAL_SCALE = 0.84;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const getViewportBaseSize = () => {
@@ -97,36 +104,77 @@ const formatPercent = (value) => {
 
 function normalizeSizePercentRange(rawMin, rawMax) {
   const viewportBase = getViewportBaseSize();
-  const toPercent = (value, fallback) => {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return fallback;
-    const converted = numeric > LEGACY_PIXEL_THRESHOLD
-      ? (numeric / viewportBase) * 100
-      : numeric;
-    return clamp(converted, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX);
-  };
-
-  const minPercent = toPercent(rawMin, defaults.snowminsize);
-  const maxPercent = toPercent(rawMax, defaults.snowmaxsize);
+  const normalized = normalizeGlyphSizePercentRange(rawMin, rawMax, viewportBase);
+  let minPercent = clamp(normalized.minPercent, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX);
+  let maxPercent = clamp(normalized.maxPercent, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX);
 
   if (maxPercent <= minPercent) {
-    return {
-      minPercent,
-      maxPercent: clamp(minPercent + SIZE_PERCENT_STEP, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX)
-    };
+    maxPercent = clamp(minPercent + SIZE_PERCENT_STEP, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX);
+    if (maxPercent <= minPercent) {
+      minPercent = clamp(maxPercent - SIZE_PERCENT_STEP, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX - SIZE_PERCENT_STEP);
+    }
   }
 
   return { minPercent, maxPercent };
 }
 
+let previewGlyph = defaults.symbols[0] || '❄';
+
+function refreshGlyphPicker() {
+  if (!els.sizePreviewGlyphPicker) return;
+
+  const symbols = state.symbols.filter(Boolean);
+  if (symbols.length === 0) {
+    previewGlyph = '❄';
+  } else if (!symbols.includes(previewGlyph)) {
+    previewGlyph = symbols[0];
+  }
+
+  els.sizePreviewGlyphPicker.innerHTML = '';
+  symbols.forEach((symbol) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'glyph-chip' + (symbol === previewGlyph ? ' active' : '');
+    chip.textContent = symbol;
+    chip.addEventListener('click', () => {
+      previewGlyph = symbol;
+      els.sizePreviewGlyphPicker.querySelectorAll('.glyph-chip').forEach((node) => node.classList.remove('active'));
+      chip.classList.add('active');
+      updateSizePreview();
+    });
+    els.sizePreviewGlyphPicker.appendChild(chip);
+  });
+}
+
 function updateSizePreview() {
-  const preview = document.getElementById('size-preview-text');
-  if (!preview) return;
+  if (!els.sizePreviewText) return;
   const { minPercent, maxPercent } = normalizeSizePercentRange(els.snowminsize.value, els.snowmaxsize.value);
   const viewportBase = getViewportBaseSize();
-  const minPx = Math.max(1, Math.round((minPercent / 100) * viewportBase));
-  const maxPx = Math.max(1, Math.round((maxPercent / 100) * viewportBase));
-  preview.textContent = `Approx: ${minPx}px - ${maxPx}px (${formatPercent(minPercent)}% - ${formatPercent(maxPercent)}%)`;
+  const minPx = Math.max(0.1, (minPercent / 100) * viewportBase);
+  const maxPx = Math.max(0.1, (maxPercent / 100) * viewportBase);
+  const minGlyphPx = Math.max(0.1, minPx * GLYPH_VISUAL_SCALE);
+  const maxGlyphPx = Math.max(0.1, maxPx * GLYPH_VISUAL_SCALE);
+  const formatPx = (value) => {
+    const rounded = Math.round(value * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  };
+
+  if (els.sizePreviewMinFlake) {
+    els.sizePreviewMinFlake.textContent = previewGlyph;
+    els.sizePreviewMinFlake.style.fontSize = `${minGlyphPx.toFixed(2)}px`;
+  }
+  if (els.sizePreviewMaxFlake) {
+    els.sizePreviewMaxFlake.textContent = previewGlyph;
+    els.sizePreviewMaxFlake.style.fontSize = `${maxGlyphPx.toFixed(2)}px`;
+  }
+  if (els.sizePreviewMinMeta) {
+    els.sizePreviewMinMeta.textContent = `~${formatPx(minGlyphPx)}px`;
+  }
+  if (els.sizePreviewMaxMeta) {
+    els.sizePreviewMaxMeta.textContent = `~${formatPx(maxGlyphPx)}px`;
+  }
+
+  els.sizePreviewText.textContent = `Approx: ${formatPx(minPx)}px - ${formatPx(maxPx)}px (${formatPercent(minPercent)}% - ${formatPercent(maxPercent)}%)`;
 }
 
 function setStatus(mode, text) {
@@ -194,6 +242,8 @@ function renderSymbols() {
       }
     }
   });
+  refreshGlyphPicker();
+  updateSizePreview();
 }
 
 function renderSentences() {
@@ -299,6 +349,7 @@ function resetForm() {
   state.rendererMode = defaults.rendererMode;
   state.windEnabled = defaults.windEnabled;
   state.windDirection = defaults.windDirection;
+  previewGlyph = defaults.symbols[0] || '❄';
   updateWindButtons();
   updateRendererButtons();
   renderColors();
@@ -393,20 +444,16 @@ els.sentenceInput.addEventListener('keydown', (e) => {
 });
 
 els.snowminsize.addEventListener('input', () => {
-  const minValue = Number(els.snowminsize.value);
-  const maxValue = Number(els.snowmaxsize.value);
-  if (minValue >= maxValue) {
-    els.snowmaxsize.value = clamp(minValue + SIZE_PERCENT_STEP, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX).toFixed(1);
-  }
+  const { minPercent, maxPercent } = normalizeSizePercentRange(els.snowminsize.value, els.snowmaxsize.value);
+  els.snowminsize.value = minPercent.toFixed(1);
+  els.snowmaxsize.value = maxPercent.toFixed(1);
   updateSizePreview();
 });
 
 els.snowmaxsize.addEventListener('input', () => {
-  const minValue = Number(els.snowminsize.value);
-  const maxValue = Number(els.snowmaxsize.value);
-  if (maxValue <= minValue) {
-    els.snowminsize.value = clamp(maxValue - SIZE_PERCENT_STEP, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX - SIZE_PERCENT_STEP).toFixed(1);
-  }
+  const { minPercent, maxPercent } = normalizeSizePercentRange(els.snowminsize.value, els.snowmaxsize.value);
+  els.snowminsize.value = minPercent.toFixed(1);
+  els.snowmaxsize.value = maxPercent.toFixed(1);
   updateSizePreview();
 });
 
@@ -456,6 +503,7 @@ window.addEventListener('message', (event) => {
 resetForm();
 setTheme('dark');
 updateRendererButtons();
+refreshGlyphPicker();
 updateSizePreview();
 
 // Initialize - playground uses direct source import

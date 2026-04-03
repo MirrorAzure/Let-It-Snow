@@ -147,7 +147,8 @@ if (!window.chrome.scripting) {
 import '../src/popup/popup.css';
 import { t, applyLocalization } from '../src/popup/localization.js';
 import '../src/popup/settings.js';
-import '../src/popup/ui-controllers.js';
+import { getSymbolFontStack } from '../src/popup/ui-controllers.js';
+import { normalizeGlyphSizePercentRange } from '../src/content/utils/size-utils.js';
 import '../src/popup/popup.js'; // Импортируем для побочных эффектов (но инициализация пропустится)
 
 // Функция загрузки popup HTML из src
@@ -292,7 +293,9 @@ async function initPlayground() {
   const sizePreviewMaxFlake = document.getElementById('sizePreviewMaxFlake');
   const sizePreviewMinMeta = document.getElementById('sizePreviewMinMeta');
   const sizePreviewMaxMeta = document.getElementById('sizePreviewMaxMeta');
+  const sizePreviewGlyphPicker = document.getElementById('sizePreviewGlyphPicker');
 
+  const GLYPH_VISUAL_SCALE = 0.84;
   const SIZE_PERCENT_STEP = 0.1;
   const SIZE_PERCENT_MIN = Number(snowMinSize?.min) || 2;
   const SIZE_PERCENT_MAX = Number(snowMaxSize?.max) || 10;
@@ -307,21 +310,89 @@ async function initPlayground() {
     const height = Number(window?.screen?.height) || window.innerHeight || 1080;
     return Math.max(1, Math.min(width, height));
   };
+
+  const getSymbolsFromPool = () => {
+    if (!symbolsList) return [{ symbol: '❄', mode: 'text' }];
+    const items = Array.from(symbolsList.querySelectorAll('.item'));
+    const seen = new Set();
+    const entries = [];
+
+    for (const item of items) {
+      const input = item.querySelector('input[type="text"]');
+      if (!input) continue;
+      const symbol = String(input.value || '').trim();
+      if (!symbol || seen.has(symbol)) continue;
+      seen.add(symbol);
+      entries.push({ symbol, mode: 'text' });
+    }
+
+    return entries.length > 0 ? entries : [{ symbol: '❄', mode: 'text' }];
+  };
+
+  let previewGlyph = { symbol: '❄', mode: 'text' };
+
   const updateSizePreview = () => {
     if (!snowMinSize || !snowMaxSize) return;
 
-    const minPercent = Number(snowMinSize.value);
-    const maxPercent = Number(snowMaxSize.value);
+    const minPercent = Number(snowMinSize.value) || SIZE_PERCENT_MIN;
+    const maxPercent = Number(snowMaxSize.value) || (SIZE_PERCENT_MIN + SIZE_PERCENT_STEP);
     const viewportBase = getPreviewViewportBase();
-    const minPx = Math.max(1, Math.round((minPercent / 100) * viewportBase));
-    const maxPx = Math.max(1, Math.round((maxPercent / 100) * viewportBase));
+    const minPx = Math.max(0.1, (minPercent / 100) * viewportBase);
+    const maxPx = Math.max(0.1, (maxPercent / 100) * viewportBase);
+    const minGlyphPx = Math.max(0.1, minPx * GLYPH_VISUAL_SCALE);
+    const maxGlyphPx = Math.max(0.1, maxPx * GLYPH_VISUAL_SCALE);
+    const glyph = previewGlyph.symbol;
+    const fontFamily = getSymbolFontStack(previewGlyph.mode);
+    const formatPx = (value) => {
+      const rounded = Math.round(value * 10) / 10;
+      return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+    };
 
     if (minSizeValue) minSizeValue.textContent = formatPercent(minPercent);
     if (maxSizeValue) maxSizeValue.textContent = formatPercent(maxPercent);
-    if (sizePreviewMinFlake) sizePreviewMinFlake.style.fontSize = `${clamp(minPx, 12, 44)}px`;
-    if (sizePreviewMaxFlake) sizePreviewMaxFlake.style.fontSize = `${clamp(maxPx, 16, 56)}px`;
-    if (sizePreviewMinMeta) sizePreviewMinMeta.textContent = `~${minPx}px`;
-    if (sizePreviewMaxMeta) sizePreviewMaxMeta.textContent = `~${maxPx}px`;
+
+    if (sizePreviewMinFlake) {
+      sizePreviewMinFlake.style.fontSize = `${minGlyphPx.toFixed(2)}px`;
+      sizePreviewMinFlake.style.fontFamily = fontFamily;
+      sizePreviewMinFlake.textContent = glyph;
+    }
+    if (sizePreviewMaxFlake) {
+      sizePreviewMaxFlake.style.fontSize = `${maxGlyphPx.toFixed(2)}px`;
+      sizePreviewMaxFlake.style.fontFamily = fontFamily;
+      sizePreviewMaxFlake.textContent = glyph;
+    }
+    if (sizePreviewMinMeta) sizePreviewMinMeta.textContent = `~${formatPx(minGlyphPx)}px`;
+    if (sizePreviewMaxMeta) sizePreviewMaxMeta.textContent = `~${formatPx(maxGlyphPx)}px`;
+  };
+
+  const refreshGlyphPicker = () => {
+    if (!sizePreviewGlyphPicker) {
+      updateSizePreview();
+      return;
+    }
+
+    const entries = getSymbolsFromPool();
+    if (!entries.some((entry) => entry.symbol === previewGlyph.symbol)) {
+      previewGlyph = entries[0];
+    }
+
+    sizePreviewGlyphPicker.innerHTML = '';
+    entries.forEach((entry) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'glyph-chip' + (entry.symbol === previewGlyph.symbol ? ' active' : '');
+      chip.textContent = entry.symbol;
+      chip.style.fontFamily = getSymbolFontStack(entry.mode);
+      chip.addEventListener('click', () => {
+        previewGlyph = entry;
+        sizePreviewGlyphPicker.querySelectorAll('.glyph-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        updateSizePreview();
+      });
+      sizePreviewGlyphPicker.appendChild(chip);
+    });
+
+    updateSizePreview();
   };
 
   // Обработчики для слайдеров
@@ -351,24 +422,49 @@ async function initPlayground() {
 
   if (snowMinSize && snowMaxSize) {
     snowMinSize.addEventListener('input', () => {
-      const minValue = Number(snowMinSize.value);
-      const maxValue = Number(snowMaxSize.value);
-      if (minValue >= maxValue) {
-        snowMaxSize.value = clamp(minValue + SIZE_PERCENT_STEP, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX).toFixed(1);
+      const { minPercent, maxPercent } = normalizeGlyphSizePercentRange(
+        Number(snowMinSize.value),
+        Number(snowMaxSize.value),
+        getPreviewViewportBase()
+      );
+
+      let nextMin = clamp(minPercent, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX);
+      let nextMax = clamp(maxPercent, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX);
+
+      if (nextMax <= nextMin) {
+        nextMax = clamp(nextMin + SIZE_PERCENT_STEP, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX);
+        if (nextMax <= nextMin) {
+          nextMin = clamp(nextMax - SIZE_PERCENT_STEP, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX - SIZE_PERCENT_STEP);
+        }
       }
+
+      snowMinSize.value = nextMin.toFixed(1);
+      snowMaxSize.value = nextMax.toFixed(1);
       updateSizePreview();
     });
 
     snowMaxSize.addEventListener('input', () => {
-      const minValue = Number(snowMinSize.value);
-      const maxValue = Number(snowMaxSize.value);
-      if (maxValue <= minValue) {
-        snowMinSize.value = clamp(maxValue - SIZE_PERCENT_STEP, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX - SIZE_PERCENT_STEP).toFixed(1);
+      const { minPercent, maxPercent } = normalizeGlyphSizePercentRange(
+        Number(snowMinSize.value),
+        Number(snowMaxSize.value),
+        getPreviewViewportBase()
+      );
+
+      let nextMin = clamp(minPercent, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX);
+      let nextMax = clamp(maxPercent, SIZE_PERCENT_MIN + SIZE_PERCENT_STEP, SIZE_PERCENT_MAX);
+
+      if (nextMax <= nextMin) {
+        nextMin = clamp(nextMax - SIZE_PERCENT_STEP, SIZE_PERCENT_MIN, SIZE_PERCENT_MAX - SIZE_PERCENT_STEP);
       }
+
+      snowMinSize.value = nextMin.toFixed(1);
+      snowMaxSize.value = nextMax.toFixed(1);
       updateSizePreview();
     });
 
-    updateSizePreview();
+    refreshGlyphPicker();
+  } else {
+    refreshGlyphPicker();
   }
 
   // Создание нового элемента цвета
@@ -413,11 +509,13 @@ async function initPlayground() {
     const preview = item.querySelector('.symbol-preview');
     textInput.addEventListener('input', (e) => {
       preview.textContent = e.target.value;
+      refreshGlyphPicker();
     });
     
     item.querySelector('button').addEventListener('click', () => {
       if (symbolsList.children.length > 1) {
         item.remove();
+        refreshGlyphPicker();
       }
     });
     
@@ -538,6 +636,7 @@ async function initPlayground() {
   if (addSymbolBtn) {
     addSymbolBtn.addEventListener('click', () => {
       symbolsList.appendChild(createSymbolItem());
+      refreshGlyphPicker();
     });
   }
 
@@ -582,6 +681,7 @@ async function initPlayground() {
     if (preview) {
       input.addEventListener('input', (e) => {
         preview.textContent = e.target.value;
+        refreshGlyphPicker();
       });
     }
   });
@@ -600,6 +700,7 @@ async function initPlayground() {
   if (toggleSymbolsBtn) {
     toggleSymbolsBtn.addEventListener('click', () => {
       symbolsList.appendChild(createSymbolItem());
+      refreshGlyphPicker();
     });
   }
 
