@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock WebGPU API
 const createMockWebGPU = () => {
+  const pipelineObjects = [];
   const mockDevice = {
     createBuffer: vi.fn((descriptor) => {
       const numFloats = Math.ceil(descriptor.size / 4);
@@ -16,8 +17,12 @@ const createMockWebGPU = () => {
     createShaderModule: vi.fn().mockReturnValue({
       getCompilationInfo: vi.fn().mockResolvedValue({ messages: [] })
     }),
-    createRenderPipeline: vi.fn().mockReturnValue({
-      getBindGroupLayout: vi.fn().mockReturnValue({})
+    createBindGroupLayout: vi.fn().mockReturnValue({}),
+    createPipelineLayout: vi.fn().mockReturnValue({}),
+    createRenderPipeline: vi.fn((descriptor) => {
+      const pipeline = { descriptor };
+      pipelineObjects.push(pipeline);
+      return pipeline;
     }),
     createBindGroup: vi.fn().mockReturnValue({}),
     createTexture: vi.fn().mockReturnValue({
@@ -25,23 +30,24 @@ const createMockWebGPU = () => {
       destroy: vi.fn()
     }),
     createSampler: vi.fn().mockReturnValue({}),
-    createCommandEncoder: vi.fn().mockReturnValue({
-      beginRenderPass: vi.fn().mockReturnValue({
+    createCommandEncoder: vi.fn(() => ({
+      beginRenderPass: vi.fn(() => ({
         setPipeline: vi.fn(),
         setBindGroup: vi.fn(),
         setVertexBuffer: vi.fn(),
         draw: vi.fn(),
         end: vi.fn()
-      }),
+      })),
       finish: vi.fn().mockReturnValue({})
-    }),
+    })),
     queue: {
       writeBuffer: vi.fn(),
       copyExternalImageToTexture: vi.fn(),
       submit: vi.fn()
     },
     lost: new Promise(() => {}),
-    destroy: vi.fn()
+    destroy: vi.fn(),
+    __pipelineObjects: pipelineObjects
   };
 
   return {
@@ -70,6 +76,10 @@ describe('Snow Animation System', () => {
       innerHeight: 1080,
       devicePixelRatio: 1,
       isSecureContext: true,
+      matchMedia: vi.fn().mockReturnValue({
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      }),
       addEventListener: vi.fn(),
       removeEventListener: vi.fn()
     };
@@ -157,6 +167,11 @@ describe('Snow Animation System', () => {
       TEXTURE_BINDING: 4,
       COPY_DST: 8,
       RENDER_ATTACHMENT: 16
+    };
+
+    global.GPUShaderStage = {
+      VERTEX: 1,
+      FRAGMENT: 2
     };
   });
 
@@ -289,8 +304,11 @@ describe('Snow Animation System', () => {
 
       expect(result).toBe(true);
 
-      const pipelineDescriptor = renderer.device.createRenderPipeline.mock.calls[0][0];
-      expect(pipelineDescriptor.fragment.targets[0].blend).toEqual({
+      expect(renderer.device.createRenderPipeline).toHaveBeenCalledTimes(2);
+
+      const glowDescriptor = renderer.device.createRenderPipeline.mock.calls[0][0];
+      const surfaceDescriptor = renderer.device.createRenderPipeline.mock.calls[1][0];
+      const expectedBlend = {
         color: {
           srcFactor: 'one',
           dstFactor: 'one-minus-src-alpha',
@@ -301,7 +319,39 @@ describe('Snow Animation System', () => {
           dstFactor: 'one-minus-src-alpha',
           operation: 'add'
         }
-      });
+      };
+
+      expect(glowDescriptor.vertex.entryPoint).toBe('vsGlow');
+      expect(glowDescriptor.fragment.entryPoint).toBe('fsGlow');
+      expect(glowDescriptor.fragment.targets[0].blend).toEqual(expectedBlend);
+      expect(surfaceDescriptor.vertex.entryPoint).toBe('vsSurface');
+      expect(surfaceDescriptor.fragment.entryPoint).toBe('fsSurface');
+      expect(surfaceDescriptor.fragment.targets[0].blend).toEqual(expectedBlend);
+    });
+
+    it('should render glow and surface in separate passes', async () => {
+      const { WebGPURenderer } = await import('../src/content/webgpu-renderer.js');
+      const canvas = document.createElement('canvas');
+      const config = {
+        snowmax: 10,
+        snowminsize: 10,
+        snowmaxsize: 20,
+        snowcolor: ['#ffffff'],
+        snowletters: ['❄']
+      };
+
+      const renderer = new WebGPURenderer(canvas, config);
+      const result = await renderer.init();
+
+      expect(result).toBe(true);
+
+      renderer.instanceBufferNeedsUpdate = true;
+      renderer.render();
+
+      const renderEncoder = renderer.device.createCommandEncoder.mock.results.at(-1).value;
+      expect(renderEncoder.beginRenderPass).toHaveBeenCalledTimes(2);
+      expect(renderEncoder.beginRenderPass.mock.calls[0][0].colorAttachments[0].loadOp).toBe('clear');
+      expect(renderEncoder.beginRenderPass.mock.calls[1][0].colorAttachments[0].loadOp).toBe('load');
     });
 
     it('should return false if WebGPU unavailable', async () => {
@@ -473,6 +523,34 @@ describe('Snow Animation System', () => {
       expect(activeFlakes.length).toBe(10);
       expect(activeSentences).toBeGreaterThan(0);
       expect(activeGlyphs).toBeGreaterThan(0);
+    });
+
+    it('should render a glow pass in 2D fallback', async () => {
+      const { Fallback2DRenderer } = await import('../src/content/fallback-2d-renderer.js');
+      const canvas = document.createElement('canvas');
+      const config = {
+        snowmax: 1,
+        snowminsize: 10,
+        snowmaxsize: 20,
+        sinkspeed: 1.0,
+        snowcolor: ['#ffffff'],
+        snowletters: ['❄'],
+        minGlowStrength: 0.6
+      };
+
+      const renderer = new Fallback2DRenderer(canvas, config);
+      renderer.init();
+      renderer.flakes[0].isAwaitingRespawn = false;
+      renderer.flakes[0].x = 120;
+      renderer.flakes[0].baseX = 120;
+      renderer.flakes[0].y = 120;
+      renderer.start();
+      renderer.drawCallback(performance.now());
+
+      expect(renderer.ctx.fillText.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(renderer.ctx.globalAlpha).toBe(1);
+
+      renderer.stop();
     });
   });
 

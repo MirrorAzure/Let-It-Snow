@@ -4,6 +4,16 @@
 
 import { parseCssColor, computeLuminance } from './color-utils.js';
 
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function smoothstep(edge0, edge1, value) {
+  if (edge0 === edge1) return value < edge0 ? 0 : 1;
+  const t = clamp01((value - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
+}
+
 /**
  * Получает эффективный цвет фона страницы
  * @returns {{r: number, g: number, b: number, a: number}} RGB цвет фона
@@ -39,12 +49,14 @@ export class BackgroundMonitor {
     this.stop();
 
     // Наблюдаем за изменениями атрибутов class и style
-    const observer = new MutationObserver(this.onBackgroundChange);
-    [document.body, document.documentElement].forEach((el) => {
-      if (!el) return;
-      observer.observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
-    });
-    this.observer = observer;
+    if (typeof MutationObserver === 'function') {
+      const observer = new MutationObserver(this.onBackgroundChange);
+      [document.body, document.documentElement].forEach((el) => {
+        if (!el) return;
+        observer.observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+      });
+      this.observer = observer;
+    }
 
     // Следим за изменением цветовой схемы (светлая/темная)
     if (typeof window !== 'undefined' && window.matchMedia) {
@@ -70,12 +82,16 @@ export class BackgroundMonitor {
 
   /**
    * Вычисляет нужную силу свечения на основе фона
-   * @returns {number} 0 для светлого фона, 1 для темного
+   * @param {number} minStrength - Минимальная сила glow даже на светлом фоне
+   * @param {number} maxStrength - Максимальная сила glow на темном фоне
+   * @returns {number} Сила свечения от minStrength до maxStrength
    */
-  calculateGlowStrength() {
+  calculateGlowStrength(minStrength = 0.42, maxStrength = 1) {
     const bg = getEffectiveBackgroundColor();
     const luminance = computeLuminance(bg);
-    const hasLightBackground = luminance >= 0.9;
-    return hasLightBackground ? 0 : 1;
+    const minValue = clamp01(minStrength);
+    const maxValue = clamp01(Math.max(minValue, maxStrength));
+    const lightnessFactor = smoothstep(0.2, 0.95, luminance);
+    return maxValue + (minValue - maxValue) * lightnessFactor;
   }
 }

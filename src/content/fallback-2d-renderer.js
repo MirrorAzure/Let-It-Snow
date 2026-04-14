@@ -7,6 +7,7 @@ import { stepWindState, createWindVortexField, applyVortexWindImpulse } from './
 import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
 import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
+import { BackgroundMonitor } from './utils/background-monitor.js';
 
 const TEXT_GLYPH_FONT_STACK = '"Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Times New Roman", serif';
 const EMOJI_GLYPH_FONT_STACK = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif';
@@ -58,6 +59,8 @@ export class Fallback2DRenderer {
     this.drawCallback = null;
     this.sentenceQueue = [];
     this.sentenceCursor = 0;
+    this.backgroundMonitor = null;
+    this.glowStrength = Math.max(0, Math.min(1, Number(config.minGlowStrength) || 0.42));
 
     // Адаптивный контроль респауна: если FPS проседает, новые снежинки временно не появляются
     this.fpsSmoothing = 0.15; // Скорость EMA (выше = быстрее реакция)
@@ -330,6 +333,31 @@ export class Fallback2DRenderer {
     flake.sentenceStartY = -totalHeight / 2 + lineHeight / 2;
   }
 
+  _drawGlowText(ctx, drawText, radius, alpha) {
+    const blur = Math.max(1, radius * 1.8);
+    const previousAlpha = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
+    const previousComposite = ctx.globalCompositeOperation || 'source-over';
+    const previousShadowBlur = Number.isFinite(ctx.shadowBlur) ? ctx.shadowBlur : 0;
+    const previousShadowColor = ctx.shadowColor || 'rgba(0, 0, 0, 0)';
+    const previousShadowOffsetX = Number.isFinite(ctx.shadowOffsetX) ? ctx.shadowOffsetX : 0;
+    const previousShadowOffsetY = Number.isFinite(ctx.shadowOffsetY) ? ctx.shadowOffsetY : 0;
+
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    ctx.shadowBlur = blur;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.shadowColor = ctx.fillStyle;
+    drawText(0, 0);
+
+    ctx.shadowBlur = previousShadowBlur;
+    ctx.shadowColor = previousShadowColor;
+    ctx.shadowOffsetX = previousShadowOffsetX;
+    ctx.shadowOffsetY = previousShadowOffsetY;
+    ctx.globalCompositeOperation = previousComposite;
+    ctx.globalAlpha = previousAlpha;
+  }
+
   /**
    * Респаун снежинки в верхней части экрана.
    * @private
@@ -600,8 +628,33 @@ export class Fallback2DRenderer {
     }
 
     this._setupResizeHandler();
+    this.updateGlowState();
+    this.startBackgroundMonitoring();
 
     return true;
+  }
+
+  updateGlowState() {
+    if (!this.backgroundMonitor) return;
+    const configuredMinGlow = Number(this.config?.minGlowStrength);
+    const minGlowStrength = Number.isFinite(configuredMinGlow)
+      ? Math.max(0, Math.min(1, configuredMinGlow))
+      : 0.42;
+    this.glowStrength = this.backgroundMonitor.calculateGlowStrength(minGlowStrength);
+  }
+
+  startBackgroundMonitoring() {
+    this.stopBackgroundMonitoring();
+    this.backgroundMonitor = new BackgroundMonitor(() => this.updateGlowState());
+    this.backgroundMonitor.start();
+    this.updateGlowState();
+  }
+
+  stopBackgroundMonitoring() {
+    if (this.backgroundMonitor) {
+      this.backgroundMonitor.stop();
+      this.backgroundMonitor = null;
+    }
   }
 
   /**
@@ -1040,6 +1093,14 @@ export class Fallback2DRenderer {
       let lastFont = '';
       let lastTextAlign = 'center';
       let lastTextBaseline = 'middle';
+      ctx.globalAlpha = 1;
+
+      const setFillStyle = (fillStyle) => {
+        if (lastFillStyle !== fillStyle) {
+          ctx.fillStyle = fillStyle;
+          lastFillStyle = fillStyle;
+        }
+      };
 
       for (let i = 0; i < flakes.length; i++) {
         const flake = flakes[i];
@@ -1053,10 +1114,6 @@ export class Fallback2DRenderer {
         const x = flake.x * ratio;
         const y = flake.y * ratio;
 
-        if (lastFillStyle !== flake.color) {
-          ctx.fillStyle = flake.color;
-          lastFillStyle = flake.color;
-        }
         // В low quality режиме вращение не обновляется — cumulativeSpin заморожен.
         // Но setTransform всегда выставляет x,y + вращение из cumulativeSpin,
         // чтобы координатное пространство оставалось единым и снежинки не прыгали
@@ -1069,6 +1126,17 @@ export class Fallback2DRenderer {
         const cosR = Math.cos(finalRotation);
         const sinR = Math.sin(finalRotation);
         ctx.setTransform(cosR, sinR, -sinR, cosR, x, y);
+
+        const glowStrength = this.glowStrength;
+        const shouldDrawGlow =
+          glowStrength > 0.02 &&
+          !this.lowQualityMode &&
+          this.currentFpsEstimate > 24;
+        const glowAlpha = Math.min(0.45, 0.14 + glowStrength * 0.22);
+        const glowRadius = Math.min(
+          flake.isSentence ? 6.5 : 5.8,
+          Math.max(1.5, Math.sqrt(Math.max(1, flake.size * ratio)) * (0.4 + glowStrength * 0.55))
+        );
 
         if (flake.isSentence) {
           const sentenceFont = flake.sentenceFont || `bold ${Math.max(10, flake.size * 0.3)}px Arial, sans-serif`;
@@ -1089,6 +1157,18 @@ export class Fallback2DRenderer {
           const lineHeight = flake.sentenceLineHeight || Math.max(10, flake.size * 0.3) * 1.2;
           const startY = flake.sentenceStartY ?? (-lineHeight / 2);
 
+          if (shouldDrawGlow) {
+            setFillStyle(flake.color);
+            for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+              const lineY = startY + lineIdx * lineHeight;
+              const line = lines[lineIdx];
+              this._drawGlowText(ctx, (offsetX, offsetY) => {
+                ctx.fillText(line, offsetX, lineY + offsetY);
+              }, glowRadius, glowAlpha);
+            }
+          }
+
+          setFillStyle(flake.color);
           for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
             const lineY = startY + lineIdx * lineHeight;
             const line = lines[lineIdx];
@@ -1119,6 +1199,14 @@ export class Fallback2DRenderer {
             flake.glyphDrawY = drawY;
           }
 
+          if (shouldDrawGlow) {
+            setFillStyle(flake.color);
+            this._drawGlowText(ctx, (offsetX, offsetY) => {
+              ctx.fillText(flake.char, drawX + offsetX, drawY + offsetY);
+            }, glowRadius, glowAlpha);
+          }
+
+          setFillStyle(flake.color);
           ctx.fillText(flake.char, drawX, drawY);
         }
       }
@@ -1182,6 +1270,7 @@ export class Fallback2DRenderer {
    * Останавливает рендеринг
    */
   stop() {
+    this.stopBackgroundMonitoring();
     if (this.frameRequest) {
       cancelAnimationFrame(this.frameRequest);
       this.frameRequest = null;
@@ -1214,6 +1303,7 @@ export class Fallback2DRenderer {
    * Очистка ресурсов
    */
   cleanup() {
+    this.stopBackgroundMonitoring();
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;

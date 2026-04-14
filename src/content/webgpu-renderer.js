@@ -26,6 +26,10 @@ export class WebGPURenderer {
     this.context = null;
     this.device = null;
     this.pipeline = null;
+    this.surfacePipeline = null;
+    this.glowPipeline = null;
+    this.bindGroupLayout = null;
+    this.pipelineLayout = null;
     this.instances = [];
     this.instanceBuffer = null;
     this.instanceData = null;
@@ -377,63 +381,101 @@ export class WebGPURenderer {
       }
     }
 
-    this.pipeline = this.device.createRenderPipeline({
-      layout: 'auto',
+    const shaderStages = globalThis.GPUShaderStage || { VERTEX: 1, FRAGMENT: 2 };
+    this.bindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: shaderStages.VERTEX | shaderStages.FRAGMENT,
+          buffer: { type: 'uniform' }
+        },
+        {
+          binding: 1,
+          visibility: shaderStages.FRAGMENT,
+          sampler: { type: 'filtering' }
+        },
+        {
+          binding: 2,
+          visibility: shaderStages.FRAGMENT,
+          texture: { sampleType: 'float' }
+        },
+        {
+          binding: 3,
+          visibility: shaderStages.FRAGMENT,
+          sampler: { type: 'filtering' }
+        },
+        {
+          binding: 4,
+          visibility: shaderStages.FRAGMENT,
+          texture: { sampleType: 'float' }
+        }
+      ]
+    });
+    this.pipelineLayout = this.device.createPipelineLayout({
+      bindGroupLayouts: [this.bindGroupLayout]
+    });
+
+    const vertexBuffers = [
+      {
+        arrayStride: 16,
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x2' },
+          { shaderLocation: 1, offset: 8, format: 'float32x2' }
+        ]
+      },
+      {
+        arrayStride: 56,
+        stepMode: 'instance',
+        attributes: [
+          { shaderLocation: 2, offset: 0, format: 'float32x2' },
+          { shaderLocation: 3, offset: 8, format: 'float32' },
+          { shaderLocation: 4, offset: 12, format: 'float32' },
+          { shaderLocation: 5, offset: 16, format: 'float32' },
+          { shaderLocation: 6, offset: 20, format: 'float32' },
+          { shaderLocation: 7, offset: 24, format: 'float32' },
+          { shaderLocation: 8, offset: 28, format: 'float32' },
+          { shaderLocation: 9, offset: 32, format: 'float32' },
+          { shaderLocation: 10, offset: 36, format: 'float32x3' },
+          { shaderLocation: 11, offset: 48, format: 'float32' },
+          { shaderLocation: 12, offset: 52, format: 'float32' }
+        ]
+      }
+    ];
+    const blend = {
+      color: {
+        srcFactor: 'one',
+        dstFactor: 'one-minus-src-alpha',
+        operation: 'add'
+      },
+      alpha: {
+        srcFactor: 'one',
+        dstFactor: 'one-minus-src-alpha',
+        operation: 'add'
+      }
+    };
+    const createPipeline = (vertexEntryPoint, fragmentEntryPoint) => this.device.createRenderPipeline({
+      layout: this.pipelineLayout,
       vertex: {
         module: shaderModule,
-        entryPoint: 'vs',
-        buffers: [
-          // Vertex buffer (квад)
-          {
-            arrayStride: 16,
-            attributes: [
-              { shaderLocation: 0, offset: 0, format: 'float32x2' },
-              { shaderLocation: 1, offset: 8, format: 'float32x2' }
-            ]
-          },
-          // Instance buffer (данные снежинок)
-          {
-            arrayStride: 56,
-            stepMode: 'instance',
-            attributes: [
-              { shaderLocation: 2, offset: 0, format: 'float32x2' },
-              { shaderLocation: 3, offset: 8, format: 'float32' },
-              { shaderLocation: 4, offset: 12, format: 'float32' },
-              { shaderLocation: 5, offset: 16, format: 'float32' },
-              { shaderLocation: 6, offset: 20, format: 'float32' },
-              { shaderLocation: 7, offset: 24, format: 'float32' },
-              { shaderLocation: 8, offset: 28, format: 'float32' },
-              { shaderLocation: 9, offset: 32, format: 'float32' },
-              { shaderLocation: 10, offset: 36, format: 'float32x3' },
-              { shaderLocation: 11, offset: 48, format: 'float32' },
-              { shaderLocation: 12, offset: 52, format: 'float32' }
-            ]
-          }
-        ]
+        entryPoint: vertexEntryPoint,
+        buffers: vertexBuffers
       },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fs',
+        entryPoint: fragmentEntryPoint,
         targets: [
           {
             format,
-            blend: {
-              color: {
-                srcFactor: 'one',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              },
-              alpha: {
-                srcFactor: 'one',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              }
-            }
+            blend
           }
         ]
       },
       primitive: { topology: 'triangle-list' }
     });
+
+    this.glowPipeline = createPipeline('vsGlow', 'fsGlow');
+    this.surfacePipeline = createPipeline('vsSurface', 'fsSurface');
+    this.pipeline = this.surfacePipeline;
   }
 
   /**
@@ -476,7 +518,6 @@ export class WebGPURenderer {
    * Настройка bind группы
    */
   setupBindGroup() {
-    const bindGroupLayout = this.pipeline.getBindGroupLayout(0);
     const entries = [
       {
         binding: 0,
@@ -501,7 +542,7 @@ export class WebGPURenderer {
     ];
 
     this.uniformBindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
+      layout: this.bindGroupLayout,
       entries
     });
   }
@@ -908,7 +949,11 @@ export class WebGPURenderer {
    */
   updateGlowState() {
     if (!this.backgroundMonitor) return;
-    const glowStrength = this.backgroundMonitor.calculateGlowStrength();
+    const configuredMinGlow = Number(this.config?.minGlowStrength);
+    const minGlowStrength = Number.isFinite(configuredMinGlow)
+      ? Math.max(0, Math.min(1, configuredMinGlow))
+      : 0.72;
+    const glowStrength = this.backgroundMonitor.calculateGlowStrength(minGlowStrength);
     this.uniformBufferManager?.setGlowStrength(glowStrength);
   }
 
@@ -1209,10 +1254,11 @@ export class WebGPURenderer {
     }
 
     const encoder = this.device.createCommandEncoder();
-    const pass = encoder.beginRenderPass({
+    const view = this.context.getCurrentTexture().createView();
+    const glowPass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: this.context.getCurrentTexture().createView(),
+          view,
           loadOp: 'clear',
           storeOp: 'store',
           clearValue: { r: 0, g: 0, b: 0, a: 0 }
@@ -1220,12 +1266,29 @@ export class WebGPURenderer {
       ]
     });
 
-    pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, this.uniformBindGroup);
-    pass.setVertexBuffer(0, this.quadBuffer);
-    pass.setVertexBuffer(1, this.instanceBuffer);
-    pass.draw(6, this.instances.length, 0, 0);
-    pass.end();
+    glowPass.setPipeline(this.glowPipeline);
+    glowPass.setBindGroup(0, this.uniformBindGroup);
+    glowPass.setVertexBuffer(0, this.quadBuffer);
+    glowPass.setVertexBuffer(1, this.instanceBuffer);
+    glowPass.draw(6, this.instances.length, 0, 0);
+    glowPass.end();
+
+    const surfacePass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view,
+          loadOp: 'load',
+          storeOp: 'store'
+        }
+      ]
+    });
+
+    surfacePass.setPipeline(this.surfacePipeline);
+    surfacePass.setBindGroup(0, this.uniformBindGroup);
+    surfacePass.setVertexBuffer(0, this.quadBuffer);
+    surfacePass.setVertexBuffer(1, this.instanceBuffer);
+    surfacePass.draw(6, this.instances.length, 0, 0);
+    surfacePass.end();
 
     this.device.queue.submit([encoder.finish()]);
     
@@ -1312,6 +1375,10 @@ export class WebGPURenderer {
     this.device = null;
     this.context = null;
     this.pipeline = null;
+    this.surfacePipeline = null;
+    this.glowPipeline = null;
+    this.bindGroupLayout = null;
+    this.pipelineLayout = null;
     this.instanceBuffer = null;
     this.instanceData = null;
     this.instances = [];
