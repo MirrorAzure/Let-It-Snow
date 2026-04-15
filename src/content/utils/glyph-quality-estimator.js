@@ -302,8 +302,36 @@ export function shouldUseSdfGlyphAtlas({
   glyphs = [],
   targetRenderSize = 24
 } = {}) {
-  const normalizedGlyphs = Array.isArray(glyphs) && glyphs.length > 0 ? glyphs : ['❄'];
-  const analyses = normalizedGlyphs.map((glyph) => analyzeGlyphComplexity(glyph, targetRenderSize));
+  const sourceGlyphs = Array.isArray(glyphs) && glyphs.length > 0 ? glyphs : ['❄'];
+  const normalizedGlyphs = sourceGlyphs
+    .map((entry) => {
+      if (typeof entry === 'string') {
+        const char = String(entry || '').trim();
+        return char ? { char, mode: 'text' } : null;
+      }
+
+      if (entry && typeof entry === 'object') {
+        const char = String(entry.char || entry.symbol || '').trim();
+        if (!char) return null;
+        return {
+          char,
+          mode: entry.mode === 'emoji' || entry.renderMode === 'emoji' ? 'emoji' : 'text'
+        };
+      }
+
+      return null;
+    })
+    .filter(Boolean);
+
+  const sdfCandidates = normalizedGlyphs
+    .filter((entry) => entry.mode !== 'emoji')
+    .map((entry) => entry.char);
+
+  if (sdfCandidates.length === 0) {
+    return false;
+  }
+
+  const analyses = sdfCandidates.map((glyph) => analyzeGlyphComplexity(glyph, targetRenderSize));
 
   return !analyses.some((item) => (
     item.holeCount > 0 ||

@@ -288,6 +288,74 @@ describe('Snow Animation System', () => {
       expect(renderer.device).not.toBeNull();
     });
 
+    it('should keep SDF-enabled glyph atlas when mixed monotone and emoji glyphs are present', async () => {
+      const originalGetContext = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = vi.fn((type) => {
+        if (type === '2d') {
+          return {
+            clearRect: vi.fn(),
+            fillRect: vi.fn(),
+            fillText: vi.fn(),
+            measureText: vi.fn().mockReturnValue({
+              actualBoundingBoxLeft: 0,
+              actualBoundingBoxRight: 2,
+              actualBoundingBoxAscent: 2,
+              actualBoundingBoxDescent: 0,
+              width: 2
+            }),
+            save: vi.fn(),
+            restore: vi.fn(),
+            translate: vi.fn(),
+            rotate: vi.fn(),
+            setTransform: vi.fn(),
+            resetTransform: vi.fn(),
+            getImageData: vi.fn((x, y, width, height) => {
+              if (width === 4 && height === 2) {
+                return {
+                  data: new Uint8ClampedArray([
+                    255, 255, 255, 255,
+                    255, 255, 255, 255,
+                    255, 0, 255, 255,
+                    0, 255, 255, 255,
+                    255, 255, 255, 255,
+                    255, 255, 255, 255,
+                    255, 255, 0, 255,
+                    0, 255, 0, 255
+                  ])
+                };
+              }
+              return {
+                data: new Uint8ClampedArray(width * height * 4).fill(255)
+              };
+            })
+          };
+        }
+        return originalGetContext.call(HTMLCanvasElement.prototype, type);
+      });
+
+      const { AtlasManager } = await import('../src/content/graphics/atlas-manager.js');
+      const mockDevice = {
+        createTexture: vi.fn().mockReturnValue({
+          destroy: vi.fn()
+        }),
+        createSampler: vi.fn().mockReturnValue({}),
+        queue: {
+          copyExternalImageToTexture: vi.fn()
+        }
+      };
+
+      const atlasManager = new AtlasManager(mockDevice, 2);
+      await atlasManager.initialize({
+        snowletters: ['A', '🌸'],
+        snowglyphmodes: ['text', 'emoji'],
+        snowmaxsize: 20,
+        webgpuUseSdfGlyphs: true
+      });
+
+      expect(atlasManager.glyphAtlas.monotoneFlags).toEqual([true, false]);
+      expect(atlasManager.glyphAtlas.isMonotone).toBe(true);
+    });
+
     it('should use premultiplied alpha blending for canvas compositing', async () => {
       const { WebGPURenderer } = await import('../src/content/webgpu-renderer.js');
       const canvas = document.createElement('canvas');

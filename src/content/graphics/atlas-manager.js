@@ -46,15 +46,21 @@ export class AtlasManager {
     const useSdfGlyphs =
       config?.webgpuUseSdfGlyphs !== false &&
       shouldUseSdfGlyphAtlas({
-        glyphs,
+        glyphs: glyphEntries,
         targetRenderSize: Number(config?.snowmaxsize) || this.size
       });
-    const glyphCanvas = useSdfGlyphs && glyphResult.isMonotone
-      ? createSdfGlyphAtlas(glyphResult.canvas, this.size, glyphResult.glyphCount)
+    const hasMonotoneGlyphs = glyphResult.glyphMonotoneFlags.some(Boolean);
+    const glyphCanvas = useSdfGlyphs && hasMonotoneGlyphs
+      ? createSdfGlyphAtlas(
+        glyphResult.canvas,
+        this.size,
+        glyphResult.glyphCount,
+        glyphResult.glyphMonotoneFlags
+      )
       : glyphResult.canvas;
     this.glyphAtlas.count = glyphResult.glyphCount;
     this.glyphAtlas.monotoneFlags = glyphResult.glyphMonotoneFlags;
-    this.glyphAtlas.isMonotone = glyphResult.isMonotone;
+    this.glyphAtlas.isMonotone = useSdfGlyphs && hasMonotoneGlyphs;
     this.glyphAtlas.canvas = glyphCanvas;
     await this._createAtlasTexture(this.glyphAtlas, 'glyph');
 

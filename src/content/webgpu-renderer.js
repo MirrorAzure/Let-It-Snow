@@ -5,7 +5,9 @@
 import shaderSource from './shader.wgsl?raw';
 import { hexToRgb } from './utils/color-utils.js';
 import { BackgroundMonitor } from './utils/background-monitor.js';
+import { createGlyphAtlas, createSentenceAtlas, createSdfGlyphAtlas } from './utils/glyph-utils.js';
 import { estimateGlyphAtlasCellSize } from './utils/glyph-quality-estimator.js';
+import { shouldUseSdfGlyphAtlas } from './utils/glyph-quality-estimator.js';
 import { AtlasManager } from './graphics/atlas-manager.js';
 import { UniformBufferManager } from './graphics/uniform-buffer.js';
 import { SimulationEngine } from './physics/simulation-engine.js';
@@ -684,15 +686,35 @@ export class WebGPURenderer {
     const sentences = hasSentences
       ? this.config.snowsentences
       : null;
+    const glyphModes = Array.isArray(this.config?.snowglyphmodes) ? this.config.snowglyphmodes : [];
+    const glyphEntries = glyphs.map((char, index) => ({
+      char,
+      mode: glyphModes[index] === 'emoji' ? 'emoji' : 'text'
+    }));
 
     // Создаем атлас для глифов
-    const glyphResult = await createGlyphAtlas(glyphs, this.glyphAtlas.size);
+    const glyphResult = await createGlyphAtlas(glyphEntries, this.glyphAtlas.size);
+    const useSdfGlyphs =
+      this.config?.webgpuUseSdfGlyphs !== false &&
+      shouldUseSdfGlyphAtlas({
+        glyphs: glyphEntries,
+        targetRenderSize: Number(this.config?.snowmaxsize) || this.glyphAtlas.size
+      });
+    const hasMonotoneGlyphs = glyphResult.glyphMonotoneFlags.some(Boolean);
+    const glyphCanvas = useSdfGlyphs && hasMonotoneGlyphs
+      ? createSdfGlyphAtlas(
+        glyphResult.canvas,
+        this.glyphAtlas.size,
+        glyphResult.glyphCount,
+        glyphResult.glyphMonotoneFlags
+      )
+      : glyphResult.canvas;
     
     // Обновляем данные атласа глифов
     this.glyphAtlas.count = hasGlyphs || useDefaultGlyph ? glyphResult.glyphCount : 0;
     this.glyphAtlas.monotoneFlags = hasGlyphs || useDefaultGlyph ? glyphResult.glyphMonotoneFlags : [];
-    this.glyphAtlas.isMonotone = hasGlyphs || useDefaultGlyph ? glyphResult.isMonotone : false;
-    this.glyphAtlas.canvas = glyphResult.canvas;
+    this.glyphAtlas.isMonotone = hasGlyphs || useDefaultGlyph ? (useSdfGlyphs && hasMonotoneGlyphs) : false;
+    this.glyphAtlas.canvas = glyphCanvas;
 
     // Создаем текстуру для глифов
     await this._createAtlasTexture(this.glyphAtlas, 'glyph');

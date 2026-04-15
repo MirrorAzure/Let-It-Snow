@@ -258,9 +258,10 @@ function edt2d(featureGrid, width, height) {
  * @param {HTMLCanvasElement} sourceCanvas
  * @param {number} cellSize
  * @param {number} glyphCount
+ * @param {boolean[]} [monotoneFlags]
  * @returns {HTMLCanvasElement}
  */
-export function createSdfGlyphAtlas(sourceCanvas, cellSize, glyphCount) {
+export function createSdfGlyphAtlas(sourceCanvas, cellSize, glyphCount, monotoneFlags = null) {
   if (!sourceCanvas || glyphCount <= 0 || cellSize <= 0) {
     return sourceCanvas;
   }
@@ -297,9 +298,26 @@ export function createSdfGlyphAtlas(sourceCanvas, cellSize, glyphCount) {
   const pixelCount = cellSize * cellSize;
   const insideGrid = new Float32Array(pixelCount);
   const outsideGrid = new Float32Array(pixelCount);
+  const resolvedMonotoneFlags = Array.isArray(monotoneFlags)
+    ? monotoneFlags
+    : new Array(glyphCount).fill(true);
 
   for (let glyphIdx = 0; glyphIdx < glyphCount; glyphIdx += 1) {
     const cellX = glyphIdx * cellSize;
+
+    if (!resolvedMonotoneFlags[glyphIdx]) {
+      for (let y = 0; y < cellSize; y += 1) {
+        const rowOffset = y * sourceCanvas.width;
+        for (let x = 0; x < cellSize; x += 1) {
+          const pixelIndex = (rowOffset + cellX + x) * 4;
+          outData[pixelIndex] = srcData[pixelIndex];
+          outData[pixelIndex + 1] = srcData[pixelIndex + 1];
+          outData[pixelIndex + 2] = srcData[pixelIndex + 2];
+          outData[pixelIndex + 3] = srcData[pixelIndex + 3];
+        }
+      }
+      continue;
+    }
 
     for (let y = 0; y < cellSize; y += 1) {
       const srcRowOffset = y * sourceCanvas.width;

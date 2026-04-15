@@ -40,6 +40,13 @@ struct AtlasSelection {
   isGlyph: bool,
 };
 
+struct GlowProjection {
+  uv: vec2<f32>,
+  surfaceAlpha: f32,
+  sampleAlpha: f32,
+  travel: f32,
+};
+
 fn resolveAtlasSelection(glyph: f32) -> AtlasSelection {
   let totalCount = max(1, i32(uniforms.glyphCount + uniforms.sentenceCount));
   let glyphIdx = clamp(i32(round(glyph)), 0, totalCount - 1);
@@ -112,11 +119,58 @@ fn resolveSurfaceColor(sample: vec4<f32>, surfaceAlpha: f32, color: vec3<f32>, m
 }
 
 fn resolveGlowFlicker(phase: f32) -> f32 {
-  let primary = (sin(phase * 2.8) + 1.0) * 0.5;
-  let secondary = (sin(phase * 5.3 + 1.2) + 1.0) * 0.5;
-  let mixed = primary * 0.72 + secondary * 0.28;
+  let primary = (sin(phase * 3) + 1.0) * 0.5;
+  let secondary = (cos(phase * 5) + 1.0) * 0.5;
+  let mixed = primary * 0.6 + secondary * 0.4;
   let smoothFlicker = smoothstep(0.0, 1.0, mixed);
-  return 0.22 + 1.18 * smoothFlicker;
+  return 0.3 + 1.2 * smoothFlicker;
+}
+
+fn applyGlowProbe(
+  current: GlowProjection,
+  selection: AtlasSelection,
+  probeUv: vec2<f32>,
+  probeTravel: f32,
+  monotone: f32
+) -> GlowProjection {
+  let probeSample = sampleSelectedAtlas(selection, probeUv);
+  let probeSurfaceAlpha = resolveSurfaceAlpha(probeSample, probeUv, selection.isGlyph, monotone);
+  let currentCoverage = max(current.surfaceAlpha, current.sampleAlpha);
+  let probeCoverage = max(probeSurfaceAlpha, probeSample.a);
+  let currentLocked = currentCoverage > 0.08;
+  let probeLocked = probeCoverage > 0.08;
+  let shouldReplace = select(
+    probeCoverage > currentCoverage + 0.001,
+    probeLocked && probeTravel < current.travel,
+    currentLocked
+  );
+
+  var next = current;
+  if (shouldReplace) {
+    next.uv = probeUv;
+    next.surfaceAlpha = probeSurfaceAlpha;
+    next.sampleAlpha = probeSample.a;
+    next.travel = probeTravel;
+  }
+  return next;
+}
+
+fn resolveGlowProjection(selection: AtlasSelection, projectedUv: vec2<f32>, monotone: f32) -> GlowProjection {
+  let projectedSample = sampleSelectedAtlas(selection, projectedUv);
+  let centerUv = vec2<f32>(0.5, 0.5);
+
+  var result: GlowProjection;
+  result.uv = projectedUv;
+  result.surfaceAlpha = resolveSurfaceAlpha(projectedSample, projectedUv, selection.isGlyph, monotone);
+  result.sampleAlpha = projectedSample.a;
+  result.travel = 0.0;
+
+  result = applyGlowProbe(result, selection, mix(projectedUv, centerUv, 0.14), 0.14, monotone);
+  result = applyGlowProbe(result, selection, mix(projectedUv, centerUv, 0.28), 0.28, monotone);
+  result = applyGlowProbe(result, selection, mix(projectedUv, centerUv, 0.44), 0.44, monotone);
+  result = applyGlowProbe(result, selection, mix(projectedUv, centerUv, 0.62), 0.62, monotone);
+  result = applyGlowProbe(result, selection, mix(projectedUv, centerUv, 0.8), 0.8, monotone);
+  return result;
 }
 
 fn buildVertexOutput(
@@ -224,7 +278,7 @@ fn fsGlow(
   let inBounds = uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0;
 
   let projectedSample = sampleSelectedAtlas(selection, projectedUv);
-  let projectedSurfaceAlpha = resolveSurfaceAlpha(projectedSample, projectedUv, selection.isGlyph, monotone);
+  let glowProjection = resolveGlowProjection(selection, projectedUv, monotone);
   let actualSurfaceAlpha = select(
     0.0,
     resolveSurfaceAlpha(projectedSample, projectedUv, selection.isGlyph, monotone),
@@ -232,23 +286,24 @@ fn fsGlow(
   );
 
   let isSdfGlyph = selection.isGlyph && monotone > 0.5 && uniforms.isMonotone > 0.5;
-  let sdfOuterDistance = clamp(0.5 - projectedSample.a, 0.0, 0.5) * 1.35;
-  let alphaOuterDistance = max(0.0, 1.0 - projectedSurfaceAlpha) * 0.35;
+  let supportFade = exp(-9.0 * glowProjection.travel * glowProjection.travel);
+  let sdfOuterDistance = clamp(0.5 - glowProjection.sampleAlpha, 0.0, 0.5) * 1.4 + glowProjection.travel * 0.85;
+  let alphaOuterDistance = max(0.0, 1.0 - glowProjection.surfaceAlpha) * 0.4 + glowProjection.travel * 0.85;
   let contourDistance = select(alphaOuterDistance, sdfOuterDistance, isSdfGlyph);
   let edgeCoverage = select(
-    smoothstep(0.0, 0.06, projectedSurfaceAlpha),
-    exp(-10.0 * contourDistance * contourDistance),
+    smoothstep(0.0, 0.5, glowProjection.surfaceAlpha) * supportFade,
+    exp(-7.0 * contourDistance * contourDistance),
     isSdfGlyph
   );
   let haloSignal = edgeCoverage * exp(-GLOW_FALLOFF * bboxDist * bboxDist);
   let radialDistance = length((uv - vec2<f32>(0.5, 0.5)) * 2.0);
   let roundMask = 1.0 - smoothstep(1.05 + GLOW_PADDING * 0.25, 1.55 + GLOW_PADDING, radialDistance);
   let maxBBoxDist = length(vec2<f32>(GLOW_PADDING, GLOW_PADDING));
-  let borderFade = 1.0 - smoothstep(maxBBoxDist * 0.72, maxBBoxDist * 0.98, bboxDist);
-  let exteriorMask = 1.0 - smoothstep(0.01, 0.16, actualSurfaceAlpha);
+  let borderFade = 1.0 - smoothstep(maxBBoxDist * 0.6, maxBBoxDist * 1.0, bboxDist);
+  let exteriorMask = 1.0 - smoothstep(0.1, 0.4, actualSurfaceAlpha);
   let flicker = resolveGlowFlicker(phase);
   let glowAlpha = clamp(haloSignal * roundMask * borderFade * exteriorMask * uniforms.glowStrength * flicker * GLOW_OPACITY, 0.0, 1.0);
-  let glowTint = clamp(color * 1.4 + vec3<f32>(0.1, 0.1, 0.13), vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(1.0, 1.0, 1.0));
+  let glowTint = clamp(color * 1.5, vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(1.0, 1.0, 1.0));
 
   return vec4<f32>(glowTint * glowAlpha, glowAlpha);
 }
