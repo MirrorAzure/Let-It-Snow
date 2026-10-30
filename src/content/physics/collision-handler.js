@@ -41,21 +41,23 @@ export class CollisionHandler {
     }
   }
 
+  _getCollisionCenterX(flake) {
+    const baseX = flake.baseX ?? flake.x;
+    if (flake.isGrabbed) return baseX;
+
+    const sway = (flake._sinPhase || 0) * 0.35 * (flake.swayLimit ?? 1.0) * (flake.size ?? 20) * 0.5;
+    return baseX + sway;
+  }
+
   _processPair(flakes, i, j, delta) {
     const flakeA = flakes[i];
     const flakeB = flakes[j];
 
-    const baseXA = flakeA.baseX ?? flakeA.x;
-    const baseXB = flakeB.baseX ?? flakeB.x;
+    const centerXA = this._getCollisionCenterX(flakeA);
+    const centerXB = this._getCollisionCenterX(flakeB);
     const dy = flakeB.y - flakeA.y;
 
-    const coarseDx = baseXB - baseXA;
-    if (coarseDx * coarseDx + dy * dy > this.collisionCheckRadiusSq) return;
-
-    const swayFromRotationA = flakeA.isGrabbed ? 0 : (flakeA._sinPhase || 0) * 0.35 * (flakeA.swayLimit ?? 1.0) * (flakeA.size ?? 20) * 0.5;
-    const swayFromRotationB = flakeB.isGrabbed ? 0 : (flakeB._sinPhase || 0) * 0.35 * (flakeB.swayLimit ?? 1.0) * (flakeB.size ?? 20) * 0.5;
-
-    const dx = (baseXB + swayFromRotationB) - (baseXA + swayFromRotationA);
+    const dx = centerXB - centerXA;
     const distSq = dx * dx + dy * dy;
     if (distSq > this.collisionCheckRadiusSq) return;
 
@@ -127,7 +129,7 @@ export class CollisionHandler {
 
     for (let i = 0; i < flakes.length; i++) {
       const flake = flakes[i];
-      this._bucketFlake(grid, i, flake.baseX ?? flake.x, flake.y, invCellSize);
+      this._bucketFlake(grid, i, this._getCollisionCenterX(flake), flake.y, invCellSize);
     }
 
     const neighbors = [

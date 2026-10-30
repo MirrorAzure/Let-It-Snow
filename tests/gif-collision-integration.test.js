@@ -6,14 +6,14 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { GifLayer } from '../src/content/gif-layer.js';
 
 // Mock для fetch
-global.fetch = vi.fn();
-global.URL = {
+vi.stubGlobal('fetch', vi.fn());
+vi.stubGlobal('URL', {
   createObjectURL: vi.fn(() => 'blob:mock-url'),
   revokeObjectURL: vi.fn()
-};
+});
 
 // Mock для document и DOM элементов
-global.document = {
+vi.stubGlobal('document', {
   getElementById: vi.fn(() => null),
   createElement: vi.fn((tag) => {
     const elem = {
@@ -33,23 +33,23 @@ global.document = {
   documentElement: {
     appendChild: vi.fn()
   }
-};
+});
 
 // Mock для window
-global.window = {
+vi.stubGlobal('window', {
   innerWidth: 1024,
   innerHeight: 768,
   devicePixelRatio: 1
-};
+});
 
 // Mock для performance.now
-global.performance = {
+vi.stubGlobal('performance', {
   now: vi.fn(() => Date.now())
-};
+});
 
 // Mock для requestAnimationFrame
-global.requestAnimationFrame = vi.fn((cb) => setTimeout(() => cb(Date.now()), 16));
-global.cancelAnimationFrame = vi.fn();
+vi.stubGlobal('requestAnimationFrame', vi.fn((cb) => setTimeout(() => cb(Date.now()), 16)));
+vi.stubGlobal('cancelAnimationFrame', vi.fn());
 
 describe('GIF Layer - Integration with External Flakes', () => {
   beforeAll(() => {

@@ -3,6 +3,13 @@
  * Используется как WebGPU так и 2D renderers
  */
 
+export function applyMouseRepulsion(flake, dx, dy, influence, mouseForce, delta, verticalBias = 0.35) {
+  const distance = Math.max(Math.hypot(dx, dy), 0.0001);
+  const acceleration = influence * mouseForce * (delta || 0.016);
+  flake.velocityX = (flake.velocityX ?? 0) + (dx / distance) * acceleration;
+  flake.velocityY = (flake.velocityY ?? 0) + (dy / distance) * acceleration * verticalBias;
+}
+
 export class MouseHandler {
   constructor(config = {}) {
     this.mouseX = -1000;
@@ -139,15 +146,7 @@ export class MouseHandler {
       flake.velocityY = (flake.velocityY ?? 0) + mouseDirY * dragForce * delta * 1000;
     } else {
       // Обычное отталкивание при медленном движении
-      const force = activeInfluence * this.mouseForce;
-      const safeDistance = Math.max(distance, 0.0001);
-      const nx = dx / safeDistance;
-      const ny = dy / safeDistance;
-      const verticalBias = ny < 0 ? 0.35 : 1.0;
-      const accel = force * (delta || 0.016);
-      
-      flake.velocityX = (flake.velocityX ?? 0) + nx * accel;
-      flake.velocityY = (flake.velocityY ?? 0) + ny * accel * verticalBias;
+      applyMouseRepulsion(flake, dx, dy, activeInfluence, this.mouseForce, delta, dy < 0 ? 0.35 : 1.0);
     }
     
     // Передаем импульс от движения мыши

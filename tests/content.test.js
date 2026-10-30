@@ -445,4 +445,71 @@ describe('content script snow control', () => {
 
     controller.destroy();
   });
+
+  it('does not start snow when stop arrives during settings initialization', async () => {
+    let resolveStorageGet;
+    global.chrome = {
+      runtime: {
+        onMessage: {
+          addListener: vi.fn()
+        }
+      },
+      storage: {
+        local: {
+          get: vi.fn(() => new Promise((resolve) => {
+            resolveStorageGet = resolve;
+          })),
+          set: vi.fn(async () => {}),
+          remove: vi.fn(async () => {})
+        },
+        sync: {
+          get: vi.fn(async () => ({ autoStart: false }))
+        }
+      }
+    };
+
+    const { startSnow, stopSnow } = await import('../src/content/index.js');
+    const startPromise = startSnow({ snowmax: 10 });
+    stopSnow();
+    resolveStorageGet({});
+    await startPromise;
+
+    expect(document.getElementById('let-it-snow-webgpu-canvas')).toBeNull();
+  });
+
+  it('does not let delayed auto-start replace an explicit start', async () => {
+    let resolveAutoStartSettings;
+    const requestFrame = vi.fn(() => 1);
+    vi.stubGlobal('requestAnimationFrame', requestFrame);
+    global.chrome = {
+      runtime: {
+        onMessage: {
+          addListener: vi.fn()
+        }
+      },
+      storage: {
+        local: {
+          get: vi.fn(async () => ({})),
+          set: vi.fn(async () => {}),
+          remove: vi.fn(async () => {})
+        },
+        sync: {
+          get: vi.fn(() => new Promise((resolve) => {
+            resolveAutoStartSettings = resolve;
+          }))
+        }
+      }
+    };
+
+    const { startSnow, stopSnow } = await import('../src/content/index.js');
+    await startSnow({ snowmax: 10 });
+    const framesAfterExplicitStart = requestFrame.mock.calls.length;
+    resolveAutoStartSettings({ autoStart: true, snowmax: 80 });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(requestFrame).toHaveBeenCalledTimes(framesAfterExplicitStart);
+
+    stopSnow();
+  });
 });

@@ -2,7 +2,7 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, '..');
@@ -14,7 +14,7 @@ const srcDir = path.join(rootDir, 'src');
 function createZip(sourceDir, outputPath) {
   return new Promise((resolve, reject) => {
     const output = fs.createWriteStream(outputPath);
-    const archive = archiver('zip', { zlib: { level: 9 } });
+    const archive = new ZipArchive({ zlib: { level: 9 } });
 
     output.on('close', () => resolve());
     archive.on('error', (err) => reject(err));
@@ -41,19 +41,9 @@ try {
     fs.rmSync(distDir, { recursive: true, force: true });
   }
 
-  // Создаем manifest для каждого браузера и собираем
+  // Собираем каждый браузер с соответствующим manifest из vite.config.js.
   for (const browser of browsers) {
     console.log(`📦 Собираем для ${browser.toUpperCase()}...`);
-
-    // Копируем нужный манифест
-    const manifestPath = path.join(srcDir, 'manifest.json');
-    const browserManifestPath = path.join(srcDir, 'manifests', `manifest.${browser}.json`);
-
-    if (fs.existsSync(browserManifestPath)) {
-      const manifest = fs.readFileSync(browserManifestPath, 'utf-8');
-      fs.writeFileSync(manifestPath, manifest);
-      console.log(`   ✓ Использован manifest для ${browser}`);
-    }
 
     // Запускаем vite build для конкретного браузера
     try {
@@ -77,12 +67,6 @@ try {
       throw error;
     }
   }
-
-  // Восстанавливаем оригинальный manifest (для Chrome по умолчанию)
-  const originalManifestPath = path.join(srcDir, 'manifests', 'manifest.chrome.json');
-  const originalManifest = fs.readFileSync(originalManifestPath, 'utf-8');
-  fs.writeFileSync(path.join(srcDir, 'manifest.json'), originalManifest);
-  console.log('\n✓ Оригинальный manifest восстановлен\n');
 
   // Упаковываем для Chrome и Edge
   console.log('📦 Упаковываем сборки...');

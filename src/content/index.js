@@ -131,6 +131,8 @@ const clearSnowProgress = async () => {
 
 // Глобальный контроллер
 let controller = null;
+let controllerGeneration = 0;
+let explicitSnowCommandReceived = false;
 
 /**
  * Главный класс управления снегопадом
@@ -156,6 +158,7 @@ class SnowWebGPUController {
     this.mouseRightPressed = false;
     this.mouseInteractionEnabled = true;
     this.windSyncInterval = null;
+    this.isDestroyed = false;
   }
 
   /**
@@ -176,6 +179,10 @@ class SnowWebGPUController {
       // Пытаемся использовать WebGPU, если не получается - fallback в auto-режиме
       const webgpuRenderer = new WebGPURenderer(this.canvas, this.config);
       const webgpuSupported = await webgpuRenderer.init();
+      if (this.isDestroyed) {
+        webgpuRenderer.cleanup?.();
+        return;
+      }
 
       if (webgpuSupported) {
         this.renderer = webgpuRenderer;
@@ -228,6 +235,10 @@ class SnowWebGPUController {
     // GIF запускаем параллельно с инициализацией рендера,
     // чтобы не ждать завершения тяжелого WebGPU init.
     await gifStartPromise;
+    if (this.isDestroyed) {
+      this.stopGifLayer();
+      return;
+    }
 
     // Передаем ссылку на рендерер в GifLayer для коллизий в реальном времени
     if (this.gifLayer && this.renderer) {
@@ -240,7 +251,9 @@ class SnowWebGPUController {
         if (this.renderer && this.gifLayer) {
           const windForce = this.renderer.currentWindForce ?? 0;
           const windLift = this.renderer.currentWindLift ?? 0;
-          this.gifLayer.updateWind?.(windForce, windLift);
+          const windVortex = this.renderer.currentWindVortex ?? 0;
+          const windTime = this.renderer.windTime ?? 0;
+          this.gifLayer.updateWind?.(windForce, windLift, windVortex, windTime);
         }
       }, 100);
     }
@@ -551,6 +564,8 @@ class SnowWebGPUController {
    * Полная очистка и удаление снегопада
    */
   destroy() {
+    this.isDestroyed = true;
+
     if (this.windSyncInterval) {
       clearInterval(this.windSyncInterval);
       this.windSyncInterval = null;
@@ -578,7 +593,9 @@ class SnowWebGPUController {
  * Остановить снегопад
  */
 function stopSnow(options = {}) {
-  const { preserveProgress = false } = options;
+  const { preserveProgress = false, explicit = true } = options;
+  controllerGeneration++;
+  if (explicit) explicitSnowCommandReceived = true;
   if (controller) {
     controller.destroy();
     controller = null;
@@ -594,16 +611,37 @@ function stopSnow(options = {}) {
  * @param {Object} config - Конфигурация снегопада
  */
 async function startSnow(config, options = {}) {
-  const { reuseExistingProgress = true } = options;
+  const { reuseExistingProgress = true, autoStart = false } = options;
+  if (!autoStart) explicitSnowCommandReceived = true;
+  const generation = ++controllerGeneration;
   const initialTimeOffsetSeconds = await resolveInitialOffsetSeconds(reuseExistingProgress);
+  if (generation !== controllerGeneration || (autoStart && explicitSnowCommandReceived)) return;
+
   const runtimeConfig = normalizeSizeConfig({
     ...config,
     initialTimeOffsetSeconds
   });
 
-  stopSnow({ preserveProgress: true });
-  controller = new SnowWebGPUController(runtimeConfig);
-  await controller.start();
+  if (controller) {
+    controller.destroy();
+    controller = null;
+  }
+
+  const nextController = new SnowWebGPUController(runtimeConfig);
+  controller = nextController;
+  try {
+    await nextController.start();
+  } catch (error) {
+    if (controller === nextController) {
+      nextController.destroy();
+      controller = null;
+    }
+    throw error;
+  }
+  if (generation !== controllerGeneration && controller === nextController) {
+    nextController.destroy();
+    controller = null;
+  }
 }
 
 /**
@@ -739,7 +777,9 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
           windStrength: stored.windStrength || 0.5,
           windGustFrequency: stored.windGustFrequency || 3
         };
-        startSnow(config).catch((err) => console.error(err));
+        if (!explicitSnowCommandReceived) {
+          startSnow(config, { autoStart: true }).catch((err) => console.error(err));
+        }
       }
     }
   } catch (err) {

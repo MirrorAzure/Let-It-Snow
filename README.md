@@ -2,7 +2,7 @@
 
 A beautiful customizable snowfall effect extension for any website.
 
-Current version: **2.0.5** (April 2026)
+Current version: **2.0.6**
 
 ## Store Description (v2.0.5)
 
@@ -67,7 +67,7 @@ Let it snow не собирает, не продает и не передает 
 ## Installation & Setup
 
 ### Prerequisites
-- Node.js 16.x or higher
+- Node.js 22.22.2+, 24.15.0+, or 26+
 - pnpm package manager (install with: `npm install -g pnpm`)
 
 ### Installation
@@ -236,7 +236,8 @@ This extension uses Vite with the CRXJS plugin for building Chrome extensions. T
 ## Browser Support
 
 - Chrome/Chromium-based browsers (Manifest V3)
-- Tested on Chrome 90+
+- Firefox (Manifest V3)
+- Canvas 2D fallback for browsers without WebGPU support
 
 ## License
 

@@ -3,6 +3,8 @@
  */
 
 import { CollisionHandler } from './physics/collision-handler.js';
+import { applyMouseRepulsion } from './physics/mouse-handler.js';
+import { createWindVortexField, applyVortexWindImpulse } from './physics/wind-field.js';
 import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
 
 const GIF_LAYER_ID = 'let-it-snow-gif-layer';
@@ -24,6 +26,9 @@ export class GifLayer {
     // Wind state
     this.currentWindForce = 0;
     this.currentWindLift = 0;
+    this.currentWindVortex = 0;
+    this.windTime = 0;
+    this.windVortexSeed = 0;
     // Mouse state
     this.mouseX = -1000;
     this.mouseY = -1000;
@@ -47,6 +52,7 @@ export class GifLayer {
     this._gifFallbackWarnedUrls = new Set();
     this.useBackgroundGifFetch = config.useBackgroundGifFetch !== false;
     this.backgroundGifFetchTimeoutMs = Math.max(500, Number(config.backgroundGifFetchTimeoutMs ?? 2500));
+    this.startGeneration = 0;
   }
 
   _wrapInitialYPosition(y, size, viewportHeight) {
@@ -243,10 +249,15 @@ export class GifLayer {
     const count = Math.max(0, Math.min(this.config.gifCount || 0, 160));
 
     this.stop();
+    const generation = ++this.startGeneration;
 
     if (!urls.length || count === 0) return;
 
     const safeUrls = await this.resolveGifUrls(urls);
+    if (generation !== this.startGeneration) {
+      this.cleanupGifObjectUrls();
+      return;
+    }
     if (!safeUrls.length) return;
 
     const existing = document.getElementById(GIF_LAYER_ID);
@@ -333,6 +344,7 @@ export class GifLayer {
     this.lastTimestamp = timestamp;
     const width = window.innerWidth;
     const height = window.innerHeight;
+    const vortexField = createWindVortexField(width, height, this.windTime);
 
     // Update burst timer
     if (this.mouseBurstTimer > 0) {
@@ -344,7 +356,7 @@ export class GifLayer {
 
     this.flakes.forEach((flake) => {
       // Apply wind force
-      if (this.currentWindForce !== 0 || this.currentWindLift !== 0) {
+      if (this.currentWindForce !== 0 || this.currentWindLift !== 0 || this.currentWindVortex !== 0) {
         const sizeRatio = Math.sqrt(flake.size / 20);
         if (this.currentWindForce !== 0) {
           const windAccel = this.currentWindForce * sizeRatio * 40;
@@ -353,6 +365,10 @@ export class GifLayer {
         if (this.currentWindLift !== 0) {
           const liftAccel = -this.currentWindLift * sizeRatio * 70;
           flake.velocityY += liftAccel * delta;
+        }
+        if (this.currentWindVortex !== 0) {
+          const vortexAccel = this.currentWindVortex * sizeRatio * 420;
+          applyVortexWindImpulse(flake, delta, vortexAccel, vortexField);
         }
       }
 
@@ -400,10 +416,7 @@ export class GifLayer {
           }
         } else {
           // Обычное отталкивание при медленном движении
-          const force = activeInfluence * this.mouseForce * delta;
-          const angle = Math.atan2(dy, dx);
-          flake.velocityX += Math.cos(angle) * force;
-          flake.velocityY += Math.sin(angle) * force;
+          applyMouseRepulsion(flake, dx, dy, activeInfluence, this.mouseForce, delta, dy < 0 ? 0.35 : 1.0);
         }
         
         // Передаем импульс от движения мыши
@@ -461,8 +474,6 @@ export class GifLayer {
         flake.rotationSpeed = 0;
       }
 
-      // Применяем трансформации
-      flake.el.style.transform = `translate3d(${flake.x - flakeHalfSize}px, ${flake.y - flakeHalfSize}px, 0) rotate(${flake.rotation}rad)`;
     });
 
     // Process collisions between ALL flakes (GIF + flakes from main renderer)
@@ -474,6 +485,12 @@ export class GifLayer {
       this.collisionHandler.handleCollisions(allFlakes, delta);
     }
 
+    this.flakes.forEach((flake) => {
+      const halfSize = flake.size * 0.5;
+      flake.el.style.transform = `translate3d(${flake.x - halfSize}px, ${flake.y - halfSize}px, 0) rotate(${flake.rotation}rad)`;
+    });
+
+    this.windTime += delta;
     this.frameRequest = requestAnimationFrame((ts) => this.animate(ts));
   }
 
@@ -499,9 +516,11 @@ export class GifLayer {
   /**
    * Update wind state
    */
-  updateWind(windForce, windLift) {
+  updateWind(windForce, windLift, windVortex = this.currentWindVortex, windTime = this.windTime) {
     this.currentWindForce = windForce;
     this.currentWindLift = windLift;
+    this.currentWindVortex = windVortex;
+    this.windTime = windTime;
   }
 
   /**
@@ -546,6 +565,7 @@ export class GifLayer {
    */
   setMainRenderer(renderer) {
     this.mainRenderer = renderer;
+    this.windVortexSeed = renderer?.windVortexSeed ?? this.windVortexSeed;
   }
 
   /**
@@ -564,6 +584,8 @@ export class GifLayer {
    * Останавливает и удаляет слой
    */
   stop() {
+    this.startGeneration++;
+
     if (this.frameRequest) {
       cancelAnimationFrame(this.frameRequest);
       this.frameRequest = null;

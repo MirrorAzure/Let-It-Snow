@@ -112,7 +112,15 @@ export class SimulationEngine {
         }
       }
 
-      // Запись данных в буфер
+      hasChanges = true;
+    });
+
+    // Обрабатываем коллизии между снежинками
+    if (collisionHandler) {
+      collisionHandler.handleCollisions(this.instances, delta);
+    }
+
+    this.instances.forEach((flake, idx) => {
       const base = idx * strideFloats;
       instanceData[base + 0] = flake.x;
       instanceData[base + 1] = flake.y;
@@ -127,17 +135,8 @@ export class SimulationEngine {
       instanceData[base + 10] = flake.color.g;
       instanceData[base + 11] = flake.color.b;
       instanceData[base + 12] = flake.glyphIndex;
-      
-      const monoFlag = this._getMonotoneFlag(flake.glyphIndex);
-      instanceData[base + 13] = monoFlag;
-      
-      hasChanges = true;
+      instanceData[base + 13] = this._getMonotoneFlag(flake.glyphIndex);
     });
-    
-    // Обрабатываем коллизии между снежинками
-    if (collisionHandler) {
-      collisionHandler.handleCollisions(this.instances, delta);
-    }
     
     return hasChanges;
   }

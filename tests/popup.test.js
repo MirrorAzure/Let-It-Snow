@@ -202,6 +202,43 @@ describe('popup UI', () => {
     });
   });
 
+  it('does not send commands to a tab without a URL', async () => {
+    const chromeMock = createChromeMock();
+    chromeMock.tabs.query.mockResolvedValue([{ id: 1 }]);
+    global.chrome = chromeMock;
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    document.getElementById('startSnow').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(global.chrome.tabs.sendMessage).not.toHaveBeenCalled();
+    expect(global.alert).toHaveBeenCalled();
+  });
+
+  it('injects the built content-script loader when no listener is present', async () => {
+    const chromeMock = createChromeMock();
+    chromeMock.tabs.sendMessage.mockRejectedValueOnce(
+      new Error('Could not establish connection. Receiving end does not exist.')
+    );
+    global.chrome = chromeMock;
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    document.getElementById('startSnow').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(global.chrome.scripting.executeScript).toHaveBeenCalledWith({
+      target: { tabId: 1 },
+      files: ['index.js-loader.js']
+    });
+  });
+
   it('loads and saves mouseRadius setting', async () => {
     global.chrome = createChromeMock({ mouseRadius: 150 });
 

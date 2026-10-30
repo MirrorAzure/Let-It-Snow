@@ -48,6 +48,25 @@ const POPUP_WIDTH_MIN_PX = 320;
 const POPUP_WIDTH_MAX_PX = 520;
 const POPUP_WIDTH_PERCENT_FLOOR = 10;
 const POPUP_WIDTH_PERCENT_CEIL = 90;
+const isRestrictedTab = (tab) => {
+  if (!tab?.id || typeof tab.url !== 'string') return true;
+
+  try {
+    return new Set([
+      'about:',
+      'chrome:',
+      'chrome-extension:',
+      'data:',
+      'devtools:',
+      'edge:',
+      'javascript:',
+      'moz-extension:',
+      'view-source:'
+    ]).has(new URL(tab.url).protocol);
+  } catch {
+    return true;
+  }
+};
 
 /**
  * Инициализация popup при загрузке DOM
@@ -1191,7 +1210,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
       // Проверка на системные страницы Chrome
-      if (!tab?.id || tab.url.startsWith('chrome:')) {
+      if (isRestrictedTab(tab)) {
         clearInterval(blinkInterval);
         elements.startSnow.innerHTML = originalHtml;
         elements.startSnow.disabled = false;
@@ -1220,11 +1239,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       elements.startSnow.style.background = originalBackground;
 
       // Попытка инъекции content script если он не был загружен
-      if (error.message?.includes('Receiving end does not exist')) {
+      if (tab?.id && error.message?.includes('Receiving end does not exist')) {
         try {
           await chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            files: ['content.js']
+            files: ['index.js-loader.js']
           });
           await chrome.tabs.sendMessage(tab.id, { action: 'startSnow', config });
 
@@ -1255,7 +1274,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-      if (!tab?.id || tab.url.startsWith('chrome:')) {
+      if (isRestrictedTab(tab)) {
         alert(t('errorChromePage'));
         return;
       }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MouseHandler } from '../src/content/physics/mouse-handler.js';
+import { MouseHandler, applyMouseRepulsion } from '../src/content/physics/mouse-handler.js';
 
 describe('MouseHandler', () => {
   let mouseHandler;
@@ -14,6 +14,16 @@ describe('MouseHandler', () => {
       mouseDragStrength: 0.8
     };
     mouseHandler = new MouseHandler(config);
+  });
+
+  it('applies mouse repulsion as velocity without teleporting the flake', () => {
+    const flake = { x: 10, y: 0, velocityX: 0, velocityY: 0 };
+
+    applyMouseRepulsion(flake, 10, 0, 1, 300, 0.016);
+
+    expect(flake.x).toBe(10);
+    expect(flake.velocityX).toBeCloseTo(4.8);
+    expect(flake.velocityY).toBe(0);
   });
 
   it('initializes with correct config', () => {

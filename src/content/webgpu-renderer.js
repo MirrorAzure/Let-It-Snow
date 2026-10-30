@@ -12,7 +12,7 @@ import { AtlasManager } from './graphics/atlas-manager.js';
 import { UniformBufferManager } from './graphics/uniform-buffer.js';
 import { SimulationEngine } from './physics/simulation-engine.js';
 import { CollisionHandler } from './physics/collision-handler.js';
-import { MouseHandler } from './physics/mouse-handler.js';
+import { MouseHandler, applyMouseRepulsion } from './physics/mouse-handler.js';
 import { stepWindState, createWindVortexField, applyVortexWindImpulse } from './physics/wind-field.js';
 import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
 import { getStableViewportSize } from './utils/viewport-utils.js';
@@ -1115,10 +1115,7 @@ export class WebGPURenderer {
           }
         } else {
           // Обычное отталкивание при медленном движении
-          const force = activeInfluence * this.mouseForce * delta;
-          const angle = Math.atan2(dy, dx);
-          flake.x += Math.cos(angle) * force;
-          flake.y += Math.sin(angle) * force;
+          applyMouseRepulsion(flake, dx, dy, activeInfluence, this.mouseForce, delta, dy < 0 ? 0.35 : 1.0);
         }
         
         // Передаем импульс от движения мыши

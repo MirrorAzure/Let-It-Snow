@@ -15,6 +15,9 @@ const manifests = [
 ];
 
 describe('manifests', () => {
+  const readManifest = (manifestPath) =>
+    JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+
   it('all manifests exist', () => {
     manifests.forEach((m) => {
       expect(fs.existsSync(m)).toBe(true);
@@ -34,5 +37,15 @@ describe('manifests', () => {
       expect(manifest.manifest_version).toBe(3);
       expect(manifest.default_locale).toBeDefined();
     });
+  });
+
+  it('uses the background script format supported by each browser', () => {
+    const chromeManifest = readManifest(manifests[1]);
+    const firefoxManifest = readManifest(manifests[2]);
+    const edgeManifest = readManifest(manifests[3]);
+
+    expect(chromeManifest.background.service_worker).toBe('src/background.js');
+    expect(firefoxManifest.background.scripts).toEqual(['src/background.js']);
+    expect(edgeManifest.background.service_worker).toBe('src/background.js');
   });
 });

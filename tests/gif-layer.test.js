@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GifLayer } from '../src/content/gif-layer.js';
+import { createWindVortexField } from '../src/content/physics/wind-field.js';
 
 describe('GifLayer', () => {
   const originalRandom = Math.random;
@@ -193,6 +194,62 @@ describe('GifLayer', () => {
 
     // Wind should have affected velocities
     expect(Math.abs(flake.velocityX)).toBeGreaterThan(0);
+
+    gifLayer.stop();
+  });
+
+  it('applies vortex wind to GIF flakes', async () => {
+    const gifLayer = new GifLayer({
+      gifUrls: ['test.gif'],
+      gifCount: 1,
+      snowminsize: 20,
+      snowmaxsize: 20
+    });
+    await gifLayer.start();
+
+    const flake = gifLayer.flakes[0];
+    const field = createWindVortexField(window.innerWidth, window.innerHeight, 0);
+    flake.x = field.centers[0].x + 50;
+    flake.y = field.centers[0].y;
+    flake.velocityX = 0;
+    flake.velocityY = 0;
+    gifLayer.windTime = 0;
+    gifLayer.currentWindVortex = 1;
+    gifLayer.animate(performance.now() + 16);
+
+    expect(Math.abs(flake.velocityY)).toBeGreaterThan(0);
+
+    gifLayer.stop();
+  });
+
+  it('renders GIF positions after collision resolution', async () => {
+    const gifLayer = new GifLayer({
+      gifUrls: ['test.gif'],
+      gifCount: 1,
+      snowminsize: 20,
+      snowmaxsize: 20
+    });
+    await gifLayer.start();
+
+    const flake = gifLayer.flakes[0];
+    flake.x = 200;
+    flake.y = 200;
+    gifLayer.setMainRenderer({
+      flakes: [{
+        x: 210,
+        baseX: 210,
+        y: 200,
+        size: 20,
+        collisionSize: 20,
+        velocityX: 0,
+        velocityY: 0
+      }]
+    });
+    gifLayer.animate(performance.now() + 16);
+
+    expect(flake.el.style.transform).toBe(
+      `translate3d(${flake.x - flake.size * 0.5}px, ${flake.y - flake.size * 0.5}px, 0) rotate(${flake.rotation}rad)`
+    );
 
     gifLayer.stop();
   });

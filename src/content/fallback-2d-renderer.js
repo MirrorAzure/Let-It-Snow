@@ -3,6 +3,7 @@
  */
 
 import { CollisionHandler } from './physics/collision-handler.js';
+import { applyMouseRepulsion } from './physics/mouse-handler.js';
 import { stepWindState, createWindVortexField, applyVortexWindImpulse } from './physics/wind-field.js';
 import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
 import { getStableViewportSize } from './utils/viewport-utils.js';
@@ -954,14 +955,15 @@ export class Fallback2DRenderer {
             }
           } else {
             // Обычное отталкивание при медленном движении
-            const force = activeInfluence * this.mouseForce;
-            const safeDistance = Math.max(distance, 0.0001);
-            const nx = effectiveDx / safeDistance;
-            const ny = effectiveDy / safeDistance;
-            const verticalBias = ny < 0 ? 0.35 : 1.0;
-            const accel = force * delta;
-            flake.velocityX += nx * accel;
-            flake.velocityY += ny * accel * verticalBias;
+            applyMouseRepulsion(
+              flake,
+              effectiveDx,
+              effectiveDy,
+              activeInfluence,
+              this.mouseForce,
+              delta,
+              effectiveDy < 0 ? 0.35 : 1.0
+            );
           }
           
           // Передаем импульс от движения мыши

@@ -429,4 +429,34 @@ describe('CollisionHandler', () => {
     expect(flakes[0].velocityX).not.toBe(10);
     expect(flakes[1].velocityX).not.toBe(-10);
   });
+
+  it('detects collisions when sway brings base positions from non-neighboring cells together', () => {
+    const flakes = [
+      {
+        x: 117,
+        baseX: 117,
+        y: 200,
+        size: 100,
+        collisionSize: 100,
+        _sinPhase: 1,
+        velocityX: 0,
+        velocityY: 0
+      },
+      {
+        x: 235,
+        baseX: 235,
+        y: 200,
+        size: 100,
+        collisionSize: 100,
+        _sinPhase: -1,
+        velocityX: 0,
+        velocityY: 0
+      }
+    ];
+
+    collisionHandler.handleCollisions(flakes, 0.016);
+
+    expect(flakes[0].baseX).toBeLessThan(117);
+    expect(flakes[1].baseX).toBeGreaterThan(235);
+  });
 });
