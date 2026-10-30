@@ -10,36 +10,29 @@ See the [3.0.0 release notes](./CHANGELOG.md).
 
 ### English
 
-Let it snow adds a customizable snowfall effect to any website, with 2D and optional 3D rendering.
+Let it snow adds a festive, customizable snowfall effect to any website.
 
 Create your own winter look:
 - Adjust snowflake count, fall speed, and size range
 - Use custom symbols, long phrases, and multiple colors
 - Add animated GIF flakes from URLs or local files
 - Interact with snow using mouse and touch gestures
-- Switch between WebGPU, Canvas 2D, and optional Three.js WebGL2 3D snow
-- Customize 3D glyphs, colors, rotation, and extrusion thickness
-- Enjoy shape-matched, pulsing glow effects in supported renderers
+- Enjoy automatic WebGPU rendering with a reliable Canvas 2D fallback
+- Enable optional Three.js WebGL2 3D snowfall with perspective and tumbling
+- Customize 3D glyphs, colors, and extrusion thickness
+- See shape-matched glow effects that pulse with the snowflakes
 - Save and switch presets for different moods
 - Import and export settings in JSON
 - Transfer all presets during import/export with one toggle
 - Restore built-in preset templates in one click
-- Try renderer and glow settings in the interactive playground
 - Use the extension in English and Russian
 
 Perfect for holiday vibes, stream styling, demos, and everyday beautiful browsing.
 
 Changes in version 3.0.0 (from 2.0.5):
-- Added optional Three.js WebGL2 3D snowfall with perspective, tumbling, wind, pointer interaction, and 3D collisions
-- Added user-selected text/emoji glyphs, palette colors, and adjustable 3D extrusion thickness
-- Added shape-matched glow effects and pulsing for WebGPU, Canvas 2D, and 3D rendering
-- Expanded the playground with 3D preview, extrusion controls, and renderer/glow comparison
-- Improved renderer, glyph, and physics handling; refreshed the build toolchain
-
-Changes in version 2.0.5 (from 2.0.4):
-- Improved glyph size range normalization with shared 2-10% handling and legacy value conversion
-- Enhanced glyph size preview fidelity to better match renderer output
-- Added tests for glyph size normalization edge cases
+- Added optional 3D snowfall with user-selected glyphs, colors, adjustable depth, perspective, and collisions
+- Added shape-matched pulsing glow effects to WebGPU, Canvas 2D, and 3D rendering
+- Improved renderer stability, glyph handling, and snow physics
 
 Privacy
 Let it snow does not collect, sell, or share personal data.
@@ -49,36 +42,29 @@ If you manually add GIF URLs, these files are requested directly from the specif
 
 ### Русский
 
-Let it snow добавляет на сайты настраиваемый снегопад с обычным и дополнительным 3D-режимом.
+Let it snow добавляет на любой сайт праздничный настраиваемый снегопад.
 
 Создайте свой зимний стиль:
 - Настраивайте количество снежинок, скорость падения и диапазон размеров
 - Используйте собственные символы, длинные фразы и несколько цветов
 - Добавляйте анимированные GIF-снежинки по ссылке или из локальных файлов
 - Взаимодействуйте со снегом мышью и touch-жестами
-- Выбирайте WebGPU, Canvas 2D или дополнительный 3D-рендерер Three.js/WebGL2
-- Настраивайте 3D-глифы, цвета, вращение и толщину экструзии
-- Используйте свечение по форме снежинок с пульсацией в поддерживаемых режимах
+- Используйте автоматический рендеринг WebGPU с надежным резервным Canvas 2D
+- Включайте дополнительный 3D-снегопад Three.js/WebGL2 с перспективой и вращением
+- Настраивайте 3D-глифы, цвета и толщину объёмных снежинок
+- Наблюдайте свечение по форме снежинок, пульсирующее вместе с ними
 - Сохраняйте и переключайте пресеты под разное настроение
 - Импортируйте и экспортируйте настройки в JSON
 - Переносите все пресеты при импорте/экспорте одним переключателем
 - Восстанавливайте встроенные шаблоны пресетов в один клик
-- Проверяйте рендереры и свечение в интерактивном playground
 - Пользуйтесь расширением на английском и русском языках
 
 Идеально для праздничной атмосферы, оформления стримов, демо и просто красивого повседневного браузинга.
 
 Изменения в версии 3.0.0 (с 2.0.5):
-- Добавлен дополнительный 3D-режим Three.js/WebGL2 с перспективой, вращением, ветром, реакцией на курсор и 3D-столкновениями
-- Добавлены пользовательские текстовые/emoji-глифы, палитра цветов и настройка толщины 3D-экструзии
-- Добавлены свечение по форме снежинок и пульсация в WebGPU, Canvas 2D и 3D
-- В playground добавлены 3D-предпросмотр, настройка экструзии и сравнение рендереров/свечения
-- Улучшена обработка рендеринга, глифов и физики; обновлена сборочная инфраструктура
-
-Изменения в версии 2.0.5 (с 2.0.4):
-- Улучшена нормализация диапазона размеров символов с единым правилом 2-10% и конвертацией legacy-значений
-- Повышена точность предпросмотра размеров символов для большего соответствия реальному рендерингу
-- Добавлены тесты для граничных сценариев нормализации размеров
+- Добавлен дополнительный 3D-режим с пользовательскими глифами, цветами, перспективой, толщиной и столкновениями
+- Добавлено свечение по форме снежинок с пульсацией в WebGPU, Canvas 2D и 3D
+- Улучшены стабильность рендереров, обработка глифов и физика снегопада
 
 Конфиденциальность
 Let it snow не собирает, не продает и не передает персональные данные.
