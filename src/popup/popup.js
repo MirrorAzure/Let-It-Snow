@@ -30,6 +30,8 @@ const SETTINGS_KEYS = [
   'sentences',
   'sentenceCount',
   'autoStart',
+  'rendererMode',
+  'snow3dThickness',
   'popupWidthPercent',
   'popupWidth',
   'gifs',
@@ -164,6 +166,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     importSettingsInput: document.getElementById('importSettingsInput'),
     transferAllPresets: document.getElementById('transferAllPresets'),
     autoStart: document.getElementById('autoStart'),
+    rendererMode: document.getElementById('rendererMode'),
+    snow3dThickness: document.getElementById('snow3dThickness'),
+    snow3dThicknessValue: document.getElementById('snow3dThicknessValue'),
     gifsList: document.getElementById('gifsList'),
     addGif: document.getElementById('addGif'),
     gifCount: document.getElementById('gifCount'),
@@ -463,6 +468,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       gifs: Array.isArray(config.gifs) ? config.gifs : [],
       gifCount: Number.isFinite(config.gifCount) ? config.gifCount : 0,
       autoStart: Boolean(config.autoStart),
+      rendererMode: config.rendererMode === '3d' ? '3d' : 'auto',
+      snow3dThickness: Number.isFinite(config.snow3dThickness)
+        ? clamp(config.snow3dThickness, 0.02, 0.18)
+        : DEFAULT_SETTINGS.snow3dThickness,
       popupWidthPercent,
       popupWidth: popupWidthPercentToPx(popupWidthPercent),
       mouseRadius: Number.isFinite(config.mouseRadius) ? config.mouseRadius : DEFAULT_SETTINGS.mouseRadius,
@@ -683,6 +692,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       gifs,
       gifCount: parseInt(elements.gifCount.value) || 0,
       autoStart: elements.autoStart.checked,
+      rendererMode: elements.rendererMode.value,
+      snow3dThickness: parseFloat(elements.snow3dThickness.value),
       popupWidthPercent: clampPopupWidthPercent(elements.popupWidth.value),
       mouseRadius: parseInt(elements.mouseRadius.value),
       windEnabled: elements.windEnabled.checked,
@@ -720,6 +731,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.maxsizeValue.textContent = formatPercent(config.snowmaxsize);
     updateSizePreview();
     elements.autoStart.checked = Boolean(config.autoStart);
+    elements.rendererMode.value = config.rendererMode;
+    elements.snow3dThickness.value = config.snow3dThickness;
+    elements.snow3dThicknessValue.textContent = config.snow3dThickness.toFixed(2);
     elements.gifCount.value = config.gifCount || 0;
     elements.gifCountValue.textContent = config.gifCount || 0;
     elements.sentenceCount.value = config.sentenceCount || 0;
@@ -970,6 +984,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.autoStart.addEventListener('change', () => {
     saveAllSettings();
   });
+  elements.rendererMode.addEventListener('change', () => {
+    saveAllSettings();
+  });
 
   // Экспорт настроек в JSON
   elements.exportSettings.addEventListener('click', async () => {
@@ -1056,6 +1073,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Настройка слайдеров
   setupSliderListener(elements.snowmax, elements.snowmaxValue, saveAllSettings);
+  setupSliderListener(
+    elements.snow3dThickness,
+    elements.snow3dThicknessValue,
+    saveAllSettings,
+    (value) => parseFloat(value).toFixed(2)
+  );
 
   setupSliderListener(
     elements.sinkspeed,
@@ -1185,7 +1208,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       windEnabled: payload.windEnabled,
       windDirection: payload.windDirection,
       windStrength: payload.windStrength,
-      windGustFrequency: payload.windGustFrequency
+      windGustFrequency: payload.windGustFrequency,
+      rendererMode: payload.rendererMode,
+      snow3dThickness: payload.snow3dThickness
     };
 
     // UI анимация кнопки

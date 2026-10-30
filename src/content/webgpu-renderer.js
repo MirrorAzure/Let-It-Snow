@@ -17,6 +17,7 @@ import { stepWindState, createWindVortexField, applyVortexWindImpulse } from './
 import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
 import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
+import { resolveMinGlowStrength } from './utils/glow-utils.js';
 
 /**
  * Класс для рендеринга снега через WebGPU
@@ -971,10 +972,7 @@ export class WebGPURenderer {
    */
   updateGlowState() {
     if (!this.backgroundMonitor) return;
-    const configuredMinGlow = Number(this.config?.minGlowStrength);
-    const minGlowStrength = Number.isFinite(configuredMinGlow)
-      ? Math.max(0, Math.min(1, configuredMinGlow))
-      : 0.72;
+    const minGlowStrength = resolveMinGlowStrength(this.config?.minGlowStrength);
     const glowStrength = this.backgroundMonitor.calculateGlowStrength(minGlowStrength);
     this.uniformBufferManager?.setGlowStrength(glowStrength);
   }

@@ -70,6 +70,27 @@
 
           <label class="setting-item">
             <div class="setting-label">
+              <i class="fas fa-cubes"></i>
+              <span data-i18n="snow3dThickness">Толщина 3D-глифов:</span>
+              <span class="value-display" id="snow3dThicknessValue">0.07</span>
+            </div>
+            <input type="range" id="snow3dThickness" min="0.02" max="0.18" step="0.01" value="0.07" class="snow-slider" data-i18n-title="tooltipSnow3dThickness">
+            <small data-i18n="snow3dThicknessDescription">Толщина объёмного сечения снежинок в 3D-режиме</small>
+          </label>
+
+          <label class="setting-item">
+            <div class="setting-label">
+              <i class="fas fa-cube"></i>
+              <span data-i18n="rendererMode">Режим рендеринга:</span>
+            </div>
+            <select id="rendererMode" class="snow-select">
+              <option value="auto" data-i18n="rendererModeAuto">Авто (2D/WebGPU)</option>
+              <option value="3d" data-i18n="rendererMode3d">Полный 3D</option>
+            </select>
+          </label>
+
+          <label class="setting-item">
+            <div class="setting-label">
               <i class="fas fa-snowflake"></i>
               <span data-i18n="snowCount">Количество снежинок (1–320):</span>
               <span class="value-display" id="snowmaxValue">80</span>
@@ -403,6 +424,9 @@
             <div class="tech-badges">
               <span class="tech-badge">
                 <i class="fas fa-cube"></i> WebGPU
+              </span>
+              <span class="tech-badge">
+                <i class="fas fa-cubes"></i> Three.js 3D
               </span>
               <span class="tech-badge">
                 <i class="fab fa-js"></i> JavaScript

@@ -11,6 +11,24 @@
   "autoStart": {
     "message": "Auto start"
   },
+  "rendererMode": {
+    "message": "Rendering mode:"
+  },
+  "rendererModeAuto": {
+    "message": "Auto (2D/WebGPU)"
+  },
+  "rendererMode3d": {
+    "message": "3D snowflakes"
+  },
+  "snow3dThickness": {
+    "message": "3D glyph thickness:"
+  },
+  "snow3dThicknessDescription": {
+    "message": "Depth of the extruded snowflake glyphs in 3D mode"
+  },
+  "tooltipSnow3dThickness": {
+    "message": "Adjust 3D snowflake depth"
+  },
   "snowCount": {
     "message": "Number of snowflakes (1–320):"
   },

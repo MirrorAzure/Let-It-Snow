@@ -159,9 +159,28 @@ describe('popup UI', () => {
         windEnabled: false,
         windDirection: 'left',
         windStrength: 0.5,
-        windGustFrequency: 3
+        windGustFrequency: 3,
+        rendererMode: 'auto',
+        snow3dThickness: 0.07
       }
     });
+  });
+
+  it('saves and sends the selected 3D rendering mode', async () => {
+    const chromeMock = createChromeMock({ rendererMode: '3d', snow3dThickness: 0.11 });
+    global.chrome = chromeMock;
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.getElementById('rendererMode').value).toBe('3d');
+    expect(document.getElementById('snow3dThickness').value).toBe('0.11');
+    document.getElementById('startSnow').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(global.chrome.tabs.sendMessage.mock.calls[0][1].config.rendererMode).toBe('3d');
+    expect(global.chrome.tabs.sendMessage.mock.calls[0][1].config.snow3dThickness).toBe(0.11);
   });
 
   it('saves settings when sliders change', async () => {

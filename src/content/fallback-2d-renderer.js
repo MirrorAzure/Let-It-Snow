@@ -6,6 +6,7 @@ import { CollisionHandler } from './physics/collision-handler.js';
 import { applyMouseRepulsion } from './physics/mouse-handler.js';
 import { stepWindState, createWindVortexField, applyVortexWindImpulse } from './physics/wind-field.js';
 import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
+import { resolveMinGlowStrength } from './utils/glow-utils.js';
 import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
 import { BackgroundMonitor } from './utils/background-monitor.js';
@@ -61,7 +62,7 @@ export class Fallback2DRenderer {
     this.sentenceQueue = [];
     this.sentenceCursor = 0;
     this.backgroundMonitor = null;
-    this.glowStrength = Math.max(0, Math.min(1, Number(config.minGlowStrength) || 0.42));
+    this.glowStrength = resolveMinGlowStrength(config?.minGlowStrength);
 
     // Адаптивный контроль респауна: если FPS проседает, новые снежинки временно не появляются
     this.fpsSmoothing = 0.15; // Скорость EMA (выше = быстрее реакция)
@@ -343,7 +344,7 @@ export class Fallback2DRenderer {
     const previousShadowOffsetX = Number.isFinite(ctx.shadowOffsetX) ? ctx.shadowOffsetX : 0;
     const previousShadowOffsetY = Number.isFinite(ctx.shadowOffsetY) ? ctx.shadowOffsetY : 0;
 
-    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
     ctx.shadowBlur = blur;
     ctx.shadowOffsetX = 0;
@@ -637,10 +638,7 @@ export class Fallback2DRenderer {
 
   updateGlowState() {
     if (!this.backgroundMonitor) return;
-    const configuredMinGlow = Number(this.config?.minGlowStrength);
-    const minGlowStrength = Number.isFinite(configuredMinGlow)
-      ? Math.max(0, Math.min(1, configuredMinGlow))
-      : 0.42;
+    const minGlowStrength = resolveMinGlowStrength(this.config?.minGlowStrength);
     this.glowStrength = this.backgroundMonitor.calculateGlowStrength(minGlowStrength);
   }
 
@@ -1134,7 +1132,8 @@ export class Fallback2DRenderer {
           glowStrength > 0.02 &&
           !this.lowQualityMode &&
           this.currentFpsEstimate > 24;
-        const glowAlpha = Math.min(0.45, 0.14 + glowStrength * 0.22);
+        const glowPulse = 0.68 + 0.32 * Math.sin((flake.phase || 0) * 1.6);
+        const glowAlpha = Math.min(1, (0.58 + glowStrength * 0.55) * glowPulse);
         const glowRadius = Math.min(
           flake.isSentence ? 6.5 : 5.8,
           Math.max(1.5, Math.sqrt(Math.max(1, flake.size * ratio)) * (0.4 + glowStrength * 0.55))

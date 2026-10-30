@@ -36,6 +36,8 @@ export const DEFAULT_SETTINGS = {
   gifs: [],
   gifCount: 0,
   autoStart: false,
+  rendererMode: 'auto',
+  snow3dThickness: 0.07,
   popupWidthPercent: 20,
   popupWidth: 380,
   mouseRadius: 100,

@@ -34,5 +34,8 @@
     "npm-check-updates": "^23.1.1",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "three": "0.187.0"
   }
 }

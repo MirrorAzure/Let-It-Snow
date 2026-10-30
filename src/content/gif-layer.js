@@ -476,11 +476,10 @@ export class GifLayer {
 
     });
 
-    // Process collisions between ALL flakes (GIF + flakes from main renderer)
+    // GIF flakes can collide with main-renderer flakes only when both use 2D physics.
     if (this.enableCollisions && this.collisionHandler) {
-      // Получаем снежинки напрямую из рендерера для актуальных позиций
-      const rendererFlakes = this.mainRenderer?.flakes || [];
-      // Объединяем GIF снежинки с снежинками из Canvas2D/WebGPU
+      const rendererFlakes = this.mainRenderer?.is3D ? [] : (this.mainRenderer?.flakes || []);
+      // GIF остаются DOM-слоем, поэтому 3D-снежинки не участвуют в 2D-коллизиях.
       const allFlakes = [...this.flakes, ...rendererFlakes];
       this.collisionHandler.handleCollisions(allFlakes, delta);
     }

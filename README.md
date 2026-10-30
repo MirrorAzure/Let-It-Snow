@@ -91,7 +91,8 @@ pnpm run playground
 ✅ Snow animation playground with HMR for `src/content/`  
 ✅ Popup UI playground with HMR for `src/popup/`  
 ✅ Full WebGPU/Fallback2D functionality  
-✅ All parameters configurable via UI  
+✅ Renderer glow comparison with a configurable shared minimum strength
+✅ 3D renderer preview in the snow playground
 
 Open:
 - Snow animation: `http://localhost:5173/playground/`
@@ -136,7 +137,7 @@ Architecture materials in `diagrams/` are up to date for version **2.0.5**.
 Project Architecture:
 - **Web Pages** — web pages where the extension works
 - **Content Script** — main extension script with the snowfall engine
-- **Renderers** — WebGPU (modern) and Fallback 2D (compatibility)
+- **Renderers** — WebGPU, Canvas 2D fallback, and optional Three.js WebGL2 3D mode
 - **Graphics Layer** — atlas and uniform buffer management for WebGPU
 - **Physics Layer** — simulation, collisions, mouse interactions, and shared wind field
 - **Shared Utilities** — viewport stability and circular cursor helpers used across renderers
@@ -155,6 +156,7 @@ src/
 │   ├── index.js          # Content script (injected into web pages)
 │   ├── webgpu-renderer.js    # WebGPU rendering engine
 │   ├── fallback-2d-renderer.js  # 2D Canvas fallback
+│   ├── three-d-renderer.js   # Optional Three.js WebGL2 renderer
 │   ├── gif-layer.js      # GIF layer support
 │   ├── shader.wgsl       # WebGPU shaders
 │   ├── graphics/
@@ -203,6 +205,7 @@ src/
 - **GIF support**: Add GIFs by URL or local file upload
 - **Mouse interaction**: Push, swirl, and drag snow with pointer movement
 - **Soft collisions**: Snowflakes gently bounce off each other
+- **Optional 3D snow mode**: Lit, instanced user-selected glyphs with palette colors, adjustable extrusion thickness, perspective depth, tumbling, wind, pointer interaction, and 3D sphere collisions. GIFs remain 2D overlays and do not collide with 3D snow. The default automatic WebGPU/Canvas mode remains unchanged; browsers without WebGL2 fall back to Canvas 2D.
 - **Wind effects**: Physically accurate wind simulation with turbulence
   - Multi-layer wind turbulence (low, medium, high frequencies)
   - Wind applies as force/acceleration (not just displacement)
@@ -238,6 +241,7 @@ This extension uses Vite with the CRXJS plugin for building Chrome extensions. T
 - Chrome/Chromium-based browsers (Manifest V3)
 - Firefox (Manifest V3)
 - Canvas 2D fallback for browsers without WebGPU support
+- Optional WebGL2 3D mode; falls back to Canvas 2D if WebGL2 is unavailable
 
 ## License
 

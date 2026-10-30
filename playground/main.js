@@ -46,6 +46,11 @@ const els = {
   rendererAuto: document.getElementById('renderer-auto'),
   rendererWebgpu: document.getElementById('renderer-webgpu'),
   renderer2d: document.getElementById('renderer-2d'),
+  renderer3d: document.getElementById('renderer-3d'),
+  minGlowStrength: document.getElementById('minGlowStrength'),
+  minGlowStrengthValue: document.getElementById('minGlowStrengthValue'),
+  snow3dThickness: document.getElementById('snow3dThickness'),
+  snow3dThicknessValue: document.getElementById('snow3dThicknessValue'),
   sizePreviewText: document.getElementById('size-preview-text'),
   sizePreviewMinFlake: document.getElementById('size-preview-min-flake'),
   sizePreviewMaxFlake: document.getElementById('size-preview-max-flake'),
@@ -71,7 +76,9 @@ const defaults = {
   windDirection: 'left',
   windStrength: 0.5,
   windGustFrequency: 3,
-  rendererMode: 'auto'
+  rendererMode: 'auto',
+  minGlowStrength: 0.42,
+  snow3dThickness: 0.07
 };
 
 const state = {
@@ -303,7 +310,9 @@ function getConfigFromForm() {
     windDirection: state.windDirection,
     windStrength: Math.max(0, Number(els.windStrength.value) || defaults.windStrength),
     windGustFrequency: Math.max(0.5, Number(els.windGustFrequency.value) || defaults.windGustFrequency),
-    rendererMode: state.rendererMode
+    rendererMode: state.rendererMode,
+    minGlowStrength: Number(els.minGlowStrength.value),
+    snow3dThickness: Number(els.snow3dThickness.value)
   };
 }
 
@@ -342,6 +351,10 @@ function resetForm() {
   els.windEnabled.checked = defaults.windEnabled;
   els.windStrength.value = defaults.windStrength;
   els.windGustFrequency.value = defaults.windGustFrequency;
+  els.minGlowStrength.value = defaults.minGlowStrength;
+  els.minGlowStrengthValue.value = defaults.minGlowStrength.toFixed(2);
+  els.snow3dThickness.value = defaults.snow3dThickness;
+  els.snow3dThicknessValue.value = defaults.snow3dThickness.toFixed(2);
   state.colors = [...defaults.colors];
   state.symbols = [...defaults.symbols];
   state.sentences = [...defaults.sentences];
@@ -375,6 +388,7 @@ function updateRendererButtons() {
   els.rendererAuto.classList.toggle('active', state.rendererMode === 'auto');
   els.rendererWebgpu.classList.toggle('active', state.rendererMode === 'webgpu');
   els.renderer2d.classList.toggle('active', state.rendererMode === '2d');
+  els.renderer3d.classList.toggle('active', state.rendererMode === '3d');
 }
 
 els.start.addEventListener('click', async () => {
@@ -461,6 +475,14 @@ els.windEnabled.addEventListener('change', (e) => {
   state.windEnabled = e.target.checked;
 });
 
+els.minGlowStrength.addEventListener('input', () => {
+  els.minGlowStrengthValue.value = Number(els.minGlowStrength.value).toFixed(2);
+});
+
+els.snow3dThickness.addEventListener('input', () => {
+  els.snow3dThicknessValue.value = Number(els.snow3dThickness.value).toFixed(2);
+});
+
 els.rendererAuto.addEventListener('click', () => {
   state.rendererMode = 'auto';
   updateRendererButtons();
@@ -473,6 +495,11 @@ els.rendererWebgpu.addEventListener('click', () => {
 
 els.renderer2d.addEventListener('click', () => {
   state.rendererMode = '2d';
+  updateRendererButtons();
+});
+
+els.renderer3d.addEventListener('click', () => {
+  state.rendererMode = '3d';
   updateRendererButtons();
 });
 

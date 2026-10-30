@@ -11,6 +11,24 @@
   "autoStart": {
     "message": "Авто старт"
   },
+  "rendererMode": {
+    "message": "Режим рендеринга:"
+  },
+  "rendererModeAuto": {
+    "message": "Авто (2D/WebGPU)"
+  },
+  "rendererMode3d": {
+    "message": "3D-снежинки"
+  },
+  "snow3dThickness": {
+    "message": "Толщина 3D-глифов:"
+  },
+  "snow3dThicknessDescription": {
+    "message": "Толщина объёмного сечения снежинок в 3D-режиме"
+  },
+  "tooltipSnow3dThickness": {
+    "message": "Настроить глубину объёмных снежинок"
+  },
   "snowCount": {
     "message": "Количество снежинок (1–320):"
   },

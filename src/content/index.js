@@ -8,6 +8,7 @@
 
 import { WebGPURenderer } from './webgpu-renderer.js';
 import { Fallback2DRenderer } from './fallback-2d-renderer.js';
+import { ThreeDSnowRenderer } from './three-d-renderer.js';
 import { GifLayer } from './gif-layer.js';
 import { splitSentences } from './utils/glyph-utils.js';
 import { normalizeGlyphSizePercentRange, getViewportBaseSize } from './utils/size-utils.js';
@@ -33,6 +34,8 @@ const DEFAULT_CONFIG = {
   gifCount: 0,
   debugCollisions: false,
   rendererMode: 'auto',
+  minGlowStrength: 0.42,
+  snow3dThickness: 0.07,
   mouseRadius: 100,
   windEnabled: false,
   windDirection: 'left',
@@ -168,14 +171,22 @@ class SnowWebGPUController {
     this.createOverlayCanvas();
     const gifStartPromise = this.startGifLayer();
     const mode = String(this.config.rendererMode || 'auto').toLowerCase();
-    const rendererMode = mode === 'webgpu' || mode === '2d' ? mode : 'auto';
+    const rendererMode = ['webgpu', '2d', '3d'].includes(mode) ? mode : 'auto';
     const debugEnabled = Boolean(
       this.config?.debug === true ||
       this.config?.debugCollisions === true ||
       this.config?.playgroundDebugMode === true
     );
 
-    if (rendererMode !== '2d') {
+    if (rendererMode === '3d') {
+      const threeRenderer = new ThreeDSnowRenderer(this.canvas, this.config);
+      if (threeRenderer.init()) {
+        this.renderer = threeRenderer;
+        this.renderer.start();
+      } else if (debugEnabled) {
+        console.warn('[Let It Snow] 3D rendering is unavailable; using Canvas 2D fallback.');
+      }
+    } else if (rendererMode !== '2d') {
       // Пытаемся использовать WebGPU, если не получается - fallback в auto-режиме
       const webgpuRenderer = new WebGPURenderer(this.canvas, this.config);
       const webgpuSupported = await webgpuRenderer.init();
@@ -747,6 +758,8 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
         'sentenceCount',
         'gifs',
         'gifCount',
+        'rendererMode',
+        'snow3dThickness',
         'mouseRadius',
         'windEnabled',
         'windDirection',
@@ -771,6 +784,8 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
           sentenceCount: stored.sentenceCount || 0,
           gifUrls: stored.gifs || [],
           gifCount: stored.gifCount || 0,
+          rendererMode: stored.rendererMode === '3d' ? '3d' : 'auto',
+          snow3dThickness: stored.snow3dThickness ?? DEFAULT_CONFIG.snow3dThickness,
           mouseRadius: stored.mouseRadius || 100,
           windEnabled: stored.windEnabled || false,
           windDirection: stored.windDirection || 'left',

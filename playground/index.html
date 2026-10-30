@@ -41,8 +41,28 @@
             <button id="renderer-auto" class="segmented-btn active" type="button">Auto</button>
             <button id="renderer-webgpu" class="segmented-btn" type="button">WebGPU</button>
             <button id="renderer-2d" class="segmented-btn" type="button">Canvas2D</button>
+            <button id="renderer-3d" class="segmented-btn" type="button">3D</button>
           </div>
-          <small>Auto tries WebGPU first. Use Canvas2D to reproduce HTTP fallback behavior.</small>
+          <small>Choose WebGPU, Canvas2D, or 3D snowflakes. Stop and restart to apply a renderer change.</small>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Glow comparison</h2>
+      </div>
+      <p class="hint">Select WebGPU or Canvas2D above, keep the same scene settings, and restart to compare the halo. Choose 3D to preview the volumetric renderer.</p>
+      <div class="grid">
+        <label class="field">
+          <span>Minimum glow strength: <output id="minGlowStrengthValue">0.42</output></span>
+          <input id="minGlowStrength" type="range" min="0" max="1" step="0.02" value="0.42" />
+          <small>Both renderers use this floor; background contrast can raise glow strength up to 1.</small>
+        </label>
+        <label class="field">
+          <span>3D glyph thickness: <output id="snow3dThicknessValue">0.07</output></span>
+          <input id="snow3dThickness" type="range" min="0.02" max="0.18" step="0.01" value="0.07" />
+          <small>Adjust the depth of extruded 3D glyph snowflakes.</small>
         </label>
       </div>
     </section>
