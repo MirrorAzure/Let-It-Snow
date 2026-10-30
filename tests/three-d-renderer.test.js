@@ -1,51 +1,59 @@
 import { describe, expect, it } from 'vitest';
-import * as THREE from 'three';
 import {
   ThreeDSnowRenderer,
   createGlyphGeometry,
-  getGlyphScreenTransform,
-  resolveGlyphAppearance
+  createGlyphGlowGeometry,
+  resolveGlyphAppearance,
+  resolveGlowPulse
 } from '../src/content/three-d-renderer.js';
+import rendererSource from '../src/content/three-d-renderer.js?raw';
 
 describe('ThreeDSnowRenderer', () => {
-  it('projects the glyph mask around its center using its 3D rotation', () => {
-    const flake = {
-      x: 100,
-      y: 80,
-      rotationX: 0,
-      rotationY: 0,
-      rotationZ: 0
-    };
+  it('uses instance colors for glow without requiring missing vertex colors', () => {
+    expect(rendererSource).not.toContain('vertexColors: true');
+    expect(rendererSource).toContain('glowMesh.setColorAt(meshIndex, flake.color)');
+  });
 
-    expect(getGlyphScreenTransform(flake, 20, 2)).toEqual({
-      a: 40,
-      b: -0,
-      c: 0,
-      d: 20,
-      e: 80,
-      f: 70
-    });
+  it('uses a soft glow with a subtle inner edge and progressively fading outer layers', () => {
+    const layersSource = rendererSource.match(/const GLOW_LAYERS = \[([\s\S]*?)\];/)?.[1] || '';
+    const layers = Array.from(layersSource.matchAll(
+      /\{ radius: ([\d.]+), opacity: ([\d.]+) \}/g
+    ), ([, radius, opacity]) => ({ radius: Number(radius), opacity: Number(opacity) }));
 
-    const rotated = getGlyphScreenTransform({ ...flake, rotationZ: Math.PI / 2 }, 20, 2);
-    expect(rotated.a).toBeCloseTo(0);
-    expect(rotated.b).toBeCloseTo(-40);
-    expect(rotated.c).toBeCloseTo(20);
-    expect(rotated.d).toBeCloseTo(0);
+    expect(layers.length).toBeGreaterThanOrEqual(10);
+    expect(layers[0].opacity).toBeLessThanOrEqual(0.01);
+    expect(layers[0].radius).toBeLessThanOrEqual(0.02);
+    expect(layers.slice(6).every((layer, index) => (
+      layer.radius > layers[index + 5].radius && layer.opacity < layers[index + 5].opacity
+    ))).toBe(true);
+  });
 
-    const tiltedFlake = {
-      ...flake,
-      rotationX: 0.73,
-      rotationY: -1.12,
-      rotationZ: 0.38
-    };
-    const tilted = getGlyphScreenTransform(tiltedFlake, 20, 2);
-    const rotation = new THREE.Matrix4().makeRotationFromEuler(
-      new THREE.Euler(tiltedFlake.rotationX, tiltedFlake.rotationY, tiltedFlake.rotationZ)
-    ).elements;
-    expect(tilted.a).toBeCloseTo(20 * 2 * rotation[0]);
-    expect(tilted.b).toBeCloseTo(-20 * 2 * rotation[1]);
-    expect(tilted.c).toBeCloseTo(-20 * rotation[4]);
-    expect(tilted.d).toBeCloseTo(20 * rotation[5]);
+  it('pulses visibly instead of keeping the glow near full brightness', () => {
+    expect(resolveGlowPulse(-Math.PI / 2)).toBeCloseTo(0.16);
+    expect(resolveGlowPulse(Math.PI / 2)).toBeCloseTo(1);
+    expect(resolveGlowPulse(0)).toBeGreaterThan(resolveGlowPulse(-Math.PI / 2));
+  });
+
+  it('creates a glow ring that expands beyond the matching glyph silhouette', () => {
+    const mask = new Uint8Array([
+      0, 0, 0,
+      0, 1, 0,
+      0, 0, 0
+    ]);
+    const glyph = createGlyphGeometry(mask, 3, 3);
+    const glow = createGlyphGlowGeometry(mask, 3, 3, 0.07, 0, 1);
+    const glyphPositions = glyph.getAttribute('position').array;
+    const glowPositions = glow.getAttribute('position').array;
+    const glyphX = Array.from(glyphPositions).filter((_, index) => index % 3 === 0);
+    const glowX = Array.from(glowPositions).filter((_, index) => index % 3 === 0);
+    const glowDepth = Array.from(glowPositions).filter((_, index) => index % 3 === 2);
+
+    expect(Math.min(...glowX)).toBeLessThan(Math.min(...glyphX));
+    expect(Math.max(...glowX)).toBeGreaterThan(Math.max(...glyphX));
+    expect(Math.max(...glowDepth) - Math.min(...glowDepth)).toBeCloseTo(0.18);
+    expect(glow.getAttribute('normal')).toBeDefined();
+    glyph.dispose();
+    glow.dispose();
   });
 
   it('creates an extruded glyph geometry with the configured cross-section depth', () => {
