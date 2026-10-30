@@ -4,7 +4,8 @@
  */
 
 // Импортируем сообщения локализации
-import ruMessages from '../src/_locales/ru/messages.json' assert { type: 'json' };
+import ruMessages from '../src/_locales/ru/messages.json';
+import manifest from '../src/manifest.json';
 
 console.log('🔍 Debug: ruMessages imported:', ruMessages);
 console.log('🔍 Debug: ruMessages.default:', ruMessages?.default);
@@ -116,7 +117,7 @@ if (!window.chrome.storage) {
 if (!window.chrome.runtime) {
   window.chrome.runtime = {
     getManifest: () => ({
-      version: '1.6.1'
+      version: manifest.version
     })
   };
 }
@@ -276,7 +277,7 @@ async function initPlayground() {
   // Загружаем версию расширения
   const versionElement = document.getElementById('versionNumber');
   if (versionElement) {
-    versionElement.textContent = '1.6.2';
+    versionElement.textContent = manifest.version;
   }
 
   const colorsList = document.getElementById('colorsList');

@@ -2,27 +2,39 @@
 
 A beautiful customizable snowfall effect extension for any website.
 
-Current version: **2.0.6**
+Current version: **3.0.0**
 
-## Store Description (v2.0.5)
+See the [3.0.0 release notes](./CHANGELOG.md).
+
+## Store Description (v3.0.0)
 
 ### English
 
-Let it snow adds a festive snowfall effect to any website and gives you full control over the animation style.
+Let it snow adds a customizable snowfall effect to any website, with 2D and optional 3D rendering.
 
 Create your own winter look:
 - Adjust snowflake count, fall speed, and size range
 - Use custom symbols, long phrases, and multiple colors
 - Add animated GIF flakes from URLs or local files
 - Interact with snow using mouse and touch gestures
+- Switch between WebGPU, Canvas 2D, and optional Three.js WebGL2 3D snow
+- Customize 3D glyphs, colors, rotation, and extrusion thickness
+- Enjoy shape-matched, pulsing glow effects in supported renderers
 - Save and switch presets for different moods
 - Import and export settings in JSON
 - Transfer all presets during import/export with one toggle
 - Restore built-in preset templates in one click
-- Enjoy smooth rendering with WebGPU and a reliable Canvas 2D fallback
+- Try renderer and glow settings in the interactive playground
 - Use the extension in English and Russian
 
 Perfect for holiday vibes, stream styling, demos, and everyday beautiful browsing.
+
+Changes in version 3.0.0 (from 2.0.5):
+- Added optional Three.js WebGL2 3D snowfall with perspective, tumbling, wind, pointer interaction, and 3D collisions
+- Added user-selected text/emoji glyphs, palette colors, and adjustable 3D extrusion thickness
+- Added shape-matched glow effects and pulsing for WebGPU, Canvas 2D, and 3D rendering
+- Expanded the playground with 3D preview, extrusion controls, and renderer/glow comparison
+- Improved renderer, glyph, and physics handling; refreshed the build toolchain
 
 Changes in version 2.0.5 (from 2.0.4):
 - Improved glyph size range normalization with shared 2-10% handling and legacy value conversion
@@ -37,21 +49,31 @@ If you manually add GIF URLs, these files are requested directly from the specif
 
 ### Русский
 
-Let it snow добавляет праздничный эффект снегопада на любой сайт и позволяет гибко настроить внешний вид анимации.
+Let it snow добавляет на сайты настраиваемый снегопад с обычным и дополнительным 3D-режимом.
 
 Создайте свой зимний стиль:
 - Настраивайте количество снежинок, скорость падения и диапазон размеров
 - Используйте собственные символы, длинные фразы и несколько цветов
 - Добавляйте анимированные GIF-снежинки по ссылке или из локальных файлов
 - Взаимодействуйте со снегом мышью и touch-жестами
+- Выбирайте WebGPU, Canvas 2D или дополнительный 3D-рендерер Three.js/WebGL2
+- Настраивайте 3D-глифы, цвета, вращение и толщину экструзии
+- Используйте свечение по форме снежинок с пульсацией в поддерживаемых режимах
 - Сохраняйте и переключайте пресеты под разное настроение
 - Импортируйте и экспортируйте настройки в JSON
 - Переносите все пресеты при импорте/экспорте одним переключателем
 - Восстанавливайте встроенные шаблоны пресетов в один клик
-- Получайте плавный рендеринг в WebGPU и надежный Canvas 2D fallback
+- Проверяйте рендереры и свечение в интерактивном playground
 - Пользуйтесь расширением на английском и русском языках
 
 Идеально для праздничной атмосферы, оформления стримов, демо и просто красивого повседневного браузинга.
+
+Изменения в версии 3.0.0 (с 2.0.5):
+- Добавлен дополнительный 3D-режим Three.js/WebGL2 с перспективой, вращением, ветром, реакцией на курсор и 3D-столкновениями
+- Добавлены пользовательские текстовые/emoji-глифы, палитра цветов и настройка толщины 3D-экструзии
+- Добавлены свечение по форме снежинок и пульсация в WebGPU, Canvas 2D и 3D
+- В playground добавлены 3D-предпросмотр, настройка экструзии и сравнение рендереров/свечения
+- Улучшена обработка рендеринга, глифов и физики; обновлена сборочная инфраструктура
 
 Изменения в версии 2.0.5 (с 2.0.4):
 - Улучшена нормализация диапазона размеров символов с единым правилом 2-10% и конвертацией legacy-значений
@@ -122,17 +144,18 @@ pnpm run pack:edge
 ```
 Use these if you want to regenerate specific artifacts after a build.
 
-### Load the extension in Chrome
+### Load an unpacked extension
 
-1. Run `pnpm run build` to generate the dist folder
-2. Open Chrome and go to `chrome://extensions/`
-3. Enable "Developer mode" (toggle in top right)
-4. Click "Load unpacked"
-5. Select the `dist/chrome` folder from your project
+1. Run `pnpm run build` to generate browser-specific builds in `dist/`.
+2. In Chrome, open `chrome://extensions/`, enable **Developer mode**, click **Load unpacked**, and select `dist/chrome`.
+3. In Edge, open `edge://extensions/`, enable **Developer mode**, click **Load unpacked**, and select `dist/edge`.
+4. In Firefox, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `dist/firefox/manifest.json`. Temporary add-ons are removed when Firefox closes.
+
+Packaged release files are written to `builds/`.
 
 ## Architecture Diagram
 
-Architecture materials in `diagrams/` are up to date for version **2.0.5**.
+Architecture materials in `diagrams/` are updated for version **3.0.0**.
 
 Project Architecture:
 - **Web Pages** — web pages where the extension works
@@ -240,7 +263,7 @@ This extension uses Vite with the CRXJS plugin for building Chrome extensions. T
 
 - Chrome/Chromium-based browsers (Manifest V3)
 - Firefox (Manifest V3)
-- Canvas 2D fallback for browsers without WebGPU support
+- Automatic WebGPU rendering with Canvas 2D fallback when WebGPU is unavailable
 - Optional WebGL2 3D mode; falls back to Canvas 2D if WebGL2 is unavailable
 
 ## License

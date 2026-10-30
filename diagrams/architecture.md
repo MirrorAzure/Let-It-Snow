@@ -1,7 +1,7 @@
 # Let It Snow - Architecture
 
-Версия: 2.0.3
-Обновлено: 31 марта 2026
+Версия: 3.0.0
+Обновлено: 30 октября 2026
 
 ## Диаграмма архитектуры
 
@@ -17,6 +17,7 @@ graph TB
         subgraph Renderers["🎨 Rendering Engines"]
             WebGPU["webgpu-renderer.js<br/>Primary renderer"]
             Fallback2D["fallback-2d-renderer.js<br/>Canvas fallback"]
+            ThreeD["three-d-renderer.js<br/>Optional WebGL2 3D renderer"]
             Shader["shader.wgsl<br/>GPU shader"]
             GIFLayer["gif-layer.js<br/>GIF overlay support"]
         end
@@ -74,6 +75,7 @@ graph TB
     WebPages -->|Injected into| MainContent
     MainContent -->|Uses| WebGPU
     MainContent -->|Falls back to| Fallback2D
+    MainContent -->|Optional 3D mode| ThreeD
     MainContent -->|Overlays| GIFLayer
     WebGPU -.->|Uses| Shader
     WebGPU -->|Uses| Graphics
@@ -112,7 +114,7 @@ graph TB
     classDef physics fill:#9DD6F9,stroke:#5AAAD4,color:#00324A
     classDef graphics fill:#F8E71C,stroke:#B8A000,color:#000
     
-    class MainContent,WebGPU,Fallback2D primary
+    class MainContent,WebGPU,Fallback2D,ThreeD primary
     class PopupMain,Settings,UIControllers,BuiltInPresets secondary
     class BrowserStorage storage
     class Manifest,ManifestChrome,ManifestEdge,ManifestFirefox config
@@ -127,6 +129,7 @@ graph TB
 - **content/index.js** - главный оркестратор, управляет инъекцией снега на веб-страницы
 - **webgpu-renderer.js** - основной рендерер, использующий WebGPU для аппаратного ускорения
 - **fallback-2d-renderer.js** - резервный Canvas 2D рендерер для браузеров без WebGPU
+- **three-d-renderer.js** - дополнительный Three.js/WebGL2 режим с пользовательскими глифами и объёмными столкновениями
 - **shader.wgsl** - WGSL шейдер для GPU рендеринга
 - **gif-layer.js** - слой для поддержки GIF-оверлея
 
