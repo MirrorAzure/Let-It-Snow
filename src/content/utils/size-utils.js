@@ -99,3 +99,13 @@ export function resolveGlyphSizeRangePx(config = {}) {
     viewportBaseSize
   };
 }
+
+/**
+ * Height (as a fraction of the viewport) of the band above the top edge in which
+ * new flakes are spawned. Smaller values make the whole fall enter almost at once.
+ */
+export function resolveInitialSpawnSpanRatio(config = {}, fallback = 1) {
+  const ratio = Number(config.initialSpawnSpanRatio);
+  if (!Number.isFinite(ratio) || ratio <= 0) return fallback;
+  return Math.min(3, Math.max(0.05, ratio));
+}

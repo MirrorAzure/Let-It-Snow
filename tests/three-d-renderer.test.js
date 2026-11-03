@@ -1,59 +1,74 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   ThreeDSnowRenderer,
   createGlyphGeometry,
-  createGlyphGlowGeometry,
+  resolveGlowColor,
+  resolveGlowWhiten,
   resolveGlyphAppearance,
-  resolveGlowPulse
+  resolveGlowPulse,
+  resolveGlowFlicker,
+  resolveInitialFlakeY
 } from '../src/content/three-d-renderer.js';
-import rendererSource from '../src/content/three-d-renderer.js?raw';
 
 describe('ThreeDSnowRenderer', () => {
-  it('uses instance colors for glow without requiring missing vertex colors', () => {
-    expect(rendererSource).not.toContain('vertexColors: true');
-    expect(rendererSource).toContain('glowMesh.setColorAt(meshIndex, flake.color)');
+  it('never produces a dark glow color, even for dark flakes', () => {
+    for (const color of ['#000000', '#1a237e', '#ff0000', '#ffffff']) {
+      const [r, g, b] = resolveGlowColor(color);
+      expect(0.2126 * r + 0.7152 * g + 0.0722 * b).toBeGreaterThanOrEqual(0.719);
+      [r, g, b].forEach((channel) => {
+        expect(channel).toBeGreaterThanOrEqual(0);
+        expect(channel).toBeLessThanOrEqual(1);
+      });
+    }
+    resolveGlowColor('#ffffff').forEach((channel) => expect(channel).toBeCloseTo(1));
+    const [r, , b] = resolveGlowColor('#3060ff');
+    expect(b).toBeGreaterThan(r);
   });
 
-  it('uses a soft glow with a subtle inner edge and progressively fading outer layers', () => {
-    const layersSource = rendererSource.match(/const GLOW_LAYERS = \[([\s\S]*?)\];/)?.[1] || '';
-    const layers = Array.from(layersSource.matchAll(
-      /\{ radius: ([\d.]+), opacity: ([\d.]+) \}/g
-    ), ([, radius, opacity]) => ({ radius: Number(radius), opacity: Number(opacity) }));
-
-    expect(layers.length).toBeGreaterThanOrEqual(10);
-    expect(layers[0].opacity).toBeLessThanOrEqual(0.01);
-    expect(layers[0].radius).toBeLessThanOrEqual(0.02);
-    expect(layers.slice(6).every((layer, index) => (
-      layer.radius > layers[index + 5].radius && layer.opacity < layers[index + 5].opacity
-    ))).toBe(true);
+  it('rejects invalid glow color channels instead of silently turning them white', () => {
+    expect(() => resolveGlowColor({ isColor: true, r: NaN, g: 0, b: 0 }))
+      .toThrow('3D glow color channels must be finite.');
   });
 
-  it('pulses visibly instead of keeping the glow near full brightness', () => {
-    expect(resolveGlowPulse(-Math.PI / 2)).toBeCloseTo(0.16);
+  it('whitens the glow completely on light backgrounds and keeps colors on dark ones', () => {
+    expect(resolveGlowWhiten(1)).toBe(0);
+    expect(resolveGlowWhiten(0)).toBe(1);
+    expect(resolveGlowWhiten(0.5)).toBe(0.5);
+  });
+
+  it('reports an invalid background darkness before using a safe white glow', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(resolveGlowWhiten(NaN)).toBe(1);
+      expect(warn).toHaveBeenCalledWith(
+        '[Let It Snow] Invalid background darkness; using white glow.'
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('adapts the glow color to the background independently of minimum glow strength', () => {
+    const renderer = new ThreeDSnowRenderer(null, { minGlowStrength: 1 });
+    renderer.glowPass = { setGlowState: vi.fn() };
+    renderer.backgroundMonitor = {
+      calculateGlowStrength: vi.fn((minimum) => (minimum === 0 ? 0 : 1))
+    };
+
+    renderer.updateGlowState();
+
+    expect(renderer.backgroundMonitor.calculateGlowStrength).toHaveBeenCalledWith(1);
+    expect(renderer.backgroundMonitor.calculateGlowStrength).toHaveBeenCalledWith(0, 1);
+    expect(renderer.glowPass.setGlowState).toHaveBeenCalledWith(1, 1, expect.objectContaining({
+      r: expect.any(Number), g: expect.any(Number), b: expect.any(Number)
+    }));
+  });
+
+  it('pulses smoothly without harsh flashes or switching the glow off', () => {
+    expect(resolveGlowPulse(-Math.PI / 2)).toBeCloseTo(0.72);
     expect(resolveGlowPulse(Math.PI / 2)).toBeCloseTo(1);
     expect(resolveGlowPulse(0)).toBeGreaterThan(resolveGlowPulse(-Math.PI / 2));
-  });
-
-  it('creates a glow ring that expands beyond the matching glyph silhouette', () => {
-    const mask = new Uint8Array([
-      0, 0, 0,
-      0, 1, 0,
-      0, 0, 0
-    ]);
-    const glyph = createGlyphGeometry(mask, 3, 3);
-    const glow = createGlyphGlowGeometry(mask, 3, 3, 0.07, 0, 1);
-    const glyphPositions = glyph.getAttribute('position').array;
-    const glowPositions = glow.getAttribute('position').array;
-    const glyphX = Array.from(glyphPositions).filter((_, index) => index % 3 === 0);
-    const glowX = Array.from(glowPositions).filter((_, index) => index % 3 === 0);
-    const glowDepth = Array.from(glowPositions).filter((_, index) => index % 3 === 2);
-
-    expect(Math.min(...glowX)).toBeLessThan(Math.min(...glyphX));
-    expect(Math.max(...glowX)).toBeGreaterThan(Math.max(...glyphX));
-    expect(Math.max(...glowDepth) - Math.min(...glowDepth)).toBeCloseTo(0.18);
-    expect(glow.getAttribute('normal')).toBeDefined();
-    glyph.dispose();
-    glow.dispose();
+    expect(resolveGlowPulse(0)).toBeLessThan(resolveGlowPulse(Math.PI / 2));
   });
 
   it('creates an extruded glyph geometry with the configured cross-section depth', () => {
@@ -124,5 +139,67 @@ describe('ThreeDSnowRenderer', () => {
 
     expect(positions[0].x).toBeLessThan(positions[1].x);
     expect(renderer.flakes.every((flake) => Number.isFinite(flake.x) && Number.isFinite(flake.y))).toBe(true);
+  });
+
+  it('twinkles the glow per flake within the configured flicker depth', () => {
+    const flake = { twinkleSpeedA: 2.3, twinkleSpeedB: 6.1, twinklePhaseA: 0.4, twinklePhaseB: 1.7 };
+    const samples = Array.from({ length: 400 }, (_, index) => resolveGlowFlicker(index * 0.05, flake, 0.5));
+
+    expect(Math.min(...samples)).toBeGreaterThanOrEqual(0.5);
+    expect(Math.max(...samples)).toBeLessThanOrEqual(1);
+    expect(Math.max(...samples) - Math.min(...samples)).toBeGreaterThan(0.25);
+    expect(resolveGlowFlicker(1, flake, 0)).toBe(1);
+    expect(resolveGlowFlicker(1, {}, 0.5)).toBe(1);
+  });
+
+  it('starts snowfall above the viewport and fast-forwards only with an offset', () => {
+    for (let i = 0; i < 50; i++) {
+      const y = resolveInitialFlakeY(20, 800, 100, 0);
+      expect(y).toBeLessThanOrEqual(-20);
+      expect(y).toBeGreaterThanOrEqual(-820);
+      const resumed = resolveInitialFlakeY(20, 800, 100, 30);
+      expect(resumed).toBeGreaterThanOrEqual(-20);
+      expect(resumed).toBeLessThanOrEqual(820);
+      const instant = resolveInitialFlakeY(20, 800, 100, 0, 0.35);
+      expect(instant).toBeLessThanOrEqual(-20);
+      expect(instant).toBeGreaterThanOrEqual(-20 - 800 * 0.35);
+    }
+  });
+
+  it('merges extruded faces and keeps texture coordinates inside the glyph image', () => {
+    const geometry = createGlyphGeometry(new Uint8Array(9).fill(1), 3, 3, 0.1);
+    expect(geometry.getAttribute('position').count).toBe(36);
+    const uvs = Array.from(geometry.getAttribute('uv').array);
+    expect(uvs.length).toBe(72);
+    uvs.forEach((value) => {
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(1);
+    });
+    geometry.dispose();
+  });
+
+  it('sizes glyph geometry in font units so 3D flakes match the configured size', () => {
+    // A 44 px ink box rendered at an 88 px font is half of the flake size, as in Canvas 2D.
+    const geometry = createGlyphGeometry(new Uint8Array(44 * 44).fill(1), 44, 44, 0.1, 88, 88, -22, -22);
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    expect(box.max.x - box.min.x).toBeCloseTo(0.5);
+    expect(box.max.y - box.min.y).toBeCloseTo(0.5);
+    expect(box.max.x + box.min.x).toBeCloseTo(0);
+    geometry.dispose();
+  });
+
+  it('eases the glow toward a new background instead of switching abruptly', () => {
+    const renderer = new ThreeDSnowRenderer(null);
+    renderer.glowPass = { setGlowState: vi.fn() };
+    renderer.glowCurrent = { strength: 1, whiten: 0, r: 0, g: 0, b: 0 };
+    renderer.glowTarget = { strength: 0.4, whiten: 1, r: 1, g: 1, b: 1 };
+
+    renderer._stepGlowState(0.05);
+    expect(renderer.glowCurrent.whiten).toBeGreaterThan(0);
+    expect(renderer.glowCurrent.whiten).toBeLessThan(0.5);
+    for (let i = 0; i < 200; i++) renderer._stepGlowState(0.05);
+    expect(renderer.glowCurrent).toEqual(renderer.glowTarget);
+    expect(renderer.glowPass.setGlowState).toHaveBeenLastCalledWith(0.4, 1, renderer.glowCurrent);
   });
 });

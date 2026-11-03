@@ -123,7 +123,7 @@
     "message": "Presets"
   },
   "presetsHint": {
-    "message": "Save different setting sets and switch between them quickly."
+    "message": "The selected preset is applied immediately, including a snowfall that is already running. Use \"Save\" to store changes in the preset."
   },
   "presetsCurrent": {
     "message": "Current preset"
@@ -133,9 +133,6 @@
   },
   "renamePreset": {
     "message": "Rename"
-  },
-  "applyPreset": {
-    "message": "Apply"
   },
   "deletePreset": {
     "message": "Delete"
@@ -306,7 +303,7 @@
     "message": "Export and import all presets in a single file"
   },
   "tooltipPresetSelect": {
-    "message": "Choose a saved preset"
+    "message": "Choose a preset — it is applied immediately"
   },
   "tooltipPresetNameInput": {
     "message": "Enter a name for the new preset"
@@ -319,9 +316,6 @@
   },
   "tooltipRestorePresetTemplates": {
     "message": "Load built-in preset templates"
-  },
-  "tooltipApplyPreset": {
-    "message": "Apply selected preset"
   },
   "tooltipDeletePreset": {
     "message": "Delete selected preset"
@@ -336,10 +330,10 @@
     "message": "Enter a symbol or short text"
   },
   "tooltipSymbolModeText": {
-    "message": "Glyph mode: text/monochrome (click to switch to Emoji)"
+    "message": "Text glyph, tinted with snow colors. Detected automatically; click to switch to Emoji"
   },
   "tooltipSymbolModeEmoji": {
-    "message": "Glyph mode: Segoe UI Emoji (click to switch to text)"
+    "message": "Color emoji, keeps its own colors. Detected automatically; click to switch to text"
   },
   "tooltipSentenceInput": {
     "message": "Enter a long phrase"
@@ -418,5 +412,323 @@
   },
   "tooltipSubTabPresets": {
     "message": "Presets and settings transfer"
+  },
+  "subTabApi": {
+    "message": "API"
+  },
+  "tooltipSubTabApi": {
+    "message": "External API, window sync, relay and OBS"
+  },
+  "apiQuickActions": {
+    "message": "Quick effects"
+  },
+  "apiQuickActionsHint": {
+    "message": "Effects are layered over the current snowfall and disappear on their own."
+  },
+  "apiBurst": {
+    "message": "Snow burst"
+  },
+  "tooltipApiBurst": {
+    "message": "Instantly fill the screen with lots of snowflakes for a few seconds"
+  },
+  "apiStorm": {
+    "message": "Strong wind"
+  },
+  "tooltipApiStorm": {
+    "message": "Start a strong gusty wind for 10 seconds"
+  },
+  "apiClearEffects": {
+    "message": "Clear effects"
+  },
+  "tooltipApiClearEffects": {
+    "message": "Remove all temporary effects and restore normal wind"
+  },
+  "syncSection": {
+    "message": "Synchronization"
+  },
+  "syncAllWindows": {
+    "message": "All tabs and windows"
+  },
+  "tooltipSyncAllWindows": {
+    "message": "Apply start, stop and effects to every open tab in this browser"
+  },
+  "syncAllWindowsHint": {
+    "message": "Start, stop and effects are applied to all open tabs of this browser."
+  },
+  "relaySection": {
+    "message": "Local relay (browsers & OBS)"
+  },
+  "relayHint": {
+    "message": "Run `pnpm relay` on this computer to sync several browsers, OBS and external HTTP commands. The relay only listens on localhost."
+  },
+  "relayEnabled": {
+    "message": "Connect to relay"
+  },
+  "tooltipRelayEnabled": {
+    "message": "Connect this browser to the local relay with the token below"
+  },
+  "relayUrl": {
+    "message": "Relay address (localhost only)"
+  },
+  "relayToken": {
+    "message": "Access token"
+  },
+  "relayGenerateToken": {
+    "message": "New token"
+  },
+  "tooltipRelayGenerateToken": {
+    "message": "Generate a random token; start the relay with --token <token>"
+  },
+  "relayCopyObsUrl": {
+    "message": "OBS link"
+  },
+  "tooltipRelayCopyObsUrl": {
+    "message": "Copy the Browser Source URL for OBS (contains the token)"
+  },
+  "relayStatusLabel": {
+    "message": "Status:"
+  },
+  "relayTokenGenerated": {
+    "message": "New token saved. Start the relay with: pnpm relay -- --token <token>"
+  },
+  "relayObsUrlUnavailable": {
+    "message": "Set a valid relay address and token (24+ characters) first."
+  },
+  "relayObsUrlCopied": {
+    "message": "OBS link copied. Keep it private: it contains the token."
+  },
+  "relayStateDisabled": {
+    "message": "disabled"
+  },
+  "relayStateConnecting": {
+    "message": "connecting…"
+  },
+  "relayStateConnected": {
+    "message": "connected"
+  },
+  "relayStateError": {
+    "message": "error"
+  },
+  "relayPeers": {
+    "message": "clients: {count}"
+  },
+  "apiCommandSent": {
+    "message": "Sent to tabs: {count}."
+  },
+  "apiCommandRelayed": {
+    "message": "Also sent via relay."
+  },
+  "apiCommandFailed": {
+    "message": "Command failed:"
+  },
+  "pageApiSection": {
+    "message": "API for websites"
+  },
+  "pageApiEnabled": {
+    "message": "Allow commands from pages"
+  },
+  "tooltipPageApiEnabled": {
+    "message": "Allow listed websites to control snow via window.postMessage"
+  },
+  "pageApiOrigins": {
+    "message": "Allowed sites (origins, one per line)"
+  },
+  "pageApiHint": {
+    "message": "Only listed sites can control the snow via window.postMessage. Any script on these sites gets access, so add only trusted ones."
+  },
+  "confirmDeletePresetShort": {
+    "message": "Really delete?"
+  },
+  "errorGeneric": {
+    "message": "Something went wrong:"
+  },
+  "errorGifRead": {
+    "message": "Could not read the file."
+  },
+  "errorGifType": {
+    "message": "Choose a GIF, PNG, JPEG or WebP image."
+  },
+  "placeholderSentence": {
+    "message": "Type a phrase…"
+  },
+  "presetApplied": {
+    "message": "Preset applied"
+  },
+  "presetDeleted": {
+    "message": "Preset deleted"
+  },
+  "presetRenamed": {
+    "message": "Preset renamed"
+  },
+  "presetSaved": {
+    "message": "Preset saved"
+  },
+  "settingsImported": {
+    "message": "Settings imported"
+  },
+  "snowStarting": {
+    "message": "Starting…"
+  },
+  "snowStopped": {
+    "message": "Snowfall stopped"
+  },
+  "presetUnsavedChanges": {
+    "message": "You have unsaved changes"
+  },
+  "updatePreset": {
+    "message": "Save"
+  },
+  "tooltipUpdatePreset": {
+    "message": "Write the current settings to the selected preset"
+  },
+  "presetUpdated": {
+    "message": "Changes saved to the preset"
+  },
+  "presetUnsavedTitle": {
+    "message": "Unsaved changes"
+  },
+  "presetUnsavedMessage": {
+    "message": "Settings of the \"{name}\" preset were changed. Save them before switching?"
+  },
+  "presetUnsavedSaveNew": {
+    "message": "Save as a new preset"
+  },
+  "presetUnsavedOverwrite": {
+    "message": "Save to \"{name}\""
+  },
+  "presetUnsavedDiscard": {
+    "message": "Don't save"
+  },
+  "presetUnsavedCancel": {
+    "message": "Cancel"
+  },
+  "presetNewNameLabel": {
+    "message": "New preset name"
+  },
+  "presetCopySuffix": {
+    "message": "copy"
+  },
+  "helpTab": {
+    "message": "Help"
+  },
+  "tooltipTabHelp": {
+    "message": "Guide to every feature and integration"
+  },
+  "helpTitle": {
+    "message": "Help"
+  },
+  "helpIntro": {
+    "message": "Click a section to expand it. \"Open settings\" jumps to the matching tab."
+  },
+  "helpSearchPlaceholder": {
+    "message": "Search help…"
+  },
+  "helpNoResults": {
+    "message": "Nothing found. Try another word."
+  },
+  "helpOpenSettings": {
+    "message": "Open settings"
+  },
+  "helpStartTitle": {
+    "message": "Quick start"
+  },
+  "helpStartBody": {
+    "message": "Open a regular web page and press **Let it snow!** — snow starts falling from the top. **Stop** removes it from the page.\n• **Auto start** runs the snow on every new page and continues the snowfall where it was when you navigate.\n• All settings are saved automatically.\n• Snow does not work on browser system pages and extension stores — this is a browser restriction."
+  },
+  "helpSnowTitle": {
+    "message": "Snow and render modes"
+  },
+  "helpSnowBody": {
+    "message": "The **Snow** tab sets the flake count (1–320), fall speed, minimum and maximum size (in % of the shorter window side) and the mouse reaction radius.\n• **Auto (2D/WebGPU)** — the fast default mode: WebGPU, or Canvas 2D when WebGPU is unavailable.\n• **Full 3D** — volumetric Three.js/WebGL2 flakes with perspective and tumbling. The **3D thickness** slider changes the extrusion depth.\n• The glow follows the flake shape, twinkles and adapts to light or dark page backgrounds automatically.\n• If 3D is slow, reduce the flake count and size or switch back to Auto."
+  },
+  "helpSymbolsTitle": {
+    "message": "Symbols, emoji, phrases and GIFs"
+  },
+  "helpSymbolsBody": {
+    "message": "The **Symbols** tab controls how flakes look.\n• **Colors** — the palette for text symbols.\n• **Symbols** — any characters and emoji. The mode button switches between **text** (tinted with the palette) and **emoji** (keeps its own colors, e.g. 🦖). The mode is detected automatically.\n• **Phrases** — falling text; their count is set separately.\n• **GIF** — by HTTPS URL or from a local file. GIFs get depth in 3D and a glow in the colors of their edges."
+  },
+  "helpWindTitle": {
+    "message": "Wind"
+  },
+  "helpWindBody": {
+    "message": "On the **Wind** tab enable wind and choose the direction (left, right, random), strength and gust frequency. Small flakes drift more; strong wind adds lift and vortices."
+  },
+  "helpMouseTitle": {
+    "message": "Mouse and touch"
+  },
+  "helpMouseBody": {
+    "message": "Snow reacts to the pointer within the configured radius:\n• slow movement gently pushes flakes aside, fast movement carries them in an air stream;\n• **left button** — an explosion that scatters the snow;\n• **right button** — pulls the snow towards the cursor.\nSnow never blocks clicks: the page stays fully usable."
+  },
+  "helpPresetsTitle": {
+    "message": "Presets, import and export"
+  },
+  "helpPresetsBody": {
+    "message": "A preset chosen in the list is applied **immediately**, including a snowfall that is already running.\n• Edits are not written into the preset automatically: an \"Unsaved changes\" bar with a **Save** button appears.\n• When switching presets with unsaved edits you can save them as a new preset, write them into the previous one, discard them or cancel the switch.\n• **Load templates** restores the built-in presets (Winter, Spring, etc.).\n• **Export/Import** — a JSON file; the \"Transfer all presets\" switch saves and loads all presets at once."
+  },
+  "helpEffectsTitle": {
+    "message": "Quick effects"
+  },
+  "helpEffectsBody": {
+    "message": "The **API** tab has effect buttons on top of the current snowfall:\n• **Snow burst** — a dense wave of flakes from the top;\n• **Strong wind** — gusty wind for 10 seconds;\n• **Clear effects** — removes temporary layers without stopping the main snow.\nUp to four temporary layers run at once; they fade out smoothly when they end."
+  },
+  "helpSyncTitle": {
+    "message": "Window sync"
+  },
+  "helpSyncBody": {
+    "message": "Turn on **All tabs and windows** (the **API** tab) and start, stop and effects apply to every open tab of this browser. No relay is needed for that.\n• Commands are synchronized, not exact flake positions.\n• Hidden tabs pause the animation."
+  },
+  "helpRelayTitle": {
+    "message": "Relay: several browsers"
+  },
+  "helpRelayBody": {
+    "message": "The relay is a small local program that links Chrome, Firefox, Edge, OBS and external programs **on the same computer**.\n• Download the ready-made `let-it-snow-relay` app from GitHub releases (no Node.js required) or run `pnpm relay` from the sources.\n• In every browser, on the **API** tab, enter `ws://127.0.0.1:8787/ws` and the same **token** shown in the relay window, then enable **Connect to relay**. The status should become \"connected\".\n• The relay only accepts connections from this computer (127.0.0.1)."
+  },
+  "helpObsTitle": {
+    "message": "OBS Studio"
+  },
+  "helpObsBody": {
+    "message": "Snow can be layered over a stream as a transparent **Browser** source:\n• start the relay, enter the token and press **OBS link** on the **API** tab;\n• in OBS add a **Browser** source, paste the link and set the size, e.g. 1920 × 1080;\n• options go before `#token=`, e.g. `?snowmax=120&renderer=3d`;\n• the `let-it-snow-relay.lua` script (Tools → Scripts) starts the relay together with OBS and adds the source to the scene."
+  },
+  "helpHttpTitle": {
+    "message": "HTTP API and external programs"
+  },
+  "helpHttpBody": {
+    "message": "While the relay is running, any program on this computer can control the snow:\n• `POST http://127.0.0.1:8787/api/command` with the header `Authorization: Bearer <token>` and JSON `{\"command\": \"burst\", \"params\": {\"count\": 400}}`;\n• commands: `burst`, `wind`, `glyphs`, `gif`, `start`, `stop`, `clearEffects`;\n• a `202` response means the command was accepted; `delivered` is the number of connected clients;\n• a WebSocket `/ws` is available too. All parameters and limits are described in the External API reference."
+  },
+  "helpPageApiTitle": {
+    "message": "Page API for websites"
+  },
+  "helpPageApiBody": {
+    "message": "A trusted website can control the snow in its own tab without the relay.\n• Enable **Allow commands from pages** and list exact origins, e.g. `https://dashboard.example.com`, one per line.\n• The site sends `window.postMessage({target: \"let-it-snow-api\", command: \"burst\", params: {count: 250}}, location.origin)`.\n• The command affects only that site's tab. Allow only websites you trust."
+  },
+  "helpSecurityTitle": {
+    "message": "Security and privacy"
+  },
+  "helpSecurityBody": {
+    "message": "• The extension does not collect or share personal data; there is no analytics or tracking.\n• External commands are validated and limited in size, count and duration.\n• The relay is reachable only from this computer and requires a token. Do not publish the token or the OBS link — they grant control over the snow.\n• The token is kept only in local browser storage and is never synced."
+  },
+  "helpTroubleTitle": {
+    "message": "Troubleshooting"
+  },
+  "helpTroubleBody": {
+    "message": "• **No snow** — open a regular (non-system) web page and reload it.\n• **Relay does not connect** — check that the relay is running and the address, port and token match.\n• **Command accepted but nothing happens** — check `delivered`, the connection status and that the tab or OBS source is visible.\n• **Error 401** — wrong token; **429** — commands are sent too often.\n• **3D is slow** — reduce the flake count or choose Auto mode."
+  },
+  "helpDocsTitle": {
+    "message": "Documentation"
+  },
+  "helpDocsGuide": {
+    "message": "User guide"
+  },
+  "helpDocsGuideUrl": {
+    "message": "https://github.com/MirrorAzure/Let-It-Snow/blob/main/docs/USAGE.md"
+  },
+  "helpDocsApi": {
+    "message": "External API reference"
+  },
+  "helpDocsApiUrl": {
+    "message": "https://github.com/MirrorAzure/Let-It-Snow/blob/main/docs/EXTERNAL_API.md"
+  },
+  "helpDocsReleases": {
+    "message": "Download relay (releases)"
   }
 }

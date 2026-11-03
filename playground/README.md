@@ -1,109 +1,113 @@
 # Let It Snow Playground
 
-Интерактивная песочница для тестирования анимации снега и визуализации UI расширения без необходимости установки.
+**English** | [Русский](./README_RU.md)
 
-## Быстрый старт
+An interactive sandbox for testing the snow animation and previewing the extension UI without installing the extension.
+
+## Quick start
 
 ```bash
-# Установить зависимости
+# Install dependencies
 pnpm install
 
-# Запустить playground с горячей перезагрузкой (HMR)
+# Start the playground with hot reload (HMR)
 pnpm run playground
 ```
 
-Откроется браузер на `http://localhost:5173/playground/`
+The browser will open at `http://localhost:5173/playground/`
 
-## Доступные playground
+## Available playgrounds
 
 ### 🎄 Snow Animation Playground (`index.html`)
-Тестирование анимации снегопада с горячей перезагрузкой.
+Test the snowfall animation with hot reload.
 
-Откройте: `http://localhost:5173/playground/`
+Open: `http://localhost:5173/playground/`
 
 ### 🎨 Popup UI Playground (`popup-playground.html`)
-Визуализация и тестирование внешнего вида popup меню расширения с горячей перезагрузкой.
+Preview and test the look of the extension popup menu with hot reload.
 
-Откройте: `http://localhost:5173/playground/popup-playground.html`
+Open: `http://localhost:5173/playground/popup-playground.html`
 
-**🔥 Hot Module Replacement:** Изменения в `src/popup/*.css` и `src/popup/*.js` автоматически обновляются!
+**🔥 Hot Module Replacement:** Changes in `src/popup/*.css` and `src/popup/*.js` are applied automatically!
 
-## Возможности
+## Features
 
 ### Snow Animation Playground
-- 🎨 **Полная работа анимации** - использует исходный код плагина
-- 🔄 **Hot Module Replacement (HMR)** - изменения в `src/content/index.js` тут же видны в браузере
-- ⚙️ **Все параметры настраиваются** - количество снежинок, скорость, цвета, символы, GIF
-- ❄️ **3D-глифы и цвета** - 3D-рендерер использует выбранные символы, режимы text/emoji и цветовую палитру
-- 🎯 **Без установки расширения** - работает как обычное веб-приложение
-- 🌓 **Смена тем** - light/dark режимы для тестирования логики свечения
-- ✨ **Сравнение ореола** - переключайте WebGPU/Canvas2D, задавайте одинаковую минимальную силу свечения и сравнивайте на одной сцене
-- 🧊 **3D preview** - переключайте рендерер на Three.js WebGL2 и тестируйте объёмный снег в том же playground
-- 🔧 **Сечение 3D-глифов** - настраивайте толщину объёмных снежинок
+- 🎨 **Fully working animation** - uses the extension's source code
+- 🔄 **Hot Module Replacement (HMR)** - changes in `src/content/index.js` show up in the browser immediately
+- ⚙️ **Every parameter is configurable** - snowflake count, speed, colors, symbols, GIFs
+- ❄️ **3D glyphs and colors** - the 3D renderer uses the selected symbols, text/emoji modes and color palette
+- 🎯 **No extension install required** - runs as a regular web app
+- 🌓 **Theme switching** - light/dark modes for testing the glow logic
+- ✨ **Glow comparison** - switch between WebGPU and Canvas2D, set the same minimum glow strength and compare them in the same scene
+- 🧊 **3D preview** - switch the renderer to Three.js WebGL2 and test volumetric snow in the same playground
+- 🔧 **3D glyph thickness** - adjust the thickness of volumetric snowflakes
 
 ### Popup UI Playground
-- 👁️ **Визуализация popup** - полный интерфейс настроек в изолированной среде
-- 🔥 **Hot Module Replacement (HMR)** - изменения в `src/popup/*.css` и `src/popup/*.js` обновляются автоматически
-- 🎮 **Интерактивные элементы** - все слайдеры, кнопки и переключатели работают
-- 🎨 **Добавление элементов** - тестирование добавления цветов, символов, предложений и GIF
-- 📱 **Адаптивный дизайн** - проверка работы на разных размерах экрана
-- 🎯 **Полная интеграция** - импортирует исходные стили и модули из `src/popup/`
-- 🖱️ **Интерактивность мыши** - можно проверять реакцию снежинок на движения курсора
+- 👁️ **Popup preview** - the full settings UI in an isolated environment
+- 🔥 **Hot Module Replacement (HMR)** - changes in `src/popup/*.css` and `src/popup/*.js` are applied automatically
+- 🎮 **Interactive controls** - all sliders, buttons and toggles work
+- 🎨 **Adding items** - test adding colors, symbols, sentences and GIFs
+- 📱 **Responsive design** - check behavior at different screen sizes
+- 🎯 **Full integration** - imports the original styles and modules from `src/popup/`
+- 🖱️ **Mouse interactivity** - check how snowflakes react to cursor movement
 
-## Как это работает
+## How it works
+
 ### Snow Animation Playground
-1. `playground/content-script.js` - мост между playground и исходным кодом
-2. Импортирует класс `SnowWebGPUController` напрямую из `src/content/index.js`
-3. Любые изменения в исходниках тут же перезагружаются в браузере
+1. `playground/content-script.js` - a bridge between the playground and the source code
+2. Imports the `SnowWebGPUController` class directly from `src/content/index.js`
+3. Any source changes are reloaded in the browser immediately
 
 ### Popup UI Playground
-1. `playground/popup-playground.js` - импортирует CSS и JS модули из `src/popup/`
-2. Vite отслеживает изменения в `src/popup/*` и применяет их через HMR
-3. Изменения CSS применяются мгновенно, изменения JS - с перезагрузкой страницы
+1. `playground/popup-playground.js` - imports CSS and JS modules from `src/popup/`
+2. Vite watches `src/popup/*` for changes and applies them via HMR
+3. CSS changes apply instantly, JS changes trigger a page reload
 
-### Общая инфраструктура
-1. `playground-server.js` запускает Vite dev сервер с поддержкой HMR для всех файлов
-2. `popup-playground.js` - JS модуль для HMR popup стилей
-3. `main.js` - логика управления анимацией в браузере
+### Shared infrastructure
+1. `playground-server.js` starts the Vite dev server with HMR support for all files
+2. `popup-playground.js` - JS module for HMR of popup styles
+3. `main.js` - animation control logic in the browser
 
-## Структура
+## Structure
 
 ```
 playground/
-├── index.html              # Snow Animation Playground - интерфейс
-├── popup-playground.html   # Popup UI Playground - визуализация popup меню
-├── main.js                 # Логика управления анимацией
-├── style.css               # Стили для snow playground
-└── content-script.js       # Бриджер к исходному коду анимации
+├── index.html              # Snow Animation Playground - UI
+├── popup-playground.html   # Popup UI Playground - popup menu preview
+├── main.js                 # Animation control logic
+├── style.css               # Styles for the snow playground
+└── content-script.js       # Bridge to the animation source code
 ```
 
-## Разработка
-### Разработка анимации снега
-При разработке новых функций в `src/content/index.js`:
+## Development
 
-1. Запустите `pnpm run playground`
-2. Измените код в `src/content/`
-3. Браузер автоматически перезагрузится с новыми изменениями
-4. Настраивайте параметры через UI playground
+### Developing the snow animation
+When building new features in `src/content/index.js`:
 
-### Разработка интерфейса popup
-При изменении внешнего вида или логики popup меню в `src/popup/`:
+1. Run `pnpm run playground`
+2. Edit code in `src/content/`
+3. The browser reloads automatically with your changes
+4. Tune parameters via the playground UI
 
-1. Запустите `pnpm run playground`
-2. Откройте `http://localhost:5173/playground/popup-playground.html`
-3. Измените код в `src/popup/` (CSS или JS)
-4. Изменения применятся автоматически.
-5. Настраивайте параметры через UI playground
+### Developing the popup UI
+When changing the look or logic of the popup menu in `src/popup/`:
 
-## Тестирование параметров
+1. Run `pnpm run playground`
+2. Open `http://localhost:5173/playground/popup-playground.html`
+3. Edit code in `src/popup/` (CSS or JS)
+4. Changes are applied automatically
+5. Tune parameters via the playground UI
 
-Playground позволяет в реальном времени менять:
+## Testing parameters
 
-- **Количество снежинок** - от 1 до 400
-- **Скорость падения** - от 0.05 до 2
-- **Минимальная сила свечения** - от 0 до 1 для сравнения ореола в WebGPU и Canvas2D
-- **Толщина 3D-глифов** - глубина экструзии выбранных символов в 3D-режиме
-- **Размер** - мин и макс размеры
-- **Цвета** - добавляйте свои hex цвета
-- **Символы** - используйте любые Unicode символы
-- **GIF** - добавляйте ссылки на GIF файлы
+The playground lets you change in real time:
+
+- **Snowflake count** - from 1 to 400
+- **Fall speed** - from 0.05 to 2
+- **Minimum glow strength** - from 0 to 1 for comparing the glow in WebGPU and Canvas2D
+- **3D glyph thickness** - extrusion depth of the selected symbols in 3D mode
+- **Size** - minimum and maximum sizes
+- **Colors** - add your own hex colors
+- **Symbols** - use any Unicode characters
+- **GIF** - add links to GIF files

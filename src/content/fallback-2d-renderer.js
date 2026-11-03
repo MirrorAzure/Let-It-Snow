@@ -5,7 +5,7 @@
 import { CollisionHandler } from './physics/collision-handler.js';
 import { applyMouseRepulsion } from './physics/mouse-handler.js';
 import { stepWindState, createWindVortexField, applyVortexWindImpulse } from './physics/wind-field.js';
-import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
+import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
 import { resolveMinGlowStrength } from './utils/glow-utils.js';
 import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
@@ -525,7 +525,7 @@ export class Fallback2DRenderer {
     const totalFlakes = Math.max(1, snowmax);
     const initialActive = Math.min(totalFlakes, this.initialActiveFlakes);
     const { height: viewportHeight } = this._getViewportSize();
-    const initialDepthSpan = Math.max(viewportHeight * 2.5, 1);
+    const initialDepthSpan = Math.max(viewportHeight * resolveInitialSpawnSpanRatio(this.config, 2.5), 1);
 
     const activeMask = this._buildDistributedSlotMask(totalFlakes, initialActive);
     const sentenceMask = hasSentences

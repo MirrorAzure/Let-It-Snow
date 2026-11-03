@@ -1,9 +1,11 @@
 # Let It Snow - Architecture
 
-Версия: 3.0.0
-Обновлено: 30 октября 2026
+**English** | [Русский](./architecture_RU.md)
 
-## Диаграмма архитектуры
+Version: 3.0.0
+Updated: October 30, 2026
+
+## Architecture diagram
 
 ```mermaid
 graph TB
@@ -123,60 +125,60 @@ graph TB
     class Graphics,AtlasManager,UniformBuffer graphics
 ```
 
-## Основные компоненты
+## Core components
 
 ### Content Script Layer
-- **content/index.js** - главный оркестратор, управляет инъекцией снега на веб-страницы
-- **webgpu-renderer.js** - основной рендерер, использующий WebGPU для аппаратного ускорения
-- **fallback-2d-renderer.js** - резервный Canvas 2D рендерер для браузеров без WebGPU
-- **three-d-renderer.js** - дополнительный Three.js/WebGL2 режим с пользовательскими глифами и объёмными столкновениями
-- **shader.wgsl** - WGSL шейдер для GPU рендеринга
-- **gif-layer.js** - слой для поддержки GIF-оверлея
+- **content/index.js** - main orchestrator; manages injecting snow into web pages
+- **webgpu-renderer.js** - primary renderer using WebGPU for hardware acceleration
+- **fallback-2d-renderer.js** - fallback Canvas 2D renderer for browsers without WebGPU
+- **three-d-renderer.js** - optional Three.js/WebGL2 mode with custom glyphs and volumetric collisions
+- **shader.wgsl** - WGSL shader for GPU rendering
+- **gif-layer.js** - layer providing GIF overlay support
 
 #### Graphics Layer
-- **atlas-manager.js** - управление атласами символов и предложений
-- **uniform-buffer.js** - управление uniform буферами для WebGPU
+- **atlas-manager.js** - manages glyph and sentence atlases
+- **uniform-buffer.js** - manages WebGPU uniform buffers
 
 #### Physics Layer
-- **simulation-engine.js** - симуляция движения снежинок
-- **collision-handler.js** - мягкие коллизии между снежинками
-- **mouse-handler.js** - взаимодействие с курсором и жестами мыши
-- **wind-field.js** - общий расчёт ветра и вихревого поля для всех рендереров
+- **simulation-engine.js** - simulates snowflake movement
+- **collision-handler.js** - soft collisions between snowflakes
+- **mouse-handler.js** - interaction with the cursor and mouse gestures
+- **wind-field.js** - shared wind and vortex field computation for all renderers
 
-#### Утилиты
-- **background-monitor.js** - мониторинг фона страницы для адаптивного рендеринга
-- **color-utils.js** - обработка и конвертация цветов
-- **glyph-utils.js** - рендеринг текстовых символов (снежинок)
-- **glyph-quality-estimator.js** - анализ сложности глифов для автоматического подбора оптимального размера (в пикселях) ячейки WebGPU атласа
-- **size-utils.js** - разрешение размеров viewport/canvas и преобразование процентов в пиксели
-- **viewport-utils.js** - стабильное получение viewport размеров с fallback источниками
-- **circular-cursor.js** - единый циклический индексатор для очередей предложений
+#### Utilities
+- **background-monitor.js** - monitors the page background for adaptive rendering
+- **color-utils.js** - color processing and conversion
+- **glyph-utils.js** - rendering of text symbols (snowflakes)
+- **glyph-quality-estimator.js** - analyzes glyph complexity to automatically pick the optimal WebGPU atlas cell size (in pixels)
+- **size-utils.js** - resolves viewport/canvas sizes and converts percentages to pixels
+- **viewport-utils.js** - stable viewport size resolution with fallback sources
+- **circular-cursor.js** - shared circular indexer for sentence queues
 
 ### Extension Popup
-- **popup.html/js/css** - пользовательский интерфейс расширения с вкладками: Snow, Wind, Symbols, Presets
-- **settings.js** - менеджер настроек
-- **ui-controllers.js** - контроллеры UI взаимодействий, включая переключение text/emoji для символов
-- **localization.js** - обработка интернационализации
-- **presets/built-in-presets.js** - встроенные сезонные шаблоны пресетов (Winter, Spring и др.)
+- **popup.html/js/css** - extension user interface with tabs: Snow, Wind, Symbols, Presets
+- **settings.js** - settings manager
+- **ui-controllers.js** - UI interaction controllers, including the text/emoji toggle for symbols
+- **localization.js** - internationalization handling
+- **presets/built-in-presets.js** - built-in seasonal preset templates (Winter, Spring, etc.)
 
 ### Configuration
-- **manifest.json** - базовая конфигурация
-- **manifests/** - специфичные манифесты для Chrome, Edge, Firefox
-- **_locales/** - файлы локализации (en, ru)
+- **manifest.json** - base configuration
+- **manifests/** - browser-specific manifests for Chrome, Edge, Firefox
+- **_locales/** - localization files (en, ru)
 
 ### Storage
-- Browser Storage API для хранения настроек и состояния
+- Browser Storage API for storing settings and state
 
-## Поток данных
+## Data flow
 
-1. **Инъекция**: Content script инъецируется в веб-страницы
-2. **Инициализация**: Выбирается подходящий рендерер (WebGPU или Canvas 2D)
-3. **Рендеринг**: Снег отрисовывается с использованием выбранного движка
-4. **Конфигурация**: Popup UI позволяет настраивать параметры
-5. **Персистентность**: Настройки сохраняются в Browser Storage
+1. **Injection**: The content script is injected into web pages
+2. **Initialization**: A suitable renderer is selected (WebGPU or Canvas 2D)
+3. **Rendering**: Snow is drawn using the selected engine
+4. **Configuration**: The popup UI lets you adjust parameters
+5. **Persistence**: Settings are saved to Browser Storage
 
-## Условные обозначения
+## Legend
 
-- **Сплошные линии (→)**: Прямое взаимодействие
-- **Пунктирные линии (-.→)**: Опциональное/внутреннее использование
-- **Двусторонние стрелки (↔)**: Чтение и запись данных
+- **Solid lines (→)**: Direct interaction
+- **Dotted lines (-.→)**: Optional/internal usage
+- **Bidirectional arrows (↔)**: Reading and writing data

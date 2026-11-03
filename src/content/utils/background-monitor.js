@@ -19,27 +19,56 @@ function smoothstep(edge0, edge1, value) {
  * @returns {{r: number, g: number, b: number, a: number}} RGB цвет фона
  */
 export function getEffectiveBackgroundColor() {
-  const candidates = [document.body, document.documentElement];
+  const candidates = [document.documentElement, document.body];
+  const background = { r: 1, g: 1, b: 1, a: 1 };
   for (const el of candidates) {
     if (!el) continue;
     const styles = getComputedStyle(el);
     const parsed = parseCssColor(styles.backgroundColor);
-    if (parsed && parsed.a > 0) {
-      return parsed;
-    }
+    if (!parsed || parsed.a <= 0) continue;
+    background.r = parsed.r * parsed.a + background.r * (1 - parsed.a);
+    background.g = parsed.g * parsed.a + background.g * (1 - parsed.a);
+    background.b = parsed.b * parsed.a + background.b * (1 - parsed.a);
   }
-  // Белый по умолчанию
-  return { r: 1, g: 1, b: 1, a: 1 };
+  return background;
+}
+
+function getBackgroundSignature() {
+  const { r, g, b } = getEffectiveBackgroundColor();
+  return `${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)}`;
 }
 
 /**
  * Класс для мониторинга изменений фона страницы
  */
 export class BackgroundMonitor {
-  constructor(onBackgroundChange) {
+  /**
+   * @param {Function} onBackgroundChange
+   * @param {{pollIntervalMs?: number}} [options] Polling catches stylesheet swaps and CSS
+   *   transitions that do not touch html/body attributes; 0 disables it.
+   */
+  constructor(onBackgroundChange, options = {}) {
     this.onBackgroundChange = onBackgroundChange;
     this.observer = null;
     this.colorSchemeMedia = null;
+    const interval = Number(options.pollIntervalMs ?? 1000);
+    this.pollIntervalMs = Number.isFinite(interval) && interval > 0 ? Math.max(100, interval) : 0;
+    this.pollTimer = null;
+    this.lastSignature = '';
+    this.handleTransitionEnd = (event) => {
+      if (event.target === document.documentElement || event.target === document.body) {
+        this.checkForChange();
+      }
+    };
+  }
+
+  /** Notifies the listener only when the composited background actually changed. */
+  checkForChange() {
+    const signature = getBackgroundSignature();
+    if (signature === this.lastSignature) return false;
+    this.lastSignature = signature;
+    this.onBackgroundChange?.();
+    return true;
   }
 
   /**
@@ -47,6 +76,7 @@ export class BackgroundMonitor {
    */
   start() {
     this.stop();
+    this.lastSignature = getBackgroundSignature();
 
     // Наблюдаем за изменениями атрибутов class и style
     if (typeof MutationObserver === 'function') {
@@ -64,6 +94,13 @@ export class BackgroundMonitor {
       media.addEventListener('change', this.onBackgroundChange);
       this.colorSchemeMedia = media;
     }
+
+    document.addEventListener('transitionend', this.handleTransitionEnd, true);
+    if (this.pollIntervalMs) {
+      this.pollTimer = setInterval(() => {
+        if (!document.hidden) this.checkForChange();
+      }, this.pollIntervalMs);
+    }
   }
 
   /**
@@ -77,6 +114,11 @@ export class BackgroundMonitor {
     if (this.colorSchemeMedia && this.onBackgroundChange) {
       this.colorSchemeMedia.removeEventListener('change', this.onBackgroundChange);
       this.colorSchemeMedia = null;
+    }
+    document.removeEventListener('transitionend', this.handleTransitionEnd, true);
+    if (this.pollTimer !== null) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
     }
   }
 

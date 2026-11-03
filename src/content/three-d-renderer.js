@@ -1,25 +1,24 @@
 import * as THREE from 'three';
-import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
+import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
 import { stepWindState } from './physics/wind-field.js';
+import { BackgroundMonitor, getEffectiveBackgroundColor } from './utils/background-monitor.js';
+import { resolveMinGlowStrength } from './utils/glow-utils.js';
+import { ThreeDGlowPass } from './graphics/three-d-glow-pass.js';
+import { isCellMonotone } from './utils/glyph-utils.js';
 
 const CAMERA_Z = 35;
 const CAMERA_FOV = 52;
 const MIN_DEPTH = -14;
 const MAX_DEPTH = 12;
-const GLOW_LAYERS = [
-  { radius: 0.015, opacity: 0.008 },
-  { radius: 0.03, opacity: 0.013 },
-  { radius: 0.05, opacity: 0.019 },
-  { radius: 0.075, opacity: 0.025 },
-  { radius: 0.105, opacity: 0.03 },
-  { radius: 0.14, opacity: 0.032 },
-  { radius: 0.18, opacity: 0.03 },
-  { radius: 0.225, opacity: 0.026 },
-  { radius: 0.275, opacity: 0.021 },
-  { radius: 0.33, opacity: 0.016 },
-  { radius: 0.39, opacity: 0.011 },
-  { radius: 0.46, opacity: 0.007 }
-];
+const GLOW_MIN_LUMINANCE = 0.72;
+const DEFAULT_GLOW_FLICKER = 0.5;
+const TAN_HALF_FOV = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV / 2));
+const GLYPH_EM_PX = 88;
+const GLYPH_CANVAS_PX = 128;
+const SENTENCE_UNIT_PX = 200;
+const MASK_CACHE_LIMIT = 48;
+const GLOW_STATE_RATE = 5;
+const glyphMaskCache = new Map();
 
 export function resolveGlyphAppearance(config, index) {
   const count = Math.max(1, Math.floor(Number(config.snowmax) || 80));
@@ -51,7 +50,21 @@ export function resolveGlyphAppearance(config, index) {
 
 export function resolveGlowPulse(phase) {
   const wave = 0.5 + 0.5 * Math.sin(phase);
-  return 0.16 + 0.84 * wave * wave;
+  return 0.72 + 0.28 * wave * wave * (3 - 2 * wave);
+}
+
+/**
+ * Per-flake twinkle: two incommensurate waves plus a sharpened sparkle peak.
+ * @returns {number} Multiplier in [1 - amount, 1].
+ */
+export function resolveGlowFlicker(time, flake, amount = DEFAULT_GLOW_FLICKER) {
+  const depth = THREE.MathUtils.clamp(Number(amount), 0, 1);
+  if (!Number.isFinite(depth) || depth === 0 || !Number.isFinite(flake?.twinkleSpeedA)) return 1;
+  const slow = 0.5 + 0.5 * Math.sin(time * flake.twinkleSpeedA + flake.twinklePhaseA);
+  const fast = 0.5 + 0.5 * Math.sin(time * flake.twinkleSpeedB + flake.twinklePhaseB);
+  const sparkle = Math.pow(fast, 6);
+  const twinkle = THREE.MathUtils.clamp(slow * 0.7 + sparkle * 0.6, 0, 1);
+  return 1 - depth * (1 - twinkle);
 }
 
 export function createGlyphGeometry(
@@ -73,103 +86,205 @@ export function createGlyphGeometry(
 
   const depth = THREE.MathUtils.clamp(Number(thickness) || 0.07, 0.02, 0.18) * 0.5;
   const vertices = [];
+  const uvs = [];
   const isFilled = (x, y) => x >= 0 && x < width && y >= 0 && y < height && mask[y * width + x] > 0;
+  // Front/back faces map the mask image 1:1.
+  const uvFor = (vertex) => [
+    (vertex[0] + 0.5) * boundsWidth / width + offsetX / width,
+    1 - ((0.5 - vertex[1]) * boundsHeight + offsetY) / height
+  ];
   const addQuad = (a, b, c, d) => {
     vertices.push(...a, ...b, ...c, ...a, ...c, ...d);
+    uvs.push(...uvFor(a), ...uvFor(b), ...uvFor(c), ...uvFor(a), ...uvFor(c), ...uvFor(d));
   };
 
-  for (let y = 0; y < height; y++) {
+  const emitFace = (start, end, top, bottom) => {
+    const x0 = (start - offsetX) / boundsWidth - 0.5;
+    const x1 = (end - offsetX) / boundsWidth - 0.5;
+    const y0 = 0.5 - (top - offsetY) / boundsHeight;
+    const y1 = 0.5 - (bottom - offsetY) / boundsHeight;
+    addQuad([x0, y1, depth], [x1, y1, depth], [x1, y0, depth], [x0, y0, depth]);
+    addQuad([x0, y1, -depth], [x0, y0, -depth], [x1, y0, -depth], [x1, y1, -depth]);
+  };
+
+  // Identical horizontal runs on consecutive rows are merged into one rectangle.
+  let openRuns = new Map();
+  for (let y = 0; y <= height; y++) {
+    const nextRuns = new Map();
     let x = 0;
-    while (x < width) {
+    while (y < height && x < width) {
       if (!isFilled(x, y)) {
         x++;
         continue;
       }
-
       const start = x;
       while (x + 1 < width && isFilled(x + 1, y)) x++;
-      const x0 = (start - offsetX) / boundsWidth - 0.5;
-      const x1 = (x + 1 - offsetX) / boundsWidth - 0.5;
-      const y0 = 0.5 - (y - offsetY) / boundsHeight;
-      const y1 = 0.5 - (y + 1 - offsetY) / boundsHeight;
-
-      addQuad([x0, y1, depth], [x1, y1, depth], [x1, y0, depth], [x0, y0, depth]);
-      addQuad([x0, y1, -depth], [x0, y0, -depth], [x1, y0, -depth], [x1, y1, -depth]);
+      const key = start * 65536 + x + 1;
+      nextRuns.set(key, openRuns.get(key) ?? y);
+      openRuns.delete(key);
       x++;
     }
+    for (const [key, top] of openRuns) {
+      emitFace(Math.floor(key / 65536), key % 65536, top, y);
+    }
+    openRuns = nextRuns;
+  }
 
-    for (let x = 0; x < width; x++) {
-      if (!isFilled(x, y)) continue;
-      const x0 = (x - offsetX) / boundsWidth - 0.5;
-      const x1 = (x + 1 - offsetX) / boundsWidth - 0.5;
-      const y0 = 0.5 - (y - offsetY) / boundsHeight;
-      const y1 = 0.5 - (y + 1 - offsetY) / boundsHeight;
+  // Side walls are merged into runs, which keeps triangle counts low for detailed glyphs.
+  const toX = (px) => (px - offsetX) / boundsWidth - 0.5;
+  const toY = (py) => 0.5 - (py - offsetY) / boundsHeight;
+  const addWallUv = (u0, v0, u1, v1, order) => {
+    const corners = { s: [u0, v0], e: [u1, v1] };
+    for (const key of order) uvs.push(...corners[key]);
+  };
+  const addWall = (a, b, c, d, uvStart, uvEnd, order) => {
+    vertices.push(...a, ...b, ...c, ...a, ...c, ...d);
+    addWallUv(uvStart[0], uvStart[1], uvEnd[0], uvEnd[1], order);
+  };
+  const pixelUv = (x, y) => [(x + 0.5) / width, 1 - (y + 0.5) / height];
 
-      if (!isFilled(x - 1, y)) {
-        addQuad([x0, y1, -depth], [x0, y1, depth], [x0, y0, depth], [x0, y0, -depth]);
+  for (let x = 0; x < width; x++) {
+    for (const side of [-1, 1]) {
+      let y = 0;
+      while (y < height) {
+        if (!isFilled(x, y) || isFilled(x + side, y)) {
+          y++;
+          continue;
+        }
+        const start = y;
+        while (y + 1 < height && isFilled(x, y + 1) && !isFilled(x + side, y + 1)) y++;
+        const wx = toX(side < 0 ? x : x + 1);
+        const top = toY(start);
+        const bottom = toY(y + 1);
+        const uvTop = pixelUv(x, start);
+        const uvBottom = pixelUv(x, y);
+        if (side < 0) {
+          addWall([wx, bottom, -depth], [wx, bottom, depth], [wx, top, depth], [wx, top, -depth],
+            uvTop, uvBottom, ['e', 'e', 's', 'e', 's', 's']);
+        } else {
+          addWall([wx, bottom, -depth], [wx, top, -depth], [wx, top, depth], [wx, bottom, depth],
+            uvTop, uvBottom, ['e', 's', 's', 'e', 's', 'e']);
+        }
+        y++;
       }
-      if (!isFilled(x + 1, y)) {
-        addQuad([x1, y1, -depth], [x1, y0, -depth], [x1, y0, depth], [x1, y1, depth]);
-      }
-      if (!isFilled(x, y - 1)) {
-        addQuad([x0, y0, -depth], [x0, y0, depth], [x1, y0, depth], [x1, y0, -depth]);
-      }
-      if (!isFilled(x, y + 1)) {
-        addQuad([x0, y1, -depth], [x1, y1, -depth], [x1, y1, depth], [x0, y1, depth]);
+    }
+  }
+
+  for (let y = 0; y < height; y++) {
+    for (const side of [-1, 1]) {
+      let x = 0;
+      while (x < width) {
+        if (!isFilled(x, y) || isFilled(x, y + side)) {
+          x++;
+          continue;
+        }
+        const start = x;
+        while (x + 1 < width && isFilled(x + 1, y) && !isFilled(x + 1, y + side)) x++;
+        const wy = toY(side < 0 ? y : y + 1);
+        const left = toX(start);
+        const right = toX(x + 1);
+        const uvLeft = pixelUv(start, y);
+        const uvRight = pixelUv(x, y);
+        if (side < 0) {
+          addWall([left, wy, -depth], [left, wy, depth], [right, wy, depth], [right, wy, -depth],
+            uvLeft, uvRight, ['s', 's', 'e', 's', 'e', 'e']);
+        } else {
+          addWall([left, wy, -depth], [right, wy, -depth], [right, wy, depth], [left, wy, depth],
+            uvLeft, uvRight, ['s', 'e', 'e', 's', 'e', 's']);
+        }
+        x++;
       }
     }
   }
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
 }
 
-function dilateGlyphMask(mask, width, height, radius, padding) {
-  const expandedWidth = width + padding * 2;
-  const expandedHeight = height + padding * 2;
-  const expanded = new Uint8Array(expandedWidth * expandedHeight);
-  const radiusSquared = radius * radius;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (!mask[y * width + x]) continue;
-      for (let dy = -radius; dy <= radius; dy++) {
-        for (let dx = -radius; dx <= radius; dx++) {
-          if (dx * dx + dy * dy > radiusSquared) continue;
-          expanded[(y + padding + dy) * expandedWidth + x + padding + dx] = 1;
-        }
-      }
-    }
+/**
+ * Lifts dark flake colors to a luminous sRGB tint; light backgrounds are
+ * handled separately by the glow pass's white compositing.
+ * @returns {[number, number, number]}
+ */
+export function resolveGlowColor(color, minLuminance = GLOW_MIN_LUMINANCE) {
+  const rgb = new THREE.Color(color).getRGB({}, THREE.SRGBColorSpace);
+  if (![rgb.r, rgb.g, rgb.b].every(Number.isFinite)) {
+    throw new RangeError('3D glow color channels must be finite.');
   }
-  return expanded;
+  const clamp01 = (value) => Math.max(0, Math.min(1, value));
+  let r = clamp01(rgb.r);
+  let g = clamp01(rgb.g);
+  let b = clamp01(rgb.b);
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  if (luminance < minLuminance) {
+    const t = (minLuminance - luminance) / Math.max(1e-6, 1 - luminance);
+    r += (1 - r) * t;
+    g += (1 - g) * t;
+    b += (1 - b) * t;
+  }
+  return [r, g, b];
 }
 
-export function createGlyphGlowGeometry(mask, width, height, thickness, innerRadius, outerRadius) {
-  if (!Number.isInteger(innerRadius) || !Number.isInteger(outerRadius)
-    || innerRadius < 0 || outerRadius <= innerRadius) {
-    throw new RangeError('Glow radii must be non-negative integers with outerRadius greater than innerRadius.');
+export function resolveGlowWhiten(backgroundDarkness) {
+  const darkness = Number(backgroundDarkness);
+  if (!Number.isFinite(darkness)) {
+    console.warn('[Let It Snow] Invalid background darkness; using white glow.');
+    return 1;
   }
+  return 1 - THREE.MathUtils.clamp(darkness, 0, 1);
+}
 
-  const expandedWidth = width + outerRadius * 2;
-  const expandedHeight = height + outerRadius * 2;
-  const outerMask = dilateGlyphMask(mask, width, height, outerRadius, outerRadius);
-  const innerMask = dilateGlyphMask(mask, width, height, innerRadius, outerRadius);
-  for (let pixel = 0; pixel < outerMask.length; pixel++) {
-    if (innerMask[pixel]) outerMask[pixel] = 0;
+/**
+ * Places a new flake above the viewport so snowfall enters from the top.
+ * `spanRatio` sets how tall (relative to the viewport) the spawn band above the top is;
+ * a positive offset (resumed autostart progress) fast-forwards the fall.
+ */
+export function resolveInitialFlakeY(size, viewportHeight, fallSpeed = 0, offsetSeconds = 0, spanRatio = 1) {
+  const height = Math.max(1, Number(viewportHeight) || 1);
+  const baseY = -size - Math.random() * height * spanRatio;
+  const offset = Math.max(0, Number(offsetSeconds) || 0);
+  if (!offset) return baseY;
+  const minY = -size;
+  const span = height + size * 2;
+  const shifted = baseY + Math.max(0, fallSpeed) * offset;
+  return minY + (((shifted - minY) % span) + span) % span;
+}
+
+function wrapSentence(context, text, maxWidth) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && context.measureText(candidate).width > maxWidth) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
   }
-  const glowThickness = Math.max(Number(thickness) || 0.07, 0.2);
-  return createGlyphGeometry(
-    outerMask,
-    expandedWidth,
-    expandedHeight,
-    glowThickness,
-    width,
-    height,
-    outerRadius,
-    outerRadius
-  );
+  if (current) lines.push(current);
+  return lines.length ? lines : [String(text || '')];
+}
+
+function getCachedGlyphShape(glyph, mode, create) {
+  const key = `${mode}\u0000${glyph}`;
+  const cached = glyphMaskCache.get(key);
+  if (cached) {
+    glyphMaskCache.delete(key);
+    glyphMaskCache.set(key, cached);
+    return cached;
+  }
+  const shape = create(glyph, mode);
+  glyphMaskCache.set(key, shape);
+  if (glyphMaskCache.size > MASK_CACHE_LIMIT) {
+    glyphMaskCache.delete(glyphMaskCache.keys().next().value);
+  }
+  return shape;
 }
 
 export class ThreeDSnowRenderer {
@@ -182,7 +297,9 @@ export class ThreeDSnowRenderer {
     this.renderer = null;
     this.glyphMeshes = new Map();
     this.glyphMaterial = null;
-    this.glowMaterials = [];
+    this.glowPass = null;
+    this.glowStrength = 1;
+    this.backgroundMonitor = null;
     this.flakes = [];
     this.frameRequest = null;
     this.resizeObserver = null;
@@ -214,6 +331,20 @@ export class ThreeDSnowRenderer {
       prevWindVortex: 0
     };
     this.enableCollisions = config.enableCollisions ?? true;
+    this.glowFlicker = config.snow3dGlowFlicker ?? DEFAULT_GLOW_FLICKER;
+    this.glowTarget = null;
+    this.glowCurrent = null;
+    this.elapsed = 0;
+    this.emojiTextures = [];
+    this.emojiMaterials = [];
+    this._transform = new THREE.Matrix4();
+    this._position = new THREE.Vector3();
+    this._quaternion = new THREE.Quaternion();
+    this._euler = new THREE.Euler();
+    this._scale = new THREE.Vector3();
+    this._worldPositions = [];
+    this._collisionGrid = new Map();
+    this._slowFrameTime = 0;
     this.isPaused = false;
     this.boundResize = () => this.resize();
   }
@@ -236,6 +367,7 @@ export class ThreeDSnowRenderer {
       });
       this.renderer.setClearColor(0x000000, 0);
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      this.glowPass = new ThreeDGlowPass(this.renderer);
 
       this.scene = new THREE.Scene();
       this.camera = new THREE.PerspectiveCamera(
@@ -245,7 +377,8 @@ export class ThreeDSnowRenderer {
         150
       );
       this.camera.position.z = CAMERA_Z;
-      this.scene.add(new THREE.HemisphereLight(0xeaf5ff, 0x61758a, 2.2));
+      // A light ground color keeps tilted glyph sides from turning into dark rims.
+      this.scene.add(new THREE.HemisphereLight(0xf2f8ff, 0xb7c6d6, 2.3));
 
       const keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
       keyLight.position.set(-8, 12, 20);
@@ -255,41 +388,35 @@ export class ThreeDSnowRenderer {
       const count = Math.max(1, Math.min(320, Math.floor(Number(this.config.snowmax) || 80)));
       this.glyphMaterial = new THREE.MeshStandardMaterial({
         color: 0xffffff,
+        emissive: 0x20262d,
         roughness: 0.72,
         metalness: 0.05,
         side: THREE.DoubleSide
       });
-      this.glowMaterials = GLOW_LAYERS.map(({ opacity }) => new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity,
-        blending: THREE.AdditiveBlending,
-        depthTest: false,
-        depthWrite: false,
-        toneMapped: false,
-        side: THREE.DoubleSide
-      }));
-      const colors = Array.isArray(this.config.snowcolor) && this.config.snowcolor.length
-        ? this.config.snowcolor
-        : ['#ffffff'];
       const groups = new Map();
       const thickness = this.config.snow3dThickness ?? 0.07;
       const sinkSpeed = Number(this.config.sinkspeed) || 0.4;
+      const viewportWidth = Math.max(1, window.innerWidth);
+      const viewportHeight = Math.max(1, window.innerHeight);
+      const initialOffsetSeconds = Math.max(0, Number(this.config.initialTimeOffsetSeconds) || 0);
+      const spawnSpanRatio = resolveInitialSpawnSpanRatio(this.config, 1);
       this.flakes = Array.from({ length: count }, (_, index) => {
         const appearance = resolveGlyphAppearance(this.config, index);
         const { glyph, glyphMode } = appearance;
-        const glyphKey = JSON.stringify([glyph, glyphMode]);
+        const glyphKey = JSON.stringify([glyph, glyphMode, appearance.isSentence]);
         const size = appearance.isSentence
           ? Math.max(maxPx * 1.2, 60) + Math.random() * 20
           : minPx + Math.random() * Math.max(0, maxPx - minPx);
         const depth = MIN_DEPTH + Math.random() * (MAX_DEPTH - MIN_DEPTH);
+        const color = new THREE.Color(appearance.color);
+        const fallSpeed = sinkSpeed * size;
         const flake = {
-          x: Math.random() * Math.max(1, window.innerWidth),
-          y: Math.random() * Math.max(1, window.innerHeight),
+          x: Math.random() * viewportWidth,
+          y: resolveInitialFlakeY(size, viewportHeight, fallSpeed, initialOffsetSeconds, spawnSpanRatio),
           z: depth,
           size,
           collisionSize: size,
-          fallSpeed: sinkSpeed * size,
+          fallSpeed,
           velocityX: (Math.random() - 0.5) * 5,
           velocityY: 0,
           velocityZ: (Math.random() - 0.5) * 0.08,
@@ -300,7 +427,12 @@ export class ThreeDSnowRenderer {
           rotationSpeedY: (Math.random() - 0.5) * 0.5,
           rotationSpeedZ: (Math.random() - 0.5) * 0.6,
           glowPhase: Math.random() * Math.PI * 2,
-          color: new THREE.Color(appearance.color),
+          twinkleSpeedA: 1.6 + Math.random() * 1.8,
+          twinkleSpeedB: 4.5 + Math.random() * 4,
+          twinklePhaseA: Math.random() * Math.PI * 2,
+          twinklePhaseB: Math.random() * Math.PI * 2,
+          color,
+          glowRgb: resolveGlowColor(color),
           glyph,
           glyphKey,
           isSentence: appearance.isSentence,
@@ -312,7 +444,7 @@ export class ThreeDSnowRenderer {
         } else {
           groups.set(glyphKey, {
             glyph,
-            glyphMode,
+            glyphMode: appearance.isSentence ? 'sentence' : glyphMode,
             flakes: [flake]
           });
         }
@@ -320,52 +452,40 @@ export class ThreeDSnowRenderer {
       });
 
       for (const [glyphKey, group] of groups) {
-        const { mask, width, height } = this._createGlyphMask(group.glyph, group.glyphMode);
-        const geometry = createGlyphGeometry(mask, width, height, thickness);
-        const aspect = width / height;
-        const mesh = new THREE.InstancedMesh(geometry, this.glyphMaterial, group.flakes.length);
+        const shape = getCachedGlyphShape(group.glyph, group.glyphMode, (glyph, mode) =>
+          this._createGlyphMask(glyph, mode));
+        const geometry = createGlyphGeometry(
+          shape.mask,
+          shape.width,
+          shape.height,
+          thickness,
+          shape.unit,
+          shape.unit,
+          (shape.width - shape.unit) / 2,
+          (shape.height - shape.unit) / 2
+        );
+        const isEmoji = Boolean(shape.colorCanvas);
+        const material = isEmoji ? this._createEmojiMaterial(shape.colorCanvas) : this.glyphMaterial;
+        const mesh = new THREE.InstancedMesh(geometry, material, group.flakes.length);
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         mesh.frustumCulled = false;
-        const maxDimension = Math.max(width, height);
-        const glowRadii = GLOW_LAYERS.map(({ radius }, index) => (
-          Math.max(1, Math.round(maxDimension * radius))
-        ));
-        for (let index = 1; index < glowRadii.length; index++) {
-          glowRadii[index] = Math.max(glowRadii[index], glowRadii[index - 1] + 1);
+        if (isEmoji) {
+          // Emoji keep their own colors (like WebGPU); the glow uses their average tint.
+          const glowRgb = resolveGlowColor(shape.averageColor);
+          group.flakes.forEach((flake) => {
+            flake.glowRgb = glowRgb;
+          });
+        } else {
+          group.flakes.forEach((flake, meshIndex) => {
+            mesh.setColorAt(meshIndex, flake.color);
+          });
+          if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
         }
-        const glowMeshes = GLOW_LAYERS.map((_, layerIndex) => {
-          const innerRadius = layerIndex === 0 ? 0 : glowRadii[layerIndex - 1];
-          const geometry = createGlyphGlowGeometry(
-            mask,
-            width,
-            height,
-            thickness,
-            innerRadius,
-            glowRadii[layerIndex]
-          );
-          const glowMesh = new THREE.InstancedMesh(
-            geometry,
-            this.glowMaterials[layerIndex],
-            group.flakes.length
-          );
-          glowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-          glowMesh.frustumCulled = false;
-          glowMesh.renderOrder = layerIndex;
-          this.scene.add(glowMesh);
-          return glowMesh;
-        });
-        group.flakes.forEach((flake, meshIndex) => {
-          mesh.setColorAt(meshIndex, flake.color);
-          for (const glowMesh of glowMeshes) glowMesh.setColorAt(meshIndex, flake.color);
-        });
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-        for (const glowMesh of glowMeshes) {
-          if (glowMesh.instanceColor) glowMesh.instanceColor.needsUpdate = true;
-        }
-        mesh.renderOrder = GLOW_LAYERS.length;
+        const glow = this.glowPass.addGlyphMesh(mesh, group.flakes);
         this.scene.add(mesh);
-        this.glyphMeshes.set(glyphKey, { mesh, glowMeshes, flakes: group.flakes, aspect });
+        this.glyphMeshes.set(glyphKey, { mesh, glow, flakes: group.flakes });
       }
+      this.startBackgroundMonitoring();
 
       this.resize();
       window.addEventListener('resize', this.boundResize);
@@ -384,36 +504,88 @@ export class ThreeDSnowRenderer {
     }
   }
 
+  _createEmojiMaterial(colorCanvas) {
+    const texture = new THREE.CanvasTexture(colorCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = Math.min(4, this.renderer?.capabilities?.getMaxAnisotropy?.() || 1);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      map: texture,
+      emissive: 0xffffff,
+      emissiveMap: texture,
+      emissiveIntensity: 0.55,
+      roughness: 0.6,
+      metalness: 0,
+      side: THREE.DoubleSide
+    });
+    this.emojiTextures.push(texture);
+    this.emojiMaterials.push(material);
+    return material;
+  }
+
   _createGlyphMask(glyph, mode) {
+    const isSentence = mode === 'sentence';
+    const isEmoji = mode === 'emoji';
+    const measureCanvas = document.createElement('canvas');
+    const measure = measureCanvas.getContext('2d');
+    if (!measure) throw new Error('Unable to create a canvas context for 3D glyph geometry.');
+
+    let font;
+    let lines;
+    let unit;
+    let lineHeight;
+    let canvasWidth;
+    let canvasHeight;
+    if (isSentence) {
+      // Mirrors the 2D renderer: bold font at 0.3 × size, wrapped at 2 × size.
+      unit = SENTENCE_UNIT_PX;
+      const fontSize = unit * 0.3;
+      font = `bold ${fontSize}px Arial, sans-serif`;
+      measure.font = font;
+      lines = wrapSentence(measure, glyph, unit * 2).slice(0, 6);
+      lineHeight = fontSize * 1.2;
+      const textWidth = Math.max(...lines.map((line) => measure.measureText(line).width), 1);
+      canvasWidth = Math.min(1024, Math.ceil(textWidth) + 16);
+      canvasHeight = Math.ceil(lines.length * lineHeight) + 16;
+    } else {
+      unit = GLYPH_EM_PX;
+      const fontStack = isEmoji
+        ? '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif'
+        : '"Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Times New Roman", serif';
+      font = `${unit}px ${fontStack}`;
+      lines = [glyph];
+      lineHeight = unit;
+      canvasWidth = GLYPH_CANVAS_PX;
+      canvasHeight = GLYPH_CANVAS_PX;
+    }
+
     const canvas = document.createElement('canvas');
-    const resolution = 96;
-    canvas.width = resolution;
-    canvas.height = resolution;
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
     const context = canvas.getContext('2d', { willReadFrequently: true });
     if (!context) throw new Error('Unable to create a canvas context for 3D glyph geometry.');
-
-    const fontStack = mode === 'emoji'
-      ? '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif'
-      : '"Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", serif';
-    context.clearRect(0, 0, resolution, resolution);
+    context.clearRect(0, 0, canvasWidth, canvasHeight);
     context.fillStyle = '#ffffff';
-    context.font = `72px ${fontStack}`;
+    context.font = font;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
-    context.fillText(glyph, resolution / 2, resolution / 2, resolution - 8);
+    const firstLineY = canvasHeight / 2 - ((lines.length - 1) * lineHeight) / 2;
+    lines.forEach((line, lineIndex) => {
+      context.fillText(line, canvasWidth / 2, firstLineY + lineIndex * lineHeight, canvasWidth - 8);
+    });
 
-    const image = context.getImageData(0, 0, resolution, resolution);
-    let minX = resolution;
-    let minY = resolution;
+    const image = context.getImageData(0, 0, canvasWidth, canvasHeight);
+    let minX = canvasWidth;
+    let minY = canvasHeight;
     let maxX = -1;
     let maxY = -1;
-    for (let y = 0; y < resolution; y++) {
-      for (let x = 0; x < resolution; x++) {
-        if (image.data[(y * resolution + x) * 4 + 3] < 32) continue;
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x);
-        maxY = Math.max(maxY, y);
+    for (let y = 0; y < canvasHeight; y++) {
+      for (let x = 0; x < canvasWidth; x++) {
+        if (image.data[(y * canvasWidth + x) * 4 + 3] < 32) continue;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
       }
     }
     if (maxX < minX || maxY < minY) {
@@ -423,17 +595,108 @@ export class ThreeDSnowRenderer {
     const padding = 1;
     minX = Math.max(0, minX - padding);
     minY = Math.max(0, minY - padding);
-    maxX = Math.min(resolution - 1, maxX + padding);
-    maxY = Math.min(resolution - 1, maxY + padding);
+    maxX = Math.min(canvasWidth - 1, maxX + padding);
+    maxY = Math.min(canvasHeight - 1, maxY + padding);
     const width = maxX - minX + 1;
     const height = maxY - minY + 1;
+    // Like the WebGPU atlas, any glyph that the font draws in several colors (color emoji,
+    // including ones that fell back to an emoji font in text mode) keeps its own palette.
+    const keepsColor = !isSentence
+      && !isCellMonotone(image.data, canvasWidth, minX, minY, maxX - minX + 1, maxY - minY + 1);
     const mask = new Uint8Array(width * height);
+    let red = 0;
+    let green = 0;
+    let blue = 0;
+    let weight = 0;
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        mask[y * width + x] = image.data[((minY + y) * resolution + minX + x) * 4 + 3] >= 32 ? 1 : 0;
+        const offset = ((minY + y) * canvasWidth + minX + x) * 4;
+        const alpha = image.data[offset + 3];
+        mask[y * width + x] = alpha >= 32 ? 1 : 0;
+        if (keepsColor && alpha >= 32) {
+          const a = alpha / 255;
+          red += image.data[offset] * a;
+          green += image.data[offset + 1] * a;
+          blue += image.data[offset + 2] * a;
+          weight += a;
+        }
       }
     }
-    return { mask, width, height };
+
+    const shape = { mask, width, height, unit };
+    if (keepsColor) {
+      const colorCanvas = document.createElement('canvas');
+      colorCanvas.width = width;
+      colorCanvas.height = height;
+      const colorContext = colorCanvas.getContext('2d');
+      if (colorContext) {
+        colorContext.drawImage(canvas, minX, minY, width, height, 0, 0, width, height);
+        shape.colorCanvas = colorCanvas;
+        const toByte = (value) => Math.round(weight > 0 ? value / weight : 255);
+        shape.averageColor = `rgb(${toByte(red)}, ${toByte(green)}, ${toByte(blue)})`;
+      }
+    }
+    return shape;
+  }
+
+  updateGlowState() {
+    const minGlowStrength = resolveMinGlowStrength(this.config?.minGlowStrength);
+    const strength = this.backgroundMonitor
+      ? this.backgroundMonitor.calculateGlowStrength(minGlowStrength)
+      : 1;
+    const darkness = this.backgroundMonitor
+      ? this.backgroundMonitor.calculateGlowStrength(0, 1)
+      : 0;
+    const background = getEffectiveBackgroundColor();
+    this.glowTarget = {
+      strength,
+      whiten: resolveGlowWhiten(darkness),
+      r: background.r,
+      g: background.g,
+      b: background.b
+    };
+    if (!this.glowCurrent) {
+      this.glowCurrent = { ...this.glowTarget };
+      this._applyGlowState();
+    }
+  }
+
+  /** Eases the glow toward the latest background so theme switches fade instead of popping. */
+  _stepGlowState(delta) {
+    const target = this.glowTarget;
+    const current = this.glowCurrent;
+    if (!target || !current) return;
+    const t = 1 - Math.exp(-GLOW_STATE_RATE * delta);
+    let changed = false;
+    for (const key of ['strength', 'whiten', 'r', 'g', 'b']) {
+      const difference = target[key] - current[key];
+      if (Math.abs(difference) < 1e-4) {
+        if (current[key] !== target[key]) changed = true;
+        current[key] = target[key];
+        continue;
+      }
+      current[key] += difference * t;
+      changed = true;
+    }
+    if (changed) this._applyGlowState();
+  }
+
+  _applyGlowState() {
+    const current = this.glowCurrent;
+    this.glowStrength = current.strength;
+    this.glowPass?.setGlowState(current.strength, current.whiten, current);
+  }
+
+  startBackgroundMonitoring() {
+    this.stopBackgroundMonitoring();
+    this.backgroundMonitor = new BackgroundMonitor(() => this.updateGlowState());
+    this.backgroundMonitor.start();
+    this.updateGlowState();
+  }
+
+  stopBackgroundMonitoring() {
+    this.backgroundMonitor?.stop();
+    this.backgroundMonitor = null;
   }
 
   resize() {
@@ -443,21 +706,21 @@ export class ThreeDSnowRenderer {
     this.camera.aspect = this.viewportWidth / this.viewportHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(this.viewportWidth, this.viewportHeight, false);
+    this.glowPass?.resize(this.viewportWidth, this.viewportHeight);
   }
 
   _worldScaleAtDepth(z) {
     const distance = CAMERA_Z - z;
-    return (2 * distance * Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV / 2))) / this.viewportHeight;
+    return (2 * distance * TAN_HALF_FOV) / this.viewportHeight;
   }
 
-  _worldPosition(flake) {
+  _worldPosition(flake, target = {}) {
     const scale = this._worldScaleAtDepth(flake.z);
-    return {
-      x: (flake.x - this.viewportWidth / 2) * scale,
-      y: (this.viewportHeight / 2 - flake.y) * scale,
-      z: flake.z,
-      scale
-    };
+    target.x = (flake.x - this.viewportWidth / 2) * scale;
+    target.y = (this.viewportHeight / 2 - flake.y) * scale;
+    target.z = flake.z;
+    target.scale = scale;
+    return target;
   }
 
   updateMousePosition(x, y, velocityX = 0, velocityY = 0) {
@@ -544,16 +807,25 @@ export class ThreeDSnowRenderer {
       return Math.max(max, (flake.size * worldPositions[index].scale) * 0.5);
     }, 0);
     const cellSize = Math.max(0.1, maxRadius * 2);
-    const grid = new Map();
-    const keyFor = (x, y, z) =>
-      `${Math.floor(x / cellSize)},${Math.floor(y / cellSize)},${Math.floor(z / cellSize)}`;
+    const grid = this._collisionGrid;
+    if (grid.size > this.flakes.length * 4) grid.clear();
+    for (const bucket of grid.values()) bucket.length = 0;
+    const GRID_OFFSET = 4096;
+    const GRID_SPAN = 8192;
+    const keyFor = (cx, cy, cz) =>
+      ((cx + GRID_OFFSET) * GRID_SPAN + (cy + GRID_OFFSET)) * GRID_SPAN + (cz + GRID_OFFSET);
 
-    worldPositions.forEach((position, index) => {
-      const key = keyFor(position.x, position.y, position.z);
+    for (let index = 0; index < this.flakes.length; index++) {
+      const position = worldPositions[index];
+      const key = keyFor(
+        Math.floor(position.x / cellSize),
+        Math.floor(position.y / cellSize),
+        Math.floor(position.z / cellSize)
+      );
       const bucket = grid.get(key);
       if (bucket) bucket.push(index);
       else grid.set(key, [index]);
-    });
+    }
 
     for (let i = 0; i < this.flakes.length; i++) {
       const a = this.flakes[i];
@@ -565,7 +837,7 @@ export class ThreeDSnowRenderer {
       for (let ox = -1; ox <= 1; ox++) {
         for (let oy = -1; oy <= 1; oy++) {
           for (let oz = -1; oz <= 1; oz++) {
-            const bucket = grid.get(`${cellX + ox},${cellY + oy},${cellZ + oz}`);
+            const bucket = grid.get(keyFor(cellX + ox, cellY + oy, cellZ + oz));
             if (!bucket) continue;
             for (const j of bucket) {
               if (j <= i) continue;
@@ -673,33 +945,58 @@ export class ThreeDSnowRenderer {
       }
     });
 
-    const positions = this.flakes.map((flake) => this._worldPosition(flake));
+    const positions = this._worldPositions;
+    positions.length = this.flakes.length;
+    for (let index = 0; index < this.flakes.length; index++) {
+      positions[index] = this._worldPosition(this.flakes[index], positions[index] || {});
+    }
     this._resolveCollisions(positions);
-    const transform = new THREE.Object3D();
-    const glowColor = new THREE.Color();
+    this.elapsed += delta;
+    const time = this.elapsed;
+    const position = this._position;
+    const scaleVector = this._scale;
+    const euler = this._euler;
+    const quaternion = this._quaternion;
+    const matrix = this._transform;
+    const worldPosition = {};
     for (const group of this.glyphMeshes.values()) {
-      group.flakes.forEach((flake, index) => {
-        const position = this._worldPosition(flake);
-        flake.glowPhase += delta * 3.6;
-        transform.position.set(position.x, position.y, position.z);
-        transform.rotation.set(flake.rotationX, flake.rotationY, flake.rotationZ);
-        const scale = flake.size * position.scale;
-        transform.scale.set(scale * group.aspect, scale, scale);
-        transform.updateMatrix();
-        group.mesh.setMatrixAt(index, transform.matrix);
-        const pulse = resolveGlowPulse(flake.glowPhase);
-        glowColor.copy(flake.color).multiplyScalar(pulse);
-        for (const glowMesh of group.glowMeshes) {
-          glowMesh.setMatrixAt(index, transform.matrix);
-          glowMesh.setColorAt(index, glowColor);
+      const glow = group.glow;
+      const flakes = group.flakes;
+      for (let index = 0; index < flakes.length; index++) {
+        const flake = flakes[index];
+        this._worldPosition(flake, worldPosition);
+        flake.glowPhase += delta * 1.3;
+        position.set(worldPosition.x, worldPosition.y, worldPosition.z);
+        euler.set(flake.rotationX, flake.rotationY, flake.rotationZ);
+        quaternion.setFromEuler(euler);
+        const scale = flake.size * worldPosition.scale;
+        scaleVector.set(scale, scale, scale);
+        matrix.compose(position, quaternion, scaleVector);
+        group.mesh.setMatrixAt(index, matrix);
+        if (glow) {
+          glow.pulse.setX(
+            index,
+            resolveGlowPulse(flake.glowPhase) * resolveGlowFlicker(time, flake, this.glowFlicker)
+          );
         }
-      });
+      }
       group.mesh.instanceMatrix.needsUpdate = true;
-      for (const glowMesh of group.glowMeshes) {
-        glowMesh.instanceMatrix.needsUpdate = true;
-        if (glowMesh.instanceColor) glowMesh.instanceColor.needsUpdate = true;
+      if (glow) {
+        glow.pulse.needsUpdate = true;
       }
     }
+  }
+
+  /** Drops the pixel ratio once if the device cannot hold ~40 fps. */
+  _adaptQuality(frameSeconds) {
+    if (!this.renderer || this._qualityReduced) return;
+    this._slowFrameTime = frameSeconds > 1 / 40
+      ? this._slowFrameTime + frameSeconds
+      : Math.max(0, this._slowFrameTime - frameSeconds * 0.5);
+    if (this._slowFrameTime < 2) return;
+    this._qualityReduced = true;
+    this.renderer.setPixelRatio(1);
+    this.resize();
   }
 
   start() {
@@ -708,10 +1005,13 @@ export class ThreeDSnowRenderer {
     this.lastTimestamp = performance.now();
     const animate = (timestamp) => {
       if (!this.renderer || this.isPaused) return;
-      const delta = Math.min(Math.max((timestamp - this.lastTimestamp) / 1000, 0), 0.05);
+      const frameSeconds = Math.max((timestamp - this.lastTimestamp) / 1000, 0);
+      const delta = Math.min(frameSeconds, 0.05);
       this.lastTimestamp = timestamp;
+      this._adaptQuality(frameSeconds);
       this._updateInstances(delta);
-      this.renderer.render(this.scene, this.camera);
+      this._stepGlowState(delta);
+      this.glowPass.render(this.scene, this.camera);
       this.frameRequest = requestAnimationFrame(animate);
     };
     this.frameRequest = requestAnimationFrame(animate);
@@ -735,23 +1035,25 @@ export class ThreeDSnowRenderer {
 
   cleanup() {
     this.stop();
+    this.stopBackgroundMonitoring();
     window.removeEventListener('resize', this.boundResize);
     window.visualViewport?.removeEventListener('resize', this.boundResize);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    this.glowPass?.dispose();
+    this.glowPass = null;
     for (const group of this.glyphMeshes.values()) {
       this.scene?.remove(group.mesh);
-      for (const glowMesh of group.glowMeshes) {
-        this.scene?.remove(glowMesh);
-        glowMesh.geometry.dispose();
-      }
+      group.mesh.dispose();
       group.mesh.geometry.dispose();
     }
     this.glyphMeshes.clear();
     this.glyphMaterial?.dispose();
     this.glyphMaterial = null;
-    for (const material of this.glowMaterials) material.dispose();
-    this.glowMaterials = [];
+    this.emojiMaterials.forEach((material) => material.dispose());
+    this.emojiTextures.forEach((texture) => texture.dispose());
+    this.emojiMaterials = [];
+    this.emojiTextures = [];
     this.renderer?.dispose();
     this.renderer = null;
     this.scene = null;

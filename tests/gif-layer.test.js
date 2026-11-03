@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { GifLayer } from '../src/content/gif-layer.js';
+import {
+  GifLayer,
+  resolveGifSlabDepth,
+  resolveGifSlabLayerCount,
+  resolveGifGlowFlicker,
+  resolveGifTilt,
+  projectGifRotation
+} from '../src/content/gif-layer.js';
 import { createWindVortexField } from '../src/content/physics/wind-field.js';
 
 describe('GifLayer', () => {
@@ -42,6 +49,109 @@ describe('GifLayer', () => {
     expect(gifLayer.mouseForce).toBe(300);
     expect(gifLayer.enableCollisions).toBe(true);
     expect(gifLayer.collisionHandler).toBeDefined();
+  });
+
+  it('builds a GIF slab whose thickness follows snow3dThickness and dims the glow on light backgrounds', async () => {
+    const gifLayer = new GifLayer({
+      gifUrls: ['https://test.com/test.gif'],
+      gifCount: 1,
+      snowminsize: 40,
+      snowmaxsize: 40,
+      rendererMode: '3d',
+      snow3dThickness: 0.15,
+      enableCollisions: false
+    });
+    await gifLayer.start();
+    const flake = gifLayer.flakes[0];
+    const layers = [...flake.slab.querySelectorAll('img')];
+    const zs = layers.map((img) => Number(img.style.transform.match(/translateZ\((-?[\d.]+)px\)/)[1]));
+    const depth = resolveGifSlabDepth(flake.size, 0.15);
+    expect(layers.length).toBe(resolveGifSlabLayerCount(depth));
+    expect(Math.max(...zs) - Math.min(...zs)).toBeCloseTo(depth, 1);
+    expect(flake.glowWrap.style.filter).toContain('blur(');
+    expect(flake.glowImg.src).toBe(layers[0].src);
+
+    gifLayer.setMainRenderer({ is3D: true, glowStrength: 1 });
+    gifLayer.animate(gifLayer.lastTimestamp + 16);
+    const darkGlow = Number(flake.glowWrap.style.opacity);
+    gifLayer.setMainRenderer({ is3D: true, glowStrength: 0.2 });
+    gifLayer.animate(gifLayer.lastTimestamp + 16);
+    expect(darkGlow).toBeGreaterThan(0);
+    expect(Number(flake.glowWrap.style.opacity)).toBeLessThan(darkGlow);
+    gifLayer.stop();
+  });
+
+  it('resolves slab depth and twinkle within safe bounds', () => {
+    expect(resolveGifSlabDepth(100, 1)).toBeCloseTo(18);
+    expect(resolveGifSlabDepth(100, 0)).toBeCloseTo(2);
+    expect(resolveGifSlabLayerCount(0.5)).toBe(2);
+    expect(resolveGifSlabLayerCount(50)).toBe(12);
+    const flake = { twinkleSpeedA: 2, twinkleSpeedB: 5, twinklePhaseA: 0, twinklePhaseB: 0 };
+    for (let t = 0; t < 5; t += 0.37) {
+      const v = resolveGifGlowFlicker(t, flake);
+      expect(v).toBeGreaterThanOrEqual(0.55 - 1e-9);
+      expect(v).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('tumbles GIF flakes with CSS 3D transforms in 3D renderer mode', async () => {
+    const gifLayer = new GifLayer({
+      gifUrls: ['https://test.com/test.gif'],
+      gifCount: 2,
+      snowminsize: 15,
+      snowmaxsize: 25,
+      rendererMode: '3d',
+      enableCollisions: false
+    });
+    await gifLayer.start();
+    gifLayer.animate(gifLayer.lastTimestamp + 16);
+
+    const flake = gifLayer.flakes[0];
+    expect(flake.el.style.transform).toContain('translate3d(');
+    expect(flake.el.style.willChange).toBe('');
+    const transform = flake.slab.style.transform;
+    expect(transform).toContain('perspective(');
+    expect(transform).toContain('rotateX(');
+    expect(transform).toContain('rotateY(');
+    // Glow is a flat 2D projection of the same rotation (no 3D content under the blur filter).
+    expect(flake.glowImg.style.transform).toMatch(/^matrix\(/);
+    expect(flake.slab.style.transformStyle).toBe('preserve-3d');
+    // Slab layers must not use filters (separate low-res render surfaces at steep angles).
+    [...flake.slab.querySelectorAll('img')].forEach((img) => expect(img.style.filter).toBe(''));
+    gifLayer.stop();
+
+    const flatLayer = new GifLayer({
+      gifUrls: ['https://test.com/test.gif'],
+      gifCount: 1,
+      snowminsize: 15,
+      snowmaxsize: 25,
+      enableCollisions: false
+    });
+    await flatLayer.start();
+    flatLayer.setMainRenderer({ is3D: false, glowStrength: 0.8 });
+    flatLayer.animate(flatLayer.lastTimestamp + 16);
+    const flat = flatLayer.flakes[0];
+    expect(flat.el.style.transform).not.toContain('rotateX(');
+    // Canvas 2D / WebGPU get the same edge-colored glow.
+    expect(flat.glowWrap.style.filter).toContain('blur(');
+    expect(flat.glowImg.src).toBe(flat.el.lastElementChild.src);
+    expect(Number(flat.glowWrap.style.opacity)).toBeGreaterThan(0);
+    flatLayer.stop();
+  });
+
+  it('keeps 3D GIF tumble away from edge-on and projects the glow consistently', () => {
+    for (let phase = 0; phase < Math.PI * 2; phase += 0.2) {
+      const tilt = resolveGifTilt({ tiltX: phase, tiltY: phase * 1.7, tiltAmpX: 5, tiltAmpY: 5 });
+      expect(Math.abs(Math.cos(tilt.x) * Math.cos(tilt.y))).toBeGreaterThan(0.33);
+    }
+    expect(projectGifRotation(0, 0, 0)).toEqual([1, 0, -0, 1]);
+    const [a, b, c, d] = projectGifRotation(0, Math.PI / 3, 0);
+    expect(a).toBeCloseTo(0.5);
+    expect(b).toBeCloseTo(0);
+    expect(c).toBeCloseTo(0);
+    expect(d).toBeCloseTo(1);
+    const [, , , dx] = projectGifRotation(Math.PI / 3, 0, 0);
+    expect(dx).toBeCloseTo(0.5);
   });
 
   it('starts and creates flakes with physics properties', async () => {

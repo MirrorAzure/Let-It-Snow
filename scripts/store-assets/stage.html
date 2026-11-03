@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Let It Snow — store stage</title>
+  <link rel="stylesheet" href="stage.css">
+  <script src="stage.js" defer></script>
+</head>
+<body>
+  <div class="window">
+    <header class="toolbar">
+      <div class="nav">
+        <span class="nav-btn">&#x2190;</span>
+        <span class="nav-btn">&#x2192;</span>
+        <span class="nav-btn">&#x21bb;</span>
+      </div>
+      <div class="address"><span class="lock">&#x1f512;</span><span id="address"></span></div>
+      <div class="actions">
+        <span class="ext-icon"><img src="/icons/icon-48.png" alt=""></span>
+      </div>
+    </header>
+    <main class="site" id="site"></main>
+    <iframe class="overlay" id="overlay" title="snow" tabindex="-1"></iframe>
+    <section class="caption" id="caption">
+      <span class="badge" id="badge"></span>
+      <h1 id="caption-title"></h1>
+      <p id="caption-text"></p>
+    </section>
+    <div class="popup-card" id="popup-card"><iframe id="popup" title="popup"></iframe></div>
+  </div>
+
+  <div class="promo" id="promo">
+    <img class="promo-icon" src="/icons/icon-128.png" alt="">
+    <div>
+      <div class="promo-name" id="promo-name"></div>
+      <div class="promo-tagline" id="promo-tagline"></div>
+    </div>
+  </div>
+</body>
+</html>

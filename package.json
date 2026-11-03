@@ -1,6 +1,6 @@
 {
   "name": "let-it-snow",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "A magical snowfall extension for web pages",
   "type": "module",
   "engines": {
@@ -23,7 +23,11 @@
     "pack:edge": "crx3 dist/edge -o builds/let-it-snow-edge.crx",
     "playground": "node scripts/playground-server.js",
     "update-deps": "ncu -u && pnpm install",
-    "check-updates": "ncu"
+    "check-updates": "ncu",
+    "relay": "node scripts/snow-relay.js",
+    "build:obs": "vite build --config vite.obs.config.js",
+    "build:relay": "node scripts/build-relay.js",
+    "store:assets": "node scripts/build-store-assets.js"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^3.0.0",

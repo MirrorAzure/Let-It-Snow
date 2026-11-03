@@ -24,6 +24,35 @@ Object.entries(messages).forEach(([key, obj]) => {
   }
 });
 
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+function makePreset(id, name, settings = {}) {
+  return {
+    id,
+    name,
+    settings: {
+      snowmax: 80,
+      sinkspeed: 0.4,
+      snowminsize: 2,
+      snowmaxsize: 4,
+      colors: ['#ffffff'],
+      symbols: ['❄'],
+      symbolModes: ['text'],
+      sentences: [],
+      sentenceCount: 0,
+      gifs: [],
+      gifCount: 0,
+      autoStart: false,
+      windEnabled: false,
+      windDirection: 'left',
+      windStrength: 0.5,
+      windGustFrequency: 3,
+      ...settings
+    },
+    updatedAt: Date.now()
+  };
+}
+
 function createChromeMock(overrides = {}) {
   const stored = {
     snowmax: 80,
@@ -234,7 +263,8 @@ describe('popup UI', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(global.chrome.tabs.sendMessage).not.toHaveBeenCalled();
-    expect(global.alert).toHaveBeenCalled();
+    expect(global.alert).not.toHaveBeenCalled();
+    expect(document.querySelector('#toastRegion .toast-error')).not.toBeNull();
   });
 
   it('injects the built content-script loader when no listener is present', async () => {
@@ -723,7 +753,8 @@ describe('popup UI', () => {
             windGustFrequency: 3
           },
           updatedAt: Date.now()
-        }
+        },
+        makePreset('preset-2', 'Preset Two', { snowmax: 33 })
       ],
       activePresetId: 'preset-1'
     });
@@ -738,9 +769,12 @@ describe('popup UI', () => {
     const normalizedPercent = Math.max(minPercent, Math.min(maxPercent, 26));
     expect(popupWidthInput.value).toBe(normalizedPercent.toFixed(1));
 
-    document.getElementById('applyPreset').click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    const select = document.getElementById('presetSelect');
+    select.value = 'preset-2';
+    select.dispatchEvent(new Event('change'));
+    await flush();
 
+    expect(document.getElementById('snowmax').value).toBe('33');
     expect(document.getElementById('popupWidth').value).toBe(normalizedPercent.toFixed(1));
 
     const presetsCall = global.chrome.storage.sync.set.mock.calls.findLast(
@@ -748,5 +782,222 @@ describe('popup UI', () => {
     );
     expect(presetsCall).toBeDefined();
     expect(presetsCall[0].savedPresets[0].settings.popupWidthPercent).toBeUndefined();
+  });
+
+  describe('live preset switching', () => {
+    const setup = async (overrides = {}) => {
+      global.chrome = createChromeMock({
+        savedPresets: [
+          makePreset('preset-a', 'Alpha', { snowmax: 40 }),
+          makePreset('preset-b', 'Beta', { snowmax: 150, sinkspeed: 1.5 })
+        ],
+        activePresetId: 'preset-a',
+        ...overrides
+      });
+      await import('../src/popup/popup.js?t=' + Date.now() + Math.random());
+      document.dispatchEvent(new Event('DOMContentLoaded'));
+      await flush();
+    };
+
+    const selectPreset = async (id) => {
+      const select = document.getElementById('presetSelect');
+      select.value = id;
+      select.dispatchEvent(new Event('change'));
+      await flush();
+    };
+
+    const editSnowmax = async (value) => {
+      const slider = document.getElementById('snowmax');
+      slider.value = String(value);
+      slider.dispatchEvent(new Event('input'));
+      slider.dispatchEvent(new Event('change'));
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    };
+
+    const lastPresets = () => global.chrome.storage.sync.set.mock.calls
+      .findLast((call) => Array.isArray(call[0].savedPresets))[0].savedPresets;
+
+    it('applies the selected preset immediately and previews it on the active tab', async () => {
+      await setup();
+      expect(document.getElementById('applyPreset')).toBeNull();
+      expect(document.getElementById('presetDirtyRow').hidden).toBe(true);
+
+      await selectPreset('preset-b');
+
+      expect(document.getElementById('snowmax').value).toBe('150');
+      expect(document.getElementById('choiceDialog')).toBeNull();
+      const preview = global.chrome.tabs.sendMessage.mock.calls.find((call) => call[1]?.action === 'previewSnow');
+      expect(preview).toBeDefined();
+      expect(preview[1].config.snowmax).toBe(150);
+      expect(global.chrome.storage.sync.set).toHaveBeenCalledWith(expect.objectContaining({ activePresetId: 'preset-b' }));
+    });
+
+    it('keeps edits as a draft instead of silently rewriting the preset', async () => {
+      await setup();
+      await editSnowmax(222);
+
+      expect(document.getElementById('presetDirtyRow').hidden).toBe(false);
+      expect(document.querySelector('[data-subtab="presets"]').classList.contains('has-unsaved')).toBe(true);
+      expect(global.chrome.storage.sync.set).toHaveBeenCalledWith(expect.objectContaining({ snowmax: 222, presetDraftFor: 'preset-a' }));
+      const presetWrites = global.chrome.storage.sync.set.mock.calls.filter((call) => Array.isArray(call[0].savedPresets));
+      presetWrites.forEach((call) => {
+        expect(call[0].savedPresets.find((p) => p.id === 'preset-a').settings.snowmax).toBe(40);
+      });
+
+      document.getElementById('updatePreset').click();
+      await flush();
+      expect(lastPresets().find((p) => p.id === 'preset-a').settings.snowmax).toBe(222);
+      expect(document.getElementById('presetDirtyRow').hidden).toBe(true);
+    });
+
+    it('restores the unsaved draft when the popup is reopened', async () => {
+      await setup({ snowmax: 222, presetDraftFor: 'preset-a' });
+      expect(document.getElementById('snowmax').value).toBe('222');
+      expect(document.getElementById('presetDirtyRow').hidden).toBe(false);
+    });
+
+    it('cancelling the unsaved-changes dialog keeps the current preset and edits', async () => {
+      await setup();
+      await editSnowmax(222);
+      await selectPreset('preset-b');
+
+      const dialog = document.getElementById('choiceDialog');
+      expect(dialog).not.toBeNull();
+      expect(dialog.textContent).toContain('Alpha');
+      expect(document.getElementById('presetSelect').value).toBe('preset-a');
+
+      dialog.querySelector('[data-action="cancel"]').click();
+      await flush();
+
+      expect(document.getElementById('presetSelect').value).toBe('preset-a');
+      expect(document.getElementById('snowmax').value).toBe('222');
+    });
+
+    it('can save unsaved edits as a new preset before switching', async () => {
+      await setup();
+      await editSnowmax(222);
+      await selectPreset('preset-b');
+
+      const dialog = document.getElementById('choiceDialog');
+      dialog.querySelector('input').value = 'Alpha tuned';
+      dialog.querySelector('[data-action="saveNew"]').click();
+      await flush();
+      await flush();
+
+      const saved = lastPresets();
+      expect(saved.find((p) => p.name === 'Alpha tuned').settings.snowmax).toBe(222);
+      expect(saved.find((p) => p.id === 'preset-a').settings.snowmax).toBe(40);
+      expect(document.getElementById('presetSelect').value).toBe('preset-b');
+      expect(document.getElementById('snowmax').value).toBe('150');
+    });
+
+    it('can write unsaved edits into the previously selected preset', async () => {
+      await setup();
+      await editSnowmax(222);
+      await selectPreset('preset-b');
+
+      document.querySelector('#choiceDialog [data-action="overwrite"]').click();
+      await flush();
+      await flush();
+
+      const saved = lastPresets();
+      expect(saved.find((p) => p.id === 'preset-a').settings.snowmax).toBe(222);
+      expect(saved).toHaveLength(2);
+      expect(document.getElementById('snowmax').value).toBe('150');
+    });
+
+    it('can discard unsaved edits', async () => {
+      await setup();
+      await editSnowmax(222);
+      await selectPreset('preset-b');
+
+      document.querySelector('#choiceDialog [data-action="discard"]').click();
+      await flush();
+      await flush();
+
+      expect(lastPresets().find((p) => p.id === 'preset-a').settings.snowmax).toBe(40);
+      expect(document.getElementById('presetSelect').value).toBe('preset-b');
+      expect(document.getElementById('presetDirtyRow').hidden).toBe(true);
+    });
+  });
+
+  describe('help tab', () => {
+    const openPopup = async () => {
+      global.chrome = createChromeMock();
+      await import('../src/popup/popup.js?t=' + Date.now());
+      document.dispatchEvent(new Event('DOMContentLoaded'));
+      await flush();
+    };
+
+    const search = (value) => {
+      const input = document.getElementById('helpSearch');
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    it('renders every help section with formatted, non-HTML content', async () => {
+      await openPopup();
+      const { HELP_SECTIONS } = await import('../src/popup/help-panel.js');
+
+      const sections = document.querySelectorAll('#helpSections .help-section');
+      expect(sections).toHaveLength(HELP_SECTIONS.length);
+      sections.forEach((section) => {
+        expect(section.querySelector('.help-section-title').textContent).not.toMatch(/^help/);
+        expect(section.querySelector('.help-section-body').textContent).not.toContain('**');
+      });
+      expect(document.querySelectorAll('#helpSections strong').length).toBeGreaterThan(0);
+      expect(document.querySelectorAll('#helpSections code').length).toBeGreaterThan(0);
+      document.querySelectorAll('#helpDocs a').forEach((link) => {
+        expect(link.getAttribute('href')).toMatch(/^https:\/\/github\.com\/MirrorAzure\/Let-It-Snow\//);
+        expect(link.getAttribute('rel')).toContain('noopener');
+      });
+    });
+
+    it('renders markup as text instead of HTML', async () => {
+      const { renderHelpBody } = await import('../src/popup/help-panel.js');
+      const container = document.createElement('div');
+      renderHelpBody(container, '<img src=x onerror=alert(1)> **bold** `code`\n• item');
+      expect(container.querySelector('img')).toBeNull();
+      expect(container.querySelector('strong').textContent).toBe('bold');
+      expect(container.querySelector('code').textContent).toBe('code');
+      expect(container.querySelector('li').textContent).toBe('item');
+    });
+
+    it('filters sections by search query and shows an empty state', async () => {
+      await openPopup();
+      const visible = () => [...document.querySelectorAll('.help-section')].filter((s) => !s.hidden);
+
+      search('OBS');
+      expect(visible().map((s) => s.dataset.helpSection)).toContain('obs');
+      expect(visible().every((s) => s.open)).toBe(true);
+      expect(document.getElementById('helpNoResults').hidden).toBe(true);
+
+      search('zzz-nothing-matches');
+      expect(visible()).toHaveLength(0);
+      expect(document.getElementById('helpNoResults').hidden).toBe(false);
+
+      search('');
+      expect(visible()).toHaveLength(document.querySelectorAll('.help-section').length);
+      expect(document.getElementById('helpNoResults').hidden).toBe(true);
+    });
+
+    it('switches top tabs with aria-selected and navigates to the related settings sub-tab', async () => {
+      await openPopup();
+      const helpButton = document.querySelector('.tab-button[data-tab="help"]');
+      helpButton.click();
+      expect(document.getElementById('help-tab').classList.contains('active')).toBe(true);
+      expect(helpButton.getAttribute('aria-selected')).toBe('true');
+      expect(document.querySelector('.tab-button[data-tab="settings"]').getAttribute('aria-selected')).toBe('false');
+
+      document.querySelector('[data-help-section="wind"] .help-goto').click();
+      expect(document.getElementById('settings-tab').classList.contains('active')).toBe(true);
+      expect(document.getElementById('help-tab').classList.contains('active')).toBe(false);
+      expect(document.querySelector('.sub-tab-button[data-subtab="wind"]').classList.contains('active')).toBe(true);
+    });
+  });
+
+  it('keeps RU and EN locale keys in sync', () => {
+    const en = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/_locales/en/messages.json'), 'utf-8'));
+    expect(Object.keys(en).sort()).toEqual(Object.keys(messages).sort());
   });
 });

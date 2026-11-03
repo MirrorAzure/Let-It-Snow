@@ -68,6 +68,11 @@ try {
     }
   }
 
+  // OBS-оверлей (раздаётся локальным relay: pnpm relay → /obs/)
+  console.log('📦 Собираем OBS-оверлей...');
+  execSync('pnpm build:obs', { cwd: rootDir, stdio: 'pipe' });
+  console.log('   ✓ dist/obs');
+
   // Упаковываем для Chrome и Edge
   console.log('📦 Упаковываем сборки...');
 
@@ -105,6 +110,19 @@ try {
   console.log('\n✨ Сборка завершена успешно!');
   console.log(`📁 Готовые файлы находятся в папке: ${buildsDir}`);
   console.log(`📂 Распакованные сборки в: ${distDir}`);
+
+  // Материалы Chrome Web Store (скриншоты, промо, описания en/ru) — только локально, не в CI
+  const skipStoreAssets = process.env.CI || process.env.SKIP_STORE_ASSETS === '1' || process.argv.includes('--no-store-assets');
+  if (!skipStoreAssets) {
+    console.log('');
+    try {
+      const { generateStoreAssets } = await import('./build-store-assets.js');
+      const { screenshots } = await generateStoreAssets();
+      console.log(`   ✓ store-assets/ (${screenshots} изображений, описания en/ru)`);
+    } catch (error) {
+      console.warn('   ⚠ Материалы Chrome Web Store не созданы:', error.message);
+    }
+  }
 
 } catch (error) {
   console.error('\n❌ Ошибка при сборке:', error.message);

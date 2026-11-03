@@ -105,6 +105,26 @@ describe('content script snow control', () => {
     expect(removed).toBeNull();
   });
 
+  it('previewSnow only refreshes a snowfall that is already running', async () => {
+    await import('../src/content/index.js');
+    const handler = global.chrome.runtime.onMessage.addListener.mock.calls[0][0];
+    const config = { snowmax: 16, snowcolor: ['#fff'], snowletters: ['*'] };
+
+    const idle = vi.fn();
+    handler({ action: 'previewSnow', config }, {}, idle);
+    expect(idle).toHaveBeenCalledWith({ ok: true, running: false });
+    expect(document.getElementById('let-it-snow-webgpu-canvas')).toBeNull();
+
+    handler({ action: 'startSnow', config });
+    await vi.waitFor(() => document.getElementById('let-it-snow-webgpu-canvas') !== null);
+
+    const running = vi.fn();
+    handler({ action: 'previewSnow', config: { ...config, snowmax: 40 } }, {}, running);
+    expect(running).toHaveBeenCalledWith({ ok: true, running: true });
+
+    handler({ action: 'stopSnow' });
+  });
+
   it('creates gif layer when gifs are provided', async () => {
     const { SnowWebGPUController } = await import('../src/content/index.js');
     const controller = new SnowWebGPUController({

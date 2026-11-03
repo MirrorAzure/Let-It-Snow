@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
@@ -11,18 +11,24 @@
 <body>
   <div class="container">
     <div class="header">
-      <div class="snowflake-icon">❄️</div>
-      <h1  data-i18n="extenstionTitle"><i class="fas fa-snowflake"></i> Новогодний снегопад <i class="fas fa-snowflake"></i></h1>
-      <p class="subtitle" data-i18n="extenstionDescription">Настройте волшебный снегопад на любой странице</p>
+      <div class="snowflake-icon" aria-hidden="true">❄️</div>
+      <div class="header-text">
+        <h1 data-i18n="extenstionTitle">Новогодний снегопад</h1>
+        <p class="subtitle" data-i18n="extenstionDescription">Настройте волшебный снегопад на любой странице</p>
+      </div>
     </div>
 
     <!-- Tabs Navigation -->
-    <div class="tabs-navigation">
-      <button class="tab-button active" data-tab="settings" data-i18n-title="tooltipTabSettings">
+    <div class="tabs-navigation" role="tablist">
+      <button class="tab-button active" role="tab" aria-selected="true" data-tab="settings" data-i18n-title="tooltipTabSettings">
         <i class="fas fa-cog"></i>
         <span data-i18n="settingsTab">Настройки</span>
       </button>
-      <button class="tab-button" data-tab="about" data-i18n-title="tooltipTabAbout">
+      <button class="tab-button" role="tab" aria-selected="false" data-tab="help" data-i18n-title="tooltipTabHelp">
+        <i class="fas fa-circle-question"></i>
+        <span data-i18n="helpTab">Помощь</span>
+      </button>
+      <button class="tab-button" role="tab" aria-selected="false" data-tab="about" data-i18n-title="tooltipTabAbout">
         <i class="fas fa-info-circle"></i>
         <span data-i18n="aboutTab">О расширении</span>
       </button>
@@ -32,22 +38,26 @@
     <div class="tab-content active" id="settings-tab">
 
       <!-- Sub-tabs Navigation -->
-      <div class="sub-tabs-navigation">
-        <button class="sub-tab-button active" data-subtab="snow" data-i18n-title="tooltipSubTabSnow">
+      <div class="sub-tabs-navigation" role="tablist">
+        <button class="sub-tab-button active" role="tab" aria-selected="true" data-subtab="snow" data-i18n-title="tooltipSubTabSnow">
           <i class="fas fa-snowflake"></i>
           <span data-i18n="subTabSnow">Снег</span>
         </button>
-        <button class="sub-tab-button" data-subtab="wind" data-i18n-title="tooltipSubTabWind">
+        <button class="sub-tab-button" role="tab" aria-selected="false" data-subtab="wind" data-i18n-title="tooltipSubTabWind">
           <i class="fas fa-wind"></i>
           <span data-i18n="subTabWind">Ветер</span>
         </button>
-        <button class="sub-tab-button" data-subtab="symbols" data-i18n-title="tooltipSubTabSymbols">
+        <button class="sub-tab-button" role="tab" aria-selected="false" data-subtab="symbols" data-i18n-title="tooltipSubTabSymbols">
           <i class="fas fa-palette"></i>
           <span data-i18n="subTabSymbols">Символы</span>
         </button>
-        <button class="sub-tab-button" data-subtab="presets" data-i18n-title="tooltipSubTabPresets">
+        <button class="sub-tab-button" role="tab" aria-selected="false" data-subtab="presets" data-i18n-title="tooltipSubTabPresets">
           <i class="fas fa-bookmark"></i>
           <span data-i18n="subTabPresets">Пресеты</span>
+        </button>
+        <button class="sub-tab-button" role="tab" aria-selected="false" data-subtab="api" data-i18n-title="tooltipSubTabApi">
+          <i class="fas fa-plug"></i>
+          <span data-i18n="subTabApi">API</span>
         </button>
       </div>
 
@@ -70,16 +80,6 @@
 
           <label class="setting-item">
             <div class="setting-label">
-              <i class="fas fa-cubes"></i>
-              <span data-i18n="snow3dThickness">Толщина 3D-глифов:</span>
-              <span class="value-display" id="snow3dThicknessValue">0.07</span>
-            </div>
-            <input type="range" id="snow3dThickness" min="0.02" max="0.18" step="0.01" value="0.07" class="snow-slider" data-i18n-title="tooltipSnow3dThickness">
-            <small data-i18n="snow3dThicknessDescription">Толщина объёмного сечения снежинок в 3D-режиме</small>
-          </label>
-
-          <label class="setting-item">
-            <div class="setting-label">
               <i class="fas fa-cube"></i>
               <span data-i18n="rendererMode">Режим рендеринга:</span>
             </div>
@@ -87,6 +87,16 @@
               <option value="auto" data-i18n="rendererModeAuto">Авто (2D/WebGPU)</option>
               <option value="3d" data-i18n="rendererMode3d">Полный 3D</option>
             </select>
+          </label>
+
+          <label class="setting-item" id="snow3dThicknessItem" hidden>
+            <div class="setting-label">
+              <i class="fas fa-cubes"></i>
+              <span data-i18n="snow3dThickness">Толщина 3D-глифов:</span>
+              <span class="value-display" id="snow3dThicknessValue">0.07</span>
+            </div>
+            <input type="range" id="snow3dThickness" min="0.02" max="0.18" step="0.01" value="0.07" class="snow-slider" data-i18n-title="tooltipSnow3dThickness">
+            <small data-i18n="snow3dThicknessDescription">Толщина объёмного сечения снежинок в 3D-режиме</small>
           </label>
 
           <label class="setting-item">
@@ -292,6 +302,15 @@
             <select id="presetSelect" class="snow-select" data-i18n-title="tooltipPresetSelect"></select>
           </label>
 
+          <div id="presetDirtyRow" class="preset-dirty-row" role="status" hidden>
+            <i class="fas fa-circle-exclamation"></i>
+            <span data-i18n="presetUnsavedChanges">Есть несохранённые изменения</span>
+            <button id="updatePreset" class="secondary-btn" data-i18n-title="tooltipUpdatePreset">
+              <i class="fas fa-floppy-disk"></i>
+              <span data-i18n="updatePreset">Сохранить</span>
+            </button>
+          </div>
+
           <div class="preset-actions-row">
             <input id="presetNameInput" type="text" class="preset-name-input" data-i18n-title="tooltipPresetNameInput" placeholder="Новый пресет">
             <div class="import-export-actions">
@@ -307,10 +326,6 @@
           </div>
 
           <div class="import-export-actions">
-            <button id="applyPreset" class="secondary-btn" data-i18n-title="tooltipApplyPreset">
-              <i class="fas fa-check-circle"></i>
-              <span data-i18n="applyPreset">Применить</span>
-            </button>
             <button id="deletePreset" class="secondary-btn" data-i18n-title="tooltipDeletePreset">
               <i class="fas fa-trash"></i>
               <span data-i18n="deletePreset">Удалить</span>
@@ -350,7 +365,139 @@
         </div>
       </div><!-- End Presets Sub-tab -->
 
+      <!-- API / Sync Sub-tab -->
+      <div class="sub-tab-content" id="subtab-api">
+        <div class="settings-card">
+          <div class="card-header">
+            <i class="fas fa-bolt"></i>
+            <h3 data-i18n="apiQuickActions">Быстрые эффекты</h3>
+          </div>
+          <p class="hint settings-transfer-hint" data-i18n="apiQuickActionsHint">Эффекты добавляются поверх текущего снегопада и сами исчезают.</p>
+          <div class="import-export-actions api-actions">
+            <button id="apiBurst" class="secondary-btn" data-i18n-title="tooltipApiBurst">
+              <i class="fas fa-snowflake"></i>
+              <span data-i18n="apiBurst">Снежный взрыв</span>
+            </button>
+            <button id="apiStorm" class="secondary-btn" data-i18n-title="tooltipApiStorm">
+              <i class="fas fa-wind"></i>
+              <span data-i18n="apiStorm">Сильный ветер</span>
+            </button>
+            <button id="apiClearEffects" class="secondary-btn" data-i18n-title="tooltipApiClearEffects">
+              <i class="fas fa-eraser"></i>
+              <span data-i18n="apiClearEffects">Убрать эффекты</span>
+            </button>
+          </div>
+          <p id="apiActionStatus" class="hint settings-transfer-hint api-status" aria-live="polite"></p>
+        </div>
+
+        <div class="settings-card">
+          <div class="card-header">
+            <i class="fas fa-clone"></i>
+            <h3 data-i18n="syncSection">Синхронизация</h3>
+          </div>
+          <label class="setting-item toggle-item" data-i18n-title="tooltipSyncAllWindows">
+            <div class="setting-label">
+              <i class="fas fa-window-restore"></i>
+              <span data-i18n="syncAllWindows">Все вкладки и окна</span>
+            </div>
+            <input type="checkbox" id="syncAllWindows" class="toggle-checkbox">
+            <div class="toggle-switch"></div>
+          </label>
+          <p class="hint settings-transfer-hint" data-i18n="syncAllWindowsHint">Запуск, остановка и эффекты применяются ко всем открытым вкладкам этого браузера.</p>
+        </div>
+
+        <div class="settings-card">
+          <div class="card-header">
+            <i class="fas fa-network-wired"></i>
+            <h3 data-i18n="relaySection">Локальный relay (браузеры и OBS)</h3>
+          </div>
+          <p class="hint settings-transfer-hint" data-i18n="relayHint">Запустите `pnpm relay` на этом компьютере, чтобы синхронизировать несколько браузеров, OBS и внешние команды (HTTP).</p>
+          <label class="setting-item toggle-item" data-i18n-title="tooltipRelayEnabled">
+            <div class="setting-label">
+              <i class="fas fa-link"></i>
+              <span data-i18n="relayEnabled">Подключаться к relay</span>
+            </div>
+            <input type="checkbox" id="relayEnabled" class="toggle-checkbox">
+            <div class="toggle-switch"></div>
+          </label>
+          <label class="setting-item">
+            <div class="setting-label">
+              <i class="fas fa-server"></i>
+              <span data-i18n="relayUrl">Адрес relay (только localhost)</span>
+            </div>
+            <input id="relayUrl" type="text" class="preset-name-input" spellcheck="false" autocomplete="off" placeholder="ws://127.0.0.1:8787/ws">
+          </label>
+          <label class="setting-item">
+            <div class="setting-label">
+              <i class="fas fa-key"></i>
+              <span data-i18n="relayToken">Токен доступа</span>
+            </div>
+            <input id="relayToken" type="password" class="preset-name-input" spellcheck="false" autocomplete="off">
+          </label>
+          <div class="import-export-actions">
+            <button id="relayGenerateToken" class="secondary-btn" data-i18n-title="tooltipRelayGenerateToken">
+              <i class="fas fa-dice"></i>
+              <span data-i18n="relayGenerateToken">Новый токен</span>
+            </button>
+            <button id="relayCopyObsUrl" class="secondary-btn" data-i18n-title="tooltipRelayCopyObsUrl">
+              <i class="fas fa-video"></i>
+              <span data-i18n="relayCopyObsUrl">Ссылка для OBS</span>
+            </button>
+          </div>
+          <p class="hint settings-transfer-hint">
+            <span data-i18n="relayStatusLabel">Статус:</span>
+            <span id="relayStatus" class="api-status">—</span>
+          </p>
+        </div>
+
+        <div class="settings-card">
+          <div class="card-header">
+            <i class="fas fa-code"></i>
+            <h3 data-i18n="pageApiSection">API для сайтов</h3>
+          </div>
+          <label class="setting-item toggle-item" data-i18n-title="tooltipPageApiEnabled">
+            <div class="setting-label">
+              <i class="fas fa-shield-alt"></i>
+              <span data-i18n="pageApiEnabled">Разрешить команды со страниц</span>
+            </div>
+            <input type="checkbox" id="pageApiEnabled" class="toggle-checkbox">
+            <div class="toggle-switch"></div>
+          </label>
+          <label class="setting-item">
+            <div class="setting-label">
+              <i class="fas fa-list-check"></i>
+              <span data-i18n="pageApiOrigins">Разрешённые сайты (origin, по одному в строке)</span>
+            </div>
+            <textarea id="pageApiOrigins" class="preset-name-input" rows="3" spellcheck="false" placeholder="https://example.com"></textarea>
+          </label>
+          <p class="hint settings-transfer-hint" data-i18n="pageApiHint">Только перечисленные сайты смогут управлять снегом через window.postMessage. Любой скрипт на этих сайтах получит доступ, поэтому добавляйте только доверенные.</p>
+        </div>
+      </div><!-- End API / Sync Sub-tab -->
+
     </div><!-- End Settings Tab -->
+    <!-- Help Tab Content -->
+    <div class="tab-content" id="help-tab">
+      <div class="settings-card help-card">
+        <div class="card-header">
+          <i class="fas fa-circle-question"></i>
+          <h3 data-i18n="helpTitle">Справка</h3>
+        </div>
+        <p class="hint help-intro" data-i18n="helpIntro">Нажмите на раздел, чтобы раскрыть его.</p>
+        <label class="help-search">
+          <i class="fas fa-magnifying-glass" aria-hidden="true"></i>
+          <input id="helpSearch" type="search" class="preset-name-input" autocomplete="off" spellcheck="false" data-i18n-title="helpSearchPlaceholder">
+        </label>
+        <div id="helpSections" class="help-sections"></div>
+        <p id="helpNoResults" class="hint help-no-results" data-i18n="helpNoResults" hidden>Ничего не найдено.</p>
+      </div>
+      <div class="settings-card help-card">
+        <div class="card-header">
+          <i class="fas fa-book-open"></i>
+          <h3 data-i18n="helpDocsTitle">Документация</h3>
+        </div>
+        <div id="helpDocs" class="help-docs"></div>
+      </div>
+    </div>
     <!-- About Tab Content -->
     <div class="tab-content" id="about-tab">
       <div class="settings-card about-card">
@@ -454,14 +601,8 @@
         </button>
         <button id="stopSnow" class="big-btn stop-btn" data-i18n-title="tooltipStopSnow">
           <i class="fas fa-stop-circle"></i>
-          <span data-i18n="stopButton">Stop</span>
+          <span data-i18n="stopButton">Стоп</span>
         </button>
-      </div>
-      <div class="decoration">
-        <span class="decoration-icon">🎄</span>
-        <span class="decoration-icon">🦌</span>
-        <span class="decoration-icon">🎅</span>
-        <span class="decoration-icon">🧦</span>
       </div>
     </div>
   </div>

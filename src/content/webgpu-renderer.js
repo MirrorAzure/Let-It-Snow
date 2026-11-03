@@ -14,7 +14,7 @@ import { SimulationEngine } from './physics/simulation-engine.js';
 import { CollisionHandler } from './physics/collision-handler.js';
 import { MouseHandler, applyMouseRepulsion } from './physics/mouse-handler.js';
 import { stepWindState, createWindVortexField, applyVortexWindImpulse } from './physics/wind-field.js';
-import { resolveGlyphSizeRangePx } from './utils/size-utils.js';
+import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
 import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
 import { resolveMinGlowStrength } from './utils/glow-utils.js';
@@ -558,6 +558,7 @@ export class WebGPURenderer {
     const { minPx: snowminsize, maxPx: snowmaxsize } = resolveGlyphSizeRangePx(this.config);
     const initialOffsetSeconds = Math.max(0, Number(this.config.initialTimeOffsetSeconds) || 0);
     const viewportHeight = Math.max(1, window.innerHeight || 1);
+    const spawnSpan = viewportHeight * resolveInitialSpawnSpanRatio(this.config, 1);
 
     const sizeRange = snowmaxsize - snowminsize;
     const hasGlyphs = snowletters && snowletters.length > 0;
@@ -599,7 +600,7 @@ export class WebGPURenderer {
       const speed = sinkspeed * (size / 20) * 20;
       const spawnX = this._findSafeSpawnX(collisionSize);
       const initialRotation = Math.random() * Math.PI * 2; // Случайный начальный угол для разнообразия
-      const baseY = -size - Math.random() * viewportHeight;
+      const baseY = -size - Math.random() * spawnSpan;
       const startY = initialOffsetSeconds > 0
         ? this._wrapInitialYPosition(baseY + speed * initialOffsetSeconds, size, viewportHeight)
         : baseY;
@@ -974,6 +975,7 @@ export class WebGPURenderer {
     if (!this.backgroundMonitor) return;
     const minGlowStrength = resolveMinGlowStrength(this.config?.minGlowStrength);
     const glowStrength = this.backgroundMonitor.calculateGlowStrength(minGlowStrength);
+    this.glowStrength = glowStrength;
     this.uniformBufferManager?.setGlowStrength(glowStrength);
   }
 

@@ -1,14 +1,19 @@
 # Let It Snow - Browser Extension
 
+**English** | [Русский](./README_RU.md)
+
 A beautiful customizable snowfall effect extension for any website.
 
-Current version: **3.0.0**
+Current version: **3.1.0**
 
-See the [3.0.0 release notes](./CHANGELOG.md).
+Documentation:
+- Release notes: [CHANGELOG.md](./CHANGELOG.md) (Русский: [CHANGELOG_RU.md](./CHANGELOG_RU.md))
+- User guide: [docs/USAGE.md](./docs/USAGE.md) (Русский: [docs/USAGE_RU.md](./docs/USAGE_RU.md))
+- External API reference: [docs/EXTERNAL_API.md](./docs/EXTERNAL_API.md) (Русский: [docs/EXTERNAL_API_RU.md](./docs/EXTERNAL_API_RU.md))
+- Playground: [playground/README.md](./playground/README.md) (Русский: [playground/README_RU.md](./playground/README_RU.md))
+- Architecture: [diagrams/architecture.md](./diagrams/architecture.md) (Русский: [diagrams/architecture_RU.md](./diagrams/architecture_RU.md))
 
-## Store Description (v3.0.0)
-
-### English
+## Store Description (v3.1.0)
 
 Let it snow adds a festive, customizable snowfall effect to any website.
 
@@ -21,6 +26,9 @@ Create your own winter look:
 - Enable optional Three.js WebGL2 3D snowfall with perspective and tumbling
 - Customize 3D glyphs, colors, and extrusion thickness
 - See shape-matched glow effects that pulse with the snowflakes
+- Trigger snow bursts, strong wind, glyph and GIF showers via a secure local API
+- Sync snowfall across all windows and even between browsers
+- Add snow to OBS streams with a transparent Browser Source overlay
 - Save and switch presets for different moods
 - Import and export settings in JSON
 - Transfer all presets during import/export with one toggle
@@ -29,6 +37,12 @@ Create your own winter look:
 
 Perfect for holiday vibes, stream styling, demos, and everyday beautiful browsing.
 
+Changes in version 3.1.0:
+- Added a secure external API (local relay over HTTP/WebSocket and an opt-in page API) for bursts, wind, glyphs, and GIF effects
+- Added synchronization of all windows and between several browsers
+- Added an OBS Browser Source overlay
+- Reworked the 3D glow: soft and clean, with no dark halo on light pages
+
 Changes in version 3.0.0 (from 2.0.5):
 - Added optional 3D snowfall with user-selected glyphs, colors, adjustable depth, perspective, and collisions
 - Added shape-matched pulsing glow effects to WebGPU, Canvas 2D, and 3D rendering
@@ -36,41 +50,10 @@ Changes in version 3.0.0 (from 2.0.5):
 
 Privacy
 Let it snow does not collect, sell, or share personal data.
-The extension works locally in your browser and stores only your visual settings (for example: snowflake count, symbols, colors, presets, popup width) in browser storage (chrome.storage).
+The extension works locally in your browser and stores settings (for example: snowflake count, symbols, colors, presets, popup width, and optional API settings) in browser storage (chrome.storage).
 No account, registration, analytics, or tracking is required.
 If you manually add GIF URLs, these files are requested directly from the specified source in your browser to display animation.
-
-### Русский
-
-Let it snow добавляет на любой сайт праздничный настраиваемый снегопад.
-
-Создайте свой зимний стиль:
-- Настраивайте количество снежинок, скорость падения и диапазон размеров
-- Используйте собственные символы, длинные фразы и несколько цветов
-- Добавляйте анимированные GIF-снежинки по ссылке или из локальных файлов
-- Взаимодействуйте со снегом мышью и touch-жестами
-- Используйте автоматический рендеринг WebGPU с надежным резервным Canvas 2D
-- Включайте дополнительный 3D-снегопад Three.js/WebGL2 с перспективой и вращением
-- Настраивайте 3D-глифы, цвета и толщину объёмных снежинок
-- Наблюдайте свечение по форме снежинок, пульсирующее вместе с ними
-- Сохраняйте и переключайте пресеты под разное настроение
-- Импортируйте и экспортируйте настройки в JSON
-- Переносите все пресеты при импорте/экспорте одним переключателем
-- Восстанавливайте встроенные шаблоны пресетов в один клик
-- Пользуйтесь расширением на английском и русском языках
-
-Идеально для праздничной атмосферы, оформления стримов, демо и просто красивого повседневного браузинга.
-
-Изменения в версии 3.0.0 (с 2.0.5):
-- Добавлен дополнительный 3D-режим с пользовательскими глифами, цветами, перспективой, толщиной и столкновениями
-- Добавлено свечение по форме снежинок с пульсацией в WebGPU, Canvas 2D и 3D
-- Улучшены стабильность рендереров, обработка глифов и физика снегопада
-
-Конфиденциальность
-Let it snow не собирает, не продает и не передает персональные данные.
-Расширение работает локально в браузере и сохраняет только ваши визуальные настройки (например: количество снежинок, символы, цвета, пресеты, ширину popup) в хранилище браузера (chrome.storage).
-Аккаунт, регистрация, аналитика и трекинг не требуются.
-Если вы вручную добавляете URL GIF, эти файлы запрашиваются напрямую с указанного источника в вашем браузере для отображения анимации.
+The optional relay connection works only with a local server on your own computer (127.0.0.1); its access token is stored only in local browser storage.
 
 ## Installation & Setup
 
@@ -106,7 +89,7 @@ Open:
 - Snow animation: `http://localhost:5173/playground/`
 - Popup UI: `http://localhost:5173/playground/popup-playground.html`
 
-**[Learn more about Playground →](./playground/README.md)**
+**[Learn more about Playground →](./playground/README.md)** (Русский: [playground/README_RU.md](./playground/README_RU.md))
 
 ### Build for development
 ```bash
@@ -121,6 +104,7 @@ pnpm run build
 This builds for all browsers and outputs:
 - Unpacked builds in `dist/chrome`, `dist/firefox`, `dist/edge`
 - Packaged artifacts in `builds/` (ZIPs for Chrome/Firefox and CRX for Edge)
+- Chrome Web Store materials in `store-assets/` (local builds only, skipped when `CI` is set): localized `en`/`ru` screenshots 1280×800 (24-bit PNG) of the real snowfall and popup, promo tiles 440×280 and 1400×560, and `title`/`summary`/`description` texts with the current version. Requires a local Chrome/Chromium/Edge (`CHROME_PATH` to override). Regenerate with `pnpm store:assets`; skip with `SKIP_STORE_ASSETS=1` or `pnpm build -- --no-store-assets`.
 
 ### Packaging (optional)
 ```bash
@@ -141,7 +125,7 @@ Packaged release files are written to `builds/`.
 
 ## Architecture Diagram
 
-Architecture materials in `diagrams/` are updated for version **3.0.0**.
+Architecture materials in `diagrams/` are updated for version **3.0.0**. See [diagrams/architecture.md](./diagrams/architecture.md) (Русский: [diagrams/architecture_RU.md](./diagrams/architecture_RU.md)).
 
 Project Architecture:
 - **Web Pages** — web pages where the extension works
@@ -161,8 +145,16 @@ Project Architecture:
 ```
 src/
 ├── manifest.json          # Extension configuration
+├── background.js          # Service worker: command dispatch, window sync, relay client
+├── api/
+│   └── command-protocol.js  # Shared, validated external command protocol
+├── obs/
+│   ├── index.html        # Transparent OBS Browser Source page
+│   └── overlay.js        # OBS overlay + relay client
 ├── content/
 │   ├── index.js          # Content script (injected into web pages)
+│   ├── snow-controller.js    # Snow layer controller (main + effect layers)
+│   ├── command-runtime.js    # Executes external commands via temporary effect layers
 │   ├── webgpu-renderer.js    # WebGPU rendering engine
 │   ├── fallback-2d-renderer.js  # 2D Canvas fallback
 │   ├── three-d-renderer.js   # Optional Three.js WebGL2 renderer
@@ -170,6 +162,7 @@ src/
 │   ├── shader.wgsl       # WebGPU shaders
 │   ├── graphics/
 │   │   ├── atlas-manager.js   # Glyph/sentence atlas handling
+│   │   ├── three-d-glow-pass.js # 3D silhouette glow and screen-space blur
 │   │   └── uniform-buffer.js  # Uniform buffer management
 │   ├── physics/
 │   │   ├── simulation-engine.js  # Frame simulation logic
@@ -187,6 +180,7 @@ src/
 ├── popup/
 │   ├── popup.html        # Popup UI
 │   ├── popup.js          # Popup logic
+│   ├── api-panel.js      # API / sync / relay / OBS settings tab
 │   ├── settings.js       # Settings management
 │   ├── ui-controllers.js # UI controls
 │   ├── localization.js   # Localization logic
@@ -214,7 +208,7 @@ src/
 - **GIF support**: Add GIFs by URL or local file upload
 - **Mouse interaction**: Push, swirl, and drag snow with pointer movement
 - **Soft collisions**: Snowflakes gently bounce off each other
-- **Optional 3D snow mode**: Lit, instanced user-selected glyphs with palette colors, adjustable extrusion thickness, perspective depth, tumbling, wind, pointer interaction, and 3D sphere collisions. GIFs remain 2D overlays and do not collide with 3D snow. The default automatic WebGPU/Canvas mode remains unchanged; browsers without WebGL2 fall back to Canvas 2D.
+- **Optional 3D snow mode**: Lit, instanced user-selected glyphs with palette colors (emoji keep their own colors), adjustable extrusion thickness, perspective depth, tumbling, twinkling background-aware glow, wind, pointer interaction, and 3D sphere collisions. GIFs tumble with CSS 3D transforms but stay DOM overlays and do not collide with 3D snow. The default automatic WebGPU/Canvas mode remains unchanged; browsers without WebGL2 fall back to Canvas 2D.
 - **Wind effects**: Physically accurate wind simulation with turbulence
   - Multi-layer wind turbulence (low, medium, high frequencies)
   - Wind applies as force/acceleration (not just displacement)
@@ -225,8 +219,12 @@ src/
   - Shared wind physics module used by both WebGPU and Fallback 2D renderers
 - **Atlas quality estimation**: Automatic glyph complexity analysis for optimal WebGPU atlas cell sizing
 - **Glyph size normalization**: Shared size range normalization with 2-10% limits and legacy value conversion
+- **Help tab**: built-in guide in the popup describing every feature and integration (sync, relay, OBS, HTTP/page API), in English and Russian
 - **About tab**: Version, authors, repository, and tech stack in popup
 - **Configurable popup width**: Adjustable popup panel width in screen percent with instant % + px preview
+- **External API (3.1.0)**: Burst, wind, glyphs, GIF, start/stop commands via a token-protected local relay (HTTP + WebSocket) or an opt-in, origin-restricted page API — see [docs/EXTERNAL_API.md](./docs/EXTERNAL_API.md)
+- **Multi-window & multi-browser sync**: Broadcast to all tabs/windows; connect several browsers to the same relay
+- **OBS support**: Transparent Browser Source overlay served by the relay (`pnpm relay`, `http://127.0.0.1:8787/obs/#token=...`)
 - **Settings persistence**: All settings are automatically saved
 - **Multi-language support**: English and Russian translations
 
@@ -237,6 +235,16 @@ This extension uses Vite with the CRXJS plugin for building Chrome extensions. T
 - Processes CSS imports
 - Handles manifest versioning
 - Optimizes assets for production
+
+## External API, Sync & OBS
+
+```bash
+pnpm build            # builds extensions and dist/obs
+pnpm relay            # local relay on 127.0.0.1:8787 (prints token and OBS URL)
+```
+
+Step-by-step instructions: [docs/USAGE.md](./docs/USAGE.md) (Русский: [docs/USAGE_RU.md](./docs/USAGE_RU.md)).
+Full protocol, limits, and security model: [docs/EXTERNAL_API.md](./docs/EXTERNAL_API.md) (Русский: [docs/EXTERNAL_API_RU.md](./docs/EXTERNAL_API_RU.md)).
 
 ## Notes
 

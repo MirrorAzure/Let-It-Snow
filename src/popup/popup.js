@@ -14,10 +14,15 @@ import {
   createSentenceItem,
   createGifItem,
   setupSliderListener,
-  getSymbolFontStack
+  getSymbolFontStack,
+  detectSymbolMode,
+  showToast,
+  showChoiceDialog
 } from './ui-controllers.js';
 import { normalizeGlyphSizePercentRange } from '../content/utils/size-utils.js';
 import { createBuiltInPresets } from './presets/built-in-presets.js';
+import { initApiPanel, requestSnowSync } from './api-panel.js';
+import { initHelpPanel } from './help-panel.js';
 
 const SETTINGS_KEYS = [
   'snowmax',
@@ -45,6 +50,11 @@ const SETTINGS_KEYS = [
 
 const PRESETS_STORAGE_KEY = 'savedPresets';
 const ACTIVE_PRESET_STORAGE_KEY = 'activePresetId';
+// Id of the preset whose settings were edited but not saved yet (the edits live in the plain settings keys).
+const PRESET_DRAFT_STORAGE_KEY = 'presetDraftFor';
+const SYMBOL_MODE_MIGRATION_KEY = 'symbolModeAutoDetect';
+const LAST_SUBTAB_STORAGE_KEY = 'letItSnow.popup.subtab';
+const DELETE_CONFIRM_WINDOW_MS = 3000;
 const GLYPH_VISUAL_SCALE = 0.84;
 const POPUP_WIDTH_MIN_PX = 320;
 const POPUP_WIDTH_MAX_PX = 520;
@@ -93,40 +103,69 @@ document.addEventListener('DOMContentLoaded', async () => {
   const tabButtons = document.querySelectorAll('.tab-button');
   const tabContents = document.querySelectorAll('.tab-content');
 
-  tabButtons.forEach(button => {
-    button.addEventListener('click', () => {
-      const targetTab = button.dataset.tab;
-      
-      // Удаляем активный класс у всех кнопок и контента
-      tabButtons.forEach(btn => btn.classList.remove('active'));
-      tabContents.forEach(content => content.classList.remove('active'));
-      
-      // Добавляем активный класс к выбранной вкладке
-      button.classList.add('active');
-      const targetContent = document.getElementById(`${targetTab}-tab`);
-      if (targetContent) {
-        targetContent.classList.add('active');
-      }
+  const activateTab = (targetTab) => {
+    const targetContent = document.getElementById(`${targetTab}-tab`);
+    if (!targetContent) return;
+    tabButtons.forEach((btn) => {
+      const isActive = btn.dataset.tab === targetTab;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', String(isActive));
     });
+    tabContents.forEach((content) => content.classList.toggle('active', content === targetContent));
+  };
+
+  tabButtons.forEach(button => {
+    button.addEventListener('click', () => activateTab(button.dataset.tab));
   });
 
   // Инициализация под-вкладок внутри настроек
   const subTabButtons = document.querySelectorAll('.sub-tab-button');
   const subTabContents = document.querySelectorAll('.sub-tab-content');
 
+  const activateSubTab = (targetSubTab) => {
+    const button = Array.from(subTabButtons).find((btn) => btn.dataset.subtab === targetSubTab);
+    const targetContent = document.getElementById(`subtab-${targetSubTab}`);
+    if (!button || !targetContent) return false;
+
+    subTabButtons.forEach((btn) => {
+      btn.classList.remove('active');
+      btn.setAttribute('aria-selected', 'false');
+    });
+    subTabContents.forEach(content => content.classList.remove('active'));
+
+    button.classList.add('active');
+    button.setAttribute('aria-selected', 'true');
+    targetContent.classList.add('active');
+    return true;
+  };
+
   subTabButtons.forEach(button => {
     button.addEventListener('click', () => {
       const targetSubTab = button.dataset.subtab;
-
-      subTabButtons.forEach(btn => btn.classList.remove('active'));
-      subTabContents.forEach(content => content.classList.remove('active'));
-
-      button.classList.add('active');
-      const targetContent = document.getElementById(`subtab-${targetSubTab}`);
-      if (targetContent) {
-        targetContent.classList.add('active');
+      if (activateSubTab(targetSubTab)) {
+        try {
+          localStorage.setItem(LAST_SUBTAB_STORAGE_KEY, targetSubTab);
+        } catch {
+          // Storage can be unavailable (private mode); the popup just won't remember the tab.
+        }
       }
     });
+  });
+
+  try {
+    const lastSubTab = localStorage.getItem(LAST_SUBTAB_STORAGE_KEY);
+    if (lastSubTab) activateSubTab(lastSubTab);
+  } catch {
+    // Ignore unavailable storage.
+  }
+
+  initApiPanel().catch((err) => console.warn('[Let It Snow] API panel init failed:', err));
+  initHelpPanel({
+    onNavigate: (subtab) => {
+      activateTab('settings');
+      activateSubTab(subtab);
+      document.querySelector('.sub-tabs-navigation')?.scrollIntoView?.({ block: 'start' });
+    }
   });
 
   // Получаем ссылки на все элементы UI
@@ -158,7 +197,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     presetNameInput: document.getElementById('presetNameInput'),
     savePreset: document.getElementById('savePreset'),
     renamePreset: document.getElementById('renamePreset'),
-    applyPreset: document.getElementById('applyPreset'),
+    updatePreset: document.getElementById('updatePreset'),
+    presetDirtyRow: document.getElementById('presetDirtyRow'),
+    presetsSubTabButton: document.querySelector('.sub-tab-button[data-subtab="presets"]'),
     deletePreset: document.getElementById('deletePreset'),
     restorePresetTemplates: document.getElementById('restorePresetTemplates'),
     exportSettings: document.getElementById('exportSettings'),
@@ -187,6 +228,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   elements.presetNameInput.placeholder = t('presetNamePlaceholder');
+
+  const update3dControlsVisibility = () => {
+    const item = document.getElementById('snow3dThicknessItem');
+    if (item) item.hidden = elements.rendererMode.value !== '3d';
+  };
 
   const SIZE_PERCENT_MIN = parseFloat(elements.snowminsize.min) || 2;
   const SIZE_PERCENT_MAX = parseFloat(elements.snowmaxsize.max) || 10;
@@ -436,12 +482,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       : [...DEFAULT_SETTINGS.symbols];
 
     const rawSymbolModes = Array.isArray(config.symbolModes) ? config.symbolModes : [];
-    const symbolModes = normalizedSymbols.map((_, index) => {
+    const symbolModes = normalizedSymbols.map((symbol, index) => {
       const entryMode = normalizedSymbolEntries[index]?.mode;
       if (entryMode === 'emoji' || entryMode === 'text') {
         return entryMode;
       }
-      return rawSymbolModes[index] === 'emoji' ? 'emoji' : 'text';
+      const rawMode = rawSymbolModes[index];
+      if (rawMode === 'emoji' || rawMode === 'text') {
+        return rawMode;
+      }
+      return detectSymbolMode(symbol);
     });
 
     const { minPercent, maxPercent } = normalizeSizePercentRange(
@@ -570,7 +620,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const setPresetButtonsState = () => {
     const hasPresets = presets.length > 0;
-    elements.applyPreset.disabled = !hasPresets;
     elements.renamePreset.disabled = !hasPresets;
     elements.deletePreset.disabled = !hasPresets;
     elements.presetSelect.disabled = !hasPresets;
@@ -638,8 +687,51 @@ document.addEventListener('DOMContentLoaded', async () => {
   const persistPresets = async () => {
     await saveSettings({
       [PRESETS_STORAGE_KEY]: presets,
-      [ACTIVE_PRESET_STORAGE_KEY]: activePresetId
+      [ACTIVE_PRESET_STORAGE_KEY]: activePresetId,
+      [PRESET_DRAFT_STORAGE_KEY]: updatePresetDirtyState() ? activePresetId : ''
     });
+  };
+
+  // Stable fingerprint of preset settings, tolerant to color case and float noise.
+  const canonicalPresetSettings = (settings) => {
+    const normalized = normalizePresetSettings(settings);
+    const sortKeys = (value) => {
+      if (Array.isArray(value)) return value.map(sortKeys);
+      if (value && typeof value === 'object') {
+        return Object.keys(value).sort().reduce((acc, key) => {
+          acc[key] = sortKeys(value[key]);
+          return acc;
+        }, {});
+      }
+      if (typeof value === 'number') return Math.round(value * 1000) / 1000;
+      if (typeof value === 'string' && /^#[0-9a-f]{3,8}$/i.test(value)) return value.toLowerCase();
+      return value;
+    };
+    return JSON.stringify(sortKeys(normalized));
+  };
+
+  // Fingerprint of the UI right after the active preset was applied or saved.
+  let presetBaseline = null;
+
+  const markPresetBaseline = () => {
+    presetBaseline = canonicalPresetSettings(buildSettingsPayload());
+  };
+
+  const isPresetDirty = () => {
+    if (!findPresetById(activePresetId) || presetBaseline === null) return false;
+    return canonicalPresetSettings(buildSettingsPayload()) !== presetBaseline;
+  };
+
+  const updatePresetDirtyState = () => {
+    const dirty = isPresetDirty();
+    if (elements.presetDirtyRow) elements.presetDirtyRow.hidden = !dirty;
+    elements.presetsSubTabButton?.classList.toggle('has-unsaved', dirty);
+    return dirty;
+  };
+
+  const applyPresetToUI = (preset) => {
+    applySettingsToUI(preset.settings, { preservePopupWidth: true });
+    markPresetBaseline();
   };
 
   /**
@@ -732,6 +824,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateSizePreview();
     elements.autoStart.checked = Boolean(config.autoStart);
     elements.rendererMode.value = config.rendererMode;
+    update3dControlsVisibility();
     elements.snow3dThickness.value = config.snow3dThickness;
     elements.snow3dThicknessValue.textContent = config.snow3dThickness.toFixed(2);
     elements.gifCount.value = config.gifCount || 0;
@@ -780,29 +873,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   /**
-   * Сохраняет все настройки из UI в chrome.storage
+   * Сохраняет все настройки из UI в chrome.storage.
+   * Пресет не перезаписывается: правки остаются черновиком, пока пользователь не сохранит их.
    */
-  const saveAllSettings = async (syncActivePreset = true) => {
+  const saveAllSettings = async () => {
     const payload = buildSettingsPayload();
-    await saveSettings(payload);
-
-    if (syncActivePreset && activePresetId) {
-      const presetIndex = presets.findIndex((preset) => preset.id === activePresetId);
-      if (presetIndex !== -1) {
-        presets[presetIndex] = {
-          ...presets[presetIndex],
-          settings: normalizePresetSettings(payload),
-          updatedAt: Date.now()
-        };
-        await persistPresets();
-      }
-    }
-
+    const dirty = updatePresetDirtyState();
+    await saveSettings({
+      ...payload,
+      [PRESET_DRAFT_STORAGE_KEY]: dirty ? activePresetId : ''
+    });
     return payload;
   };
 
   // Загружаем сохраненные настройки
-  const saved = await loadSettings([...SETTINGS_KEYS, PRESETS_STORAGE_KEY, ACTIVE_PRESET_STORAGE_KEY]);
+  const saved = await loadSettings([
+    ...SETTINGS_KEYS,
+    PRESETS_STORAGE_KEY,
+    ACTIVE_PRESET_STORAGE_KEY,
+    PRESET_DRAFT_STORAGE_KEY,
+    SYMBOL_MODE_MIGRATION_KEY
+  ]);
 
   const loadedPresets = Array.isArray(saved[PRESETS_STORAGE_KEY])
     ? saved[PRESETS_STORAGE_KEY]
@@ -825,9 +916,41 @@ document.addEventListener('DOMContentLoaded', async () => {
   const activePreset = findPresetById(activePresetId) || presets[0];
   activePresetId = activePreset.id;
 
+  // One-time upgrade: earlier versions defaulted every new symbol to "text",
+  // which made color emoji (🌄, 🦖) render as monochrome outlines.
+  let symbolModesMigrated = false;
+  if (!saved[SYMBOL_MODE_MIGRATION_KEY]) {
+    const upgradeModes = (settings) => {
+      if (!settings || !Array.isArray(settings.symbols)) return false;
+      const modes = Array.isArray(settings.symbolModes) ? [...settings.symbolModes] : [];
+      let changed = false;
+      settings.symbols.forEach((symbol, index) => {
+        if (modes[index] !== 'emoji' && detectSymbolMode(symbol) === 'emoji') {
+          modes[index] = 'emoji';
+          changed = true;
+        }
+      });
+      if (changed) settings.symbolModes = modes;
+      return changed;
+    };
+    presets.forEach((preset) => { symbolModesMigrated = upgradeModes(preset.settings) || symbolModesMigrated; });
+    if (symbolModesMigrated) {
+      await persistPresets();
+    }
+    await saveSettings({ [SYMBOL_MODE_MIGRATION_KEY]: 1 });
+  }
+
   refreshPresetSelect();
   applyPopupWidthPercent(config.popupWidthPercent);
-  applySettingsToUI(activePreset.settings, { preservePopupWidth: true });
+  applyPresetToUI(activePreset);
+  // Restore unsaved edits from the previous popup session.
+  if (saved[PRESET_DRAFT_STORAGE_KEY] && saved[PRESET_DRAFT_STORAGE_KEY] === activePresetId) {
+    applySettingsToUI(config, { preservePopupWidth: true });
+  }
+  updatePresetDirtyState();
+  if (symbolModesMigrated) {
+    await saveAllSettings();
+  }
 
   // Обновляем пул глифов при добавлении/удалении символов или смене режима text/emoji
   new MutationObserver(() => refreshGlyphPicker())
@@ -848,8 +971,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.addSymbol.addEventListener('click', () => {
     const symbols = ['❄', '❅', '❆', '＊', '⋅', '✦', '❋', '✧', '✶', '✴', '✳', '❇'];
     const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
-    createSymbolItem(randomSymbol, elements.symbolsList, saveAllSettings, 'text');
+    const item = createSymbolItem(randomSymbol, elements.symbolsList, saveAllSettings, detectSymbolMode(randomSymbol));
     saveAllSettings();
+    const input = item.querySelector('input[type="text"]');
+    input?.focus();
+    input?.select();
   });
 
   // Добавление нового предложения
@@ -876,25 +1002,135 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveAllSettings();
   });
 
-  elements.presetSelect.addEventListener('change', () => {
-    const selectedId = elements.presetSelect.value;
-    if (findPresetById(selectedId)) {
-      activePresetId = selectedId;
-      syncPresetNameInput();
-      persistPresets();
+  const buildSnowConfig = (payload) => {
+    if (payload.colors.length === 0 || (payload.symbols.length === 0 && payload.sentences.length === 0)) {
+      return null;
     }
+    return {
+      snowmax: payload.snowmax,
+      sinkspeed: payload.sinkspeed,
+      snowminsize: payload.snowminsize,
+      snowmaxsize: payload.snowmaxsize,
+      snowcolor: payload.colors,
+      snowletters: payload.symbols.length > 0 ? payload.symbols : ['❄'],
+      snowglyphmodes: payload.symbolModes && payload.symbolModes.length > 0
+        ? payload.symbolModes
+        : ['text'],
+      snowsentences: payload.sentences,
+      sentenceCount: payload.sentenceCount,
+      gifUrls: payload.gifs,
+      gifCount: payload.gifs.length > 0 ? payload.gifCount : 0,
+      mouseRadius: payload.mouseRadius,
+      windEnabled: payload.windEnabled,
+      windDirection: payload.windDirection,
+      windStrength: payload.windStrength,
+      windGustFrequency: payload.windGustFrequency,
+      rendererMode: payload.rendererMode,
+      snow3dThickness: payload.snow3dThickness
+    };
+  };
+
+  // Re-renders a snowfall that is already running on the active tab; never starts a new one.
+  const previewOnActiveTab = async () => {
+    const config = buildSnowConfig(buildSettingsPayload());
+    if (!config || !chrome?.tabs?.query || !chrome?.tabs?.sendMessage) return;
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id || isRestrictedTab(tab)) return;
+      await chrome.tabs.sendMessage(tab.id, { action: 'previewSnow', config });
+    } catch {
+      // No content script on this tab — nothing is running, nothing to preview.
+    }
+  };
+
+  const switchToPreset = async (presetId) => {
+    const preset = findPresetById(presetId);
+    if (!preset) return;
+    activePresetId = preset.id;
+    applyPresetToUI(preset);
+    refreshPresetSelect();
+    await saveAllSettings();
+    await persistPresets();
+    previewOnActiveTab();
+    showToast(t('presetApplied'), 'success', { durationMs: 1400 });
+  };
+
+  /**
+   * Asks what to do with unsaved edits of the active preset.
+   * @returns {Promise<boolean>} false when the user cancelled the pending action
+   */
+  const resolveUnsavedChanges = async () => {
+    const currentPreset = findPresetById(activePresetId);
+    if (!currentPreset || !isPresetDirty()) return true;
+
+    const { action, value } = await showChoiceDialog({
+      title: t('presetUnsavedTitle'),
+      message: t('presetUnsavedMessage').replace('{name}', currentPreset.name),
+      input: {
+        label: t('presetNewNameLabel'),
+        value: `${currentPreset.name} (${t('presetCopySuffix')})`
+      },
+      actions: [
+        { id: 'saveNew', label: t('presetUnsavedSaveNew'), variant: 'primary' },
+        { id: 'overwrite', label: t('presetUnsavedOverwrite').replace('{name}', currentPreset.name) },
+        { id: 'discard', label: t('presetUnsavedDiscard'), variant: 'danger' },
+        { id: 'cancel', label: t('presetUnsavedCancel'), variant: 'ghost' }
+      ]
+    });
+
+    if (action === 'saveNew') {
+      const name = getPresetDisplayName(value, presets.length + 1);
+      presets.push(createPresetObject(name, buildSettingsPayload()));
+      await persistPresets();
+      showToast(t('presetSaved'), 'success');
+      return true;
+    }
+    if (action === 'overwrite') {
+      currentPreset.settings = normalizePresetSettings(buildSettingsPayload());
+      currentPreset.updatedAt = Date.now();
+      markPresetBaseline();
+      await persistPresets();
+      showToast(t('presetUpdated'), 'success');
+      return true;
+    }
+    return action === 'discard';
+  };
+
+  elements.presetSelect.addEventListener('change', async () => {
+    const selectedId = elements.presetSelect.value;
+    if (!findPresetById(selectedId) || selectedId === activePresetId) return;
+
+    // Keep the previous preset visible while the user decides about unsaved edits.
+    elements.presetSelect.value = activePresetId;
+    if (!(await resolveUnsavedChanges())) {
+      refreshPresetSelect();
+      return;
+    }
+    await switchToPreset(selectedId);
+  });
+
+  elements.updatePreset?.addEventListener('click', async () => {
+    const preset = findPresetById(activePresetId);
+    if (!preset) return;
+    preset.settings = normalizePresetSettings(await saveAllSettings());
+    preset.updatedAt = Date.now();
+    markPresetBaseline();
+    await persistPresets();
+    showToast(t('presetUpdated'), 'success');
   });
 
   elements.savePreset.addEventListener('click', async () => {
-    const payload = await saveAllSettings(false);
+    const payload = await saveAllSettings();
     const rawName = elements.presetNameInput.value.trim();
     const defaultName = getPresetDisplayName(rawName, presets.length + 1);
     const preset = createPresetObject(rawName || defaultName, payload);
 
     presets.push(preset);
     activePresetId = preset.id;
+    markPresetBaseline();
     refreshPresetSelect();
     await persistPresets();
+    showToast(t('presetSaved'), 'success');
   });
 
   elements.renamePreset.addEventListener('click', async () => {
@@ -911,21 +1147,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     activePresetId = selectedPreset.id;
     refreshPresetSelect();
     await persistPresets();
+    showToast(t('presetRenamed'), 'success');
   });
 
-  elements.applyPreset.addEventListener('click', async () => {
-    const selectedId = elements.presetSelect.value;
-    const selectedPreset = findPresetById(selectedId);
-
-    if (!selectedPreset) {
-      return;
-    }
-
-    activePresetId = selectedPreset.id;
-    applySettingsToUI(selectedPreset.settings, { preservePopupWidth: true });
-    await saveAllSettings(false);
-    await persistPresets();
-  });
+  // Two-step delete instead of confirm(), which Firefox popups do not support.
+  let deleteArmedTimer = null;
+  const disarmDeletePreset = () => {
+    clearTimeout(deleteArmedTimer);
+    deleteArmedTimer = null;
+    elements.deletePreset.classList.remove('confirm-armed');
+    const label = elements.deletePreset.querySelector('span');
+    if (label) label.textContent = t('deletePreset');
+  };
 
   elements.deletePreset.addEventListener('click', async () => {
     const selectedId = elements.presetSelect.value;
@@ -935,30 +1168,40 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    const confirmed = confirm(t('confirmDeletePreset'));
-    if (!confirmed) {
+    if (!deleteArmedTimer) {
+      elements.deletePreset.classList.add('confirm-armed');
+      const label = elements.deletePreset.querySelector('span');
+      if (label) label.textContent = t('confirmDeletePresetShort');
+      deleteArmedTimer = setTimeout(disarmDeletePreset, DELETE_CONFIRM_WINDOW_MS);
       return;
     }
+    disarmDeletePreset();
 
     presets = presets.filter((preset) => preset.id !== selectedId);
 
     if (presets.length === 0) {
-      const payload = await saveAllSettings(false);
+      const payload = await saveAllSettings();
       const fallbackPreset = createPresetObject(t('presetDefaultName'), payload);
       presets = [fallbackPreset];
       activePresetId = fallbackPreset.id;
-      applySettingsToUI(fallbackPreset.settings, { preservePopupWidth: true });
+      applyPresetToUI(fallbackPreset);
     } else {
       activePresetId = presets[0].id;
-      applySettingsToUI(presets[0].settings, { preservePopupWidth: true });
-      await saveAllSettings(false);
+      applyPresetToUI(presets[0]);
     }
+    await saveAllSettings();
 
     refreshPresetSelect();
     await persistPresets();
+    previewOnActiveTab();
+    showToast(t('presetDeleted'), 'success');
   });
 
+  elements.presetSelect.addEventListener('change', disarmDeletePreset);
+
   elements.restorePresetTemplates.addEventListener('click', async () => {
+    if (!(await resolveUnsavedChanges())) return;
+
     const selectedIdBeforeRestore = elements.presetSelect.value;
 
     mergeBuiltInPresetTemplates();
@@ -973,11 +1216,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const activePreset = findPresetById(activePresetId);
     if (activePreset) {
-      applySettingsToUI(activePreset.settings, { preservePopupWidth: true });
-      await saveAllSettings(false);
+      applyPresetToUI(activePreset);
+      await saveAllSettings();
     }
 
     await persistPresets();
+    previewOnActiveTab();
   });
 
   // Автостарт
@@ -985,6 +1229,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveAllSettings();
   });
   elements.rendererMode.addEventListener('change', () => {
+    update3dControlsVisibility();
     saveAllSettings();
   });
 
@@ -1012,9 +1257,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           name: presetName,
           presetName,
           exportedAt: new Date().toISOString(),
-          settings: activePreset
-            ? normalizePresetSettings(activePreset.settings)
-            : normalizePresetSettings(payload)
+          // What the user sees in the popup, including unsaved edits.
+          settings: normalizePresetSettings(payload)
         };
     const data = JSON.stringify(exportData, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
@@ -1050,6 +1294,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         throw new Error('invalid_settings');
       }
 
+      if (!(await resolveUnsavedChanges())) return;
+
       const createdPresets = importedPresets.map((importedPreset, index) => {
         return createPresetObject(
           getPresetDisplayName(importedPreset.name, presets.length + index + 1),
@@ -1060,12 +1306,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       presets.push(...createdPresets);
       activePresetId = createdPresets[createdPresets.length - 1].id;
       refreshPresetSelect();
-      applySettingsToUI(createdPresets[createdPresets.length - 1].settings, { preservePopupWidth: true });
-      await saveAllSettings(false);
+      applyPresetToUI(createdPresets[createdPresets.length - 1]);
+      await saveAllSettings();
       await persistPresets();
+      previewOnActiveTab();
+      showToast(t('settingsImported'), 'success');
     } catch (error) {
       console.error(error);
-      alert(t('errorImportSettings'));
+      showToast(t('errorImportSettings'), 'error', { durationMs: 5000 });
     } finally {
       elements.importSettingsInput.value = '';
     }
@@ -1177,93 +1425,61 @@ document.addEventListener('DOMContentLoaded', async () => {
     const colors = payload.colors;
     const symbols = payload.symbols;
     const sentences = payload.sentences;
-    const gifs = payload.gifs;
 
     // Валидация
     if (colors.length === 0) {
-      alert(t('errorNoColor'));
+      showToast(t('errorNoColor'), 'error');
       return;
     }
     if (symbols.length === 0 && sentences.length === 0) {
-      alert(t('errorNoSymbol'));
+      showToast(t('errorNoSymbol'), 'error');
       return;
     }
 
     // Формируем конфигурацию
-    const config = {
-      snowmax: payload.snowmax,
-      sinkspeed: payload.sinkspeed,
-      snowminsize: payload.snowminsize,
-      snowmaxsize: payload.snowmaxsize,
-      snowcolor: colors,
-      snowletters: symbols.length > 0 ? symbols : ['❄'],
-      snowglyphmodes: payload.symbolModes && payload.symbolModes.length > 0
-        ? payload.symbolModes
-        : ['text'],
-      snowsentences: sentences,
-      sentenceCount: payload.sentenceCount,
-      gifUrls: gifs,
-      gifCount: gifs.length > 0 ? payload.gifCount : 0,
-      mouseRadius: payload.mouseRadius,
-      windEnabled: payload.windEnabled,
-      windDirection: payload.windDirection,
-      windStrength: payload.windStrength,
-      windGustFrequency: payload.windGustFrequency,
-      rendererMode: payload.rendererMode,
-      snow3dThickness: payload.snow3dThickness
+    const config = buildSnowConfig(payload);
+
+    const startLabel = elements.startSnow.querySelector('span');
+    const startIcon = elements.startSnow.querySelector('i');
+    const originalLabel = startLabel?.textContent ?? '';
+    const originalIconClass = startIcon?.className ?? '';
+    const setStartState = (state) => {
+      elements.startSnow.classList.remove('is-loading', 'is-success');
+      elements.startSnow.disabled = state === 'loading';
+      elements.startSnow.setAttribute('aria-busy', String(state === 'loading'));
+      if (state === 'loading') {
+        elements.startSnow.classList.add('is-loading');
+        if (startIcon) startIcon.className = 'fas fa-spinner fa-spin';
+        if (startLabel) startLabel.textContent = t('snowStarting');
+      } else if (state === 'success') {
+        elements.startSnow.classList.add('is-success');
+        if (startIcon) startIcon.className = 'fas fa-check';
+        if (startLabel) startLabel.textContent = t('snowStarted');
+        setTimeout(() => setStartState('idle'), 1600);
+      } else {
+        if (startIcon) startIcon.className = originalIconClass;
+        if (startLabel) startLabel.textContent = originalLabel;
+      }
     };
 
-    // UI анимация кнопки
-    const originalHtml = elements.startSnow.innerHTML;
-    const originalBackground = elements.startSnow.style.background;
-    elements.startSnow.innerHTML =
-      '<i class="fas fa-spinner fa-spin"></i><span>Запускаем волшебство...</span>';
-    elements.startSnow.disabled = true;
-
-    // Мигающая анимация
-    let blinkCount = 0;
-    const blinkInterval = setInterval(() => {
-      const colors = ['#ff6b6b', '#4fc3f7', '#66bb6a', '#ffa726'];
-      elements.startSnow.style.background = `linear-gradient(135deg, ${colors[blinkCount % 4]}, ${
-        colors[(blinkCount + 1) % 4]
-      })`;
-      blinkCount++;
-    }, 200);
+    setStartState('loading');
 
     let tab;
     try {
       [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      requestSnowSync('startSnow', config, tab?.id);
 
-      // Проверка на системные страницы Chrome
+      // Проверка на системные страницы браузера
       if (isRestrictedTab(tab)) {
-        clearInterval(blinkInterval);
-        elements.startSnow.innerHTML = originalHtml;
-        elements.startSnow.disabled = false;
-        elements.startSnow.style.background = originalBackground;
-        alert(t('errorChromePage'));
+        setStartState('idle');
+        showToast(t('errorChromePage'), 'error', { durationMs: 5000 });
         return;
       }
 
-      // Отправка сообщения content script
       await chrome.tabs.sendMessage(tab.id, { action: 'startSnow', config });
-
-      // Успешный запуск
-      clearInterval(blinkInterval);
-      elements.startSnow.innerHTML = `<i class="fas fa-check"></i><span>${t('snowStarted')}</span>`;
-      elements.startSnow.style.background = 'linear-gradient(135deg, #66bb6a, #2e7d32)';
-
-      setTimeout(() => {
-        elements.startSnow.innerHTML = originalHtml;
-        elements.startSnow.disabled = false;
-        elements.startSnow.style.background = '';
-      }, 2000);
+      setStartState('success');
     } catch (error) {
-      clearInterval(blinkInterval);
-      elements.startSnow.innerHTML = originalHtml;
-      elements.startSnow.disabled = false;
-      elements.startSnow.style.background = originalBackground;
-
-      // Попытка инъекции content script если он не был загружен
+      // Попытка инъекции content script, если он не был загружен
       if (tab?.id && error.message?.includes('Receiving end does not exist')) {
         try {
           await chrome.scripting.executeScript({
@@ -1271,22 +1487,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             files: ['index.js-loader.js']
           });
           await chrome.tabs.sendMessage(tab.id, { action: 'startSnow', config });
-
-          elements.startSnow.innerHTML =
-            `<i class="fas fa-check"></i><span>${t('snowStarted')}</span>`;
-          elements.startSnow.style.background = 'linear-gradient(135deg, #66bb6a, #2e7d32)';
-
-          setTimeout(() => {
-            elements.startSnow.innerHTML = originalHtml;
-            elements.startSnow.disabled = false;
-            elements.startSnow.style.background = '';
-          }, 2000);
+          setStartState('success');
         } catch {
-          alert(t('errorInject'));
+          setStartState('idle');
+          showToast(t('errorInject'), 'error', { durationMs: 5000 });
         }
       } else {
         console.error(error);
-        alert('Произошла ошибка: ' + error.message);
+        setStartState('idle');
+        showToast(`${t('errorGeneric')} ${error?.message || ''}`.trim(), 'error', { durationMs: 5000 });
       }
     }
   });
@@ -1298,13 +1507,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     let tab;
     try {
       [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      requestSnowSync('stopSnow', null, tab?.id);
 
       if (isRestrictedTab(tab)) {
-        alert(t('errorChromePage'));
+        showToast(t('errorChromePage'), 'error', { durationMs: 5000 });
         return;
       }
 
       await chrome.tabs.sendMessage(tab.id, { action: 'stopSnow' });
+      showToast(t('snowStopped'), 'info', { durationMs: 1800 });
     } catch (error) {
       if (!error.message?.includes('Receiving end does not exist')) {
         console.error(error);

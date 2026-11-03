@@ -6,85 +6,25 @@
  * fallback на Canvas 2D для браузеров без поддержки WebGPU.
  */
 
-import { WebGPURenderer } from './webgpu-renderer.js';
-import { Fallback2DRenderer } from './fallback-2d-renderer.js';
-import { ThreeDSnowRenderer } from './three-d-renderer.js';
-import { GifLayer } from './gif-layer.js';
-import { splitSentences } from './utils/glyph-utils.js';
-import { normalizeGlyphSizePercentRange, getViewportBaseSize } from './utils/size-utils.js';
+
+import { SnowWebGPUController, DEFAULT_CONFIG, normalizeSizeConfig } from './snow-controller.js';
+import { getViewportBaseSize } from './utils/size-utils.js';
+import { SnowCommandRuntime } from './command-runtime.js';
+import {
+  PAGE_API_TARGET,
+  PAGE_API_RESPONSE_TARGET,
+  LIMITS,
+  validateCommand,
+  createRateLimiter,
+  parseOriginList,
+  isOriginAllowed
+} from '../api/command-protocol.js';
 
 // Константы
-const OVERLAY_ID = 'let-it-snow-webgpu-canvas';
-const MAX_Z_INDEX = '2147483646';
 const PLAYGROUND_MESSAGE_TARGET = 'let-it-snow-playground';
+const PLAYGROUND_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 const SNOW_PROGRESS_STORAGE_KEY = 'snowProgressV1';
 const MAX_INITIAL_OFFSET_SECONDS = 6 * 60 * 60;
-
-// Конфигурация по умолчанию
-const DEFAULT_CONFIG = {
-  snowmax: 80,
-  sinkspeed: 0.4,
-  snowminsize: 2.0,
-  snowmaxsize: 4.0,
-  snowcolor: ['#ffffff'],
-  snowletters: ['❄'],
-  snowsentences: [],
-  sentenceCount: 0,
-  gifUrls: [],
-  gifCount: 0,
-  debugCollisions: false,
-  rendererMode: 'auto',
-  minGlowStrength: 0.42,
-  snow3dThickness: 0.07,
-  mouseRadius: 100,
-  windEnabled: false,
-  windDirection: 'left',
-  windStrength: 0.5,
-  windGustFrequency: 3
-};
-
-const SENTENCE_CELL_SIZE = 64;
-
-const estimateSentenceMaxLength = (cellSize) => {
-  const fontSize = Math.max(10, Math.floor(cellSize * 0.25));
-  const maxWidth = cellSize * 0.9;
-  const lineHeight = fontSize * 1.2;
-  const maxLines = Math.max(1, Math.floor(cellSize / lineHeight));
-  const avgCharWidth = fontSize * 0.6;
-  const maxCharsPerLine = Math.max(1, Math.floor(maxWidth / avgCharWidth));
-  return Math.max(10, maxCharsPerLine * maxLines);
-};
-
-const MAX_SENTENCE_LENGTH = estimateSentenceMaxLength(SENTENCE_CELL_SIZE);
-
-const normalizeSentences = (sentences, maxLength = MAX_SENTENCE_LENGTH) => {
-  if (!Array.isArray(sentences)) return [];
-  const result = [];
-
-  sentences.forEach((sentence) => {
-    const text = String(sentence || '').trim();
-    if (!text) return;
-    const parts = splitSentences(text, maxLength)
-      .map((part) => part.trim())
-      .filter(Boolean);
-    result.push(...parts);
-  });
-
-  return result;
-};
-
-const normalizeSizeConfig = (rawConfig = {}) => {
-  const { minPercent, maxPercent } = normalizeGlyphSizePercentRange(
-    rawConfig.snowminsize,
-    rawConfig.snowmaxsize
-  );
-
-  return {
-    ...rawConfig,
-    snowminsize: minPercent,
-    snowmaxsize: maxPercent
-  };
-};
 
 const getSnowStorageArea = () => {
   if (typeof chrome === 'undefined' || !chrome.storage) return null;
@@ -138,469 +78,6 @@ let controllerGeneration = 0;
 let explicitSnowCommandReceived = false;
 
 /**
- * Главный класс управления снегопадом
- */
-class SnowWebGPUController {
-  constructor(userConfig = {}) {
-    const mergedConfig = { ...DEFAULT_CONFIG, ...userConfig };
-    mergedConfig.snowsentences = normalizeSentences(mergedConfig.snowsentences);
-    this.config = normalizeSizeConfig(mergedConfig);
-    this.canvas = null;
-    this.renderer = null;
-    this.gifLayer = null;
-    this.isPaused = false;
-    this.mouseX = 0;
-    this.mouseY = 0;
-    this.mousePrevX = 0;
-    this.mousePrevY = 0;
-    this.mouseVelocityX = 0;
-    this.mouseVelocityY = 0;
-    this.lastMouseTime = 0;
-    this.mouseIdleTimeoutId = null;
-    this.mouseLeftPressed = false;
-    this.mouseRightPressed = false;
-    this.mouseInteractionEnabled = true;
-    this.windSyncInterval = null;
-    this.isDestroyed = false;
-  }
-
-  /**
-   * Запуск снегопада
-   */
-  async start() {
-    this.createOverlayCanvas();
-    const gifStartPromise = this.startGifLayer();
-    const mode = String(this.config.rendererMode || 'auto').toLowerCase();
-    const rendererMode = ['webgpu', '2d', '3d'].includes(mode) ? mode : 'auto';
-    const debugEnabled = Boolean(
-      this.config?.debug === true ||
-      this.config?.debugCollisions === true ||
-      this.config?.playgroundDebugMode === true
-    );
-
-    if (rendererMode === '3d') {
-      const threeRenderer = new ThreeDSnowRenderer(this.canvas, this.config);
-      if (threeRenderer.init()) {
-        this.renderer = threeRenderer;
-        this.renderer.start();
-      } else if (debugEnabled) {
-        console.warn('[Let It Snow] 3D rendering is unavailable; using Canvas 2D fallback.');
-      }
-    } else if (rendererMode !== '2d') {
-      // Пытаемся использовать WebGPU, если не получается - fallback в auto-режиме
-      const webgpuRenderer = new WebGPURenderer(this.canvas, this.config);
-      const webgpuSupported = await webgpuRenderer.init();
-      if (this.isDestroyed) {
-        webgpuRenderer.cleanup?.();
-        return;
-      }
-
-      if (webgpuSupported) {
-        this.renderer = webgpuRenderer;
-        this.renderer.setDeviceLostHandler?.(() => {
-          // В strict webgpu-режиме не переключаемся автоматически на 2D.
-          if (rendererMode === 'webgpu') {
-            if (debugEnabled) {
-              console.warn('[Let It Snow] WebGPU device lost in strict webgpu mode. Auto-fallback is disabled.');
-            }
-            return;
-          }
-
-          const fallbackRenderer = new Fallback2DRenderer(this.canvas, this.config);
-          const fallbackInit = fallbackRenderer.init();
-          if (fallbackInit) {
-            this.renderer = fallbackRenderer;
-            this.renderer.start();
-            if (this.gifLayer) {
-              this.gifLayer.setMainRenderer?.(this.renderer);
-            }
-            if (debugEnabled) {
-              console.debug('[Let It Snow] Switched to Canvas2D after WebGPU device loss.');
-            }
-          } else if (debugEnabled) {
-            console.warn('[Let It Snow] Failed to initialize Canvas2D fallback after WebGPU device loss.');
-          }
-        });
-        this.renderer.start();
-      } else if (rendererMode === 'webgpu') {
-        if (debugEnabled) {
-          const info = webgpuRenderer.getLastInitInfo?.();
-          console.warn('[Let It Snow] WebGPU mode requested but unavailable. Snow renderer is not started.', info || '');
-        }
-      } else if (debugEnabled) {
-        const info = webgpuRenderer.getLastInitInfo?.();
-        console.debug('[Let It Snow] Auto mode selected Canvas2D fallback.', info || '');
-      }
-    }
-
-    if (!this.renderer && rendererMode !== 'webgpu') {
-      // Fallback на 2D Canvas
-      const fallbackRenderer = new Fallback2DRenderer(this.canvas, this.config);
-      const fallbackInit = fallbackRenderer.init();
-      if (fallbackInit) {
-        this.renderer = fallbackRenderer;
-        this.renderer.start();
-      }
-    }
-
-    // GIF запускаем параллельно с инициализацией рендера,
-    // чтобы не ждать завершения тяжелого WebGPU init.
-    await gifStartPromise;
-    if (this.isDestroyed) {
-      this.stopGifLayer();
-      return;
-    }
-
-    // Передаем ссылку на рендерер в GifLayer для коллизий в реальном времени
-    if (this.gifLayer && this.renderer) {
-      this.gifLayer.setMainRenderer?.(this.renderer);
-    }
-
-    // Start wind synchronization
-    if (this.gifLayer && this.renderer) {
-      this.windSyncInterval = setInterval(() => {
-        if (this.renderer && this.gifLayer) {
-          const windForce = this.renderer.currentWindForce ?? 0;
-          const windLift = this.renderer.currentWindLift ?? 0;
-          const windVortex = this.renderer.currentWindVortex ?? 0;
-          const windTime = this.renderer.windTime ?? 0;
-          this.gifLayer.updateWind?.(windForce, windLift, windVortex, windTime);
-        }
-      }, 100);
-    }
-  }
-
-  /**
-   * Создание overlay canvas элемента
-   */
-  createOverlayCanvas() {
-    const existing = document.getElementById(OVERLAY_ID);
-    if (existing) existing.remove();
-
-    const canvas = document.createElement('canvas');
-    canvas.id = OVERLAY_ID;
-    const setStyle = (prop, value) => canvas.style.setProperty(prop, value, 'important');
-    setStyle('position', 'fixed');
-    setStyle('top', '0');
-    setStyle('left', '0');
-    setStyle('right', '0');
-    setStyle('bottom', '0');
-    setStyle('width', '100vw');
-    setStyle('height', '100vh');
-    setStyle('max-width', 'none');
-    setStyle('max-height', 'none');
-    setStyle('pointer-events', 'none');
-    setStyle('user-select', 'none');
-    setStyle('z-index', MAX_Z_INDEX);
-    setStyle('inset', '0');
-    setStyle('display', 'block');
-    setStyle('background', 'transparent');
-    document.documentElement.appendChild(canvas);
-
-    this.canvas = canvas;
-    this.setupMouseInteraction();
-  }
-
-  /**
-   * Приводит координаты указателя к системе координат симуляции (CSS px).
-   * Это устраняет рассинхрон при zoom/pinch и нестандартном viewport.
-   * @param {MouseEvent|PointerEvent|TouchEvent} event
-   * @returns {{x: number, y: number}}
-   */
-  normalizePointerPosition(event) {
-    const touchPoint = event?.touches?.[0] || event?.changedTouches?.[0] || null;
-    const rawX = Number(touchPoint?.clientX ?? event?.clientX);
-    const rawY = Number(touchPoint?.clientY ?? event?.clientY);
-    let x = Number.isFinite(rawX) ? rawX : 0;
-    let y = Number.isFinite(rawY) ? rawY : 0;
-
-    const rect = this.canvas?.getBoundingClientRect?.();
-    const viewportWidth = this.renderer?.viewportWidth || window.innerWidth || 1;
-    const viewportHeight = this.renderer?.viewportHeight || window.innerHeight || 1;
-
-    if (rect && rect.width > 0 && rect.height > 0) {
-      const normalizedX = (x - rect.left) / rect.width;
-      const normalizedY = (y - rect.top) / rect.height;
-      x = normalizedX * viewportWidth;
-      y = normalizedY * viewportHeight;
-    }
-
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      x = 0;
-      y = 0;
-    }
-
-    return { x, y };
-  }
-
-  /**
-   * Запуск слоя GIF анимаций
-   */
-  async startGifLayer() {
-    this.stopGifLayer();
-    this.gifLayer = new GifLayer(this.config);
-    await this.gifLayer.start();
-  }
-
-  /**
-   * Остановка слоя GIF
-   */
-  stopGifLayer() {
-    if (this.gifLayer) {
-      this.gifLayer.stop();
-      this.gifLayer = null;
-    }
-  }
-
-  /**
-   * Приостановка всех анимаций
-   */
-  pauseAnimations() {
-    if (this.isPaused) return;
-    this.isPaused = true;
-
-    if (this.renderer) {
-      this.renderer.pause();
-    }
-
-    if (this.gifLayer) {
-      this.gifLayer.pause();
-    }
-  }
-
-  /**
-   * Возобновление всех анимаций
-   */
-  resumeAnimations() {
-    if (!this.isPaused) return;
-    this.isPaused = false;
-
-    if (this.renderer) {
-      this.renderer.resume();
-    }
-
-    if (this.gifLayer) {
-      this.gifLayer.resume();
-    }
-  }
-
-  /**
-   * Настройка обработчиков событий мыши
-   */
-  setupMouseInteraction() {
-    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-    const maxMouseVelocity = Number(this.config.maxMouseVelocity ?? 3800);
-    const mouseVelocitySmoothing = Number(this.config.mouseVelocitySmoothing ?? 0.35);
-    const supportsPointerEvents = typeof window !== 'undefined' && 'PointerEvent' in window;
-    const getPointerButton = (event, isUp = false) => {
-      const button = Number(event?.button);
-      if (button === 0 || button === 2) return button;
-      const pointerType = String(event?.pointerType || '').toLowerCase();
-      if (pointerType === 'touch' || pointerType === 'pen') {
-        if (isUp && !this.mouseLeftPressed) return -1;
-        return 0;
-      }
-      return -1;
-    };
-
-    this.mouseMoveHandler = (e) => {
-      const now = performance.now();
-      const rawDt = this.lastMouseTime ? (now - this.lastMouseTime) / 1000 : 0.016;
-      const dt = clamp(rawDt || 0.016, 1 / 240, 0.05);
-      const pointer = this.normalizePointerPosition(e);
-      
-      this.mousePrevX = this.mouseX;
-      this.mousePrevY = this.mouseY;
-      this.mouseX = pointer.x;
-      this.mouseY = pointer.y;
-      
-      // Вычисляем скорость движения мыши
-      if (dt > 0) {
-        const rawVx = (this.mouseX - this.mousePrevX) / dt;
-        const rawVy = (this.mouseY - this.mousePrevY) / dt;
-        const clampedVx = clamp(rawVx, -maxMouseVelocity, maxMouseVelocity);
-        const clampedVy = clamp(rawVy, -maxMouseVelocity, maxMouseVelocity);
-        const a = clamp(mouseVelocitySmoothing, 0.05, 1);
-        this.mouseVelocityX = this.mouseVelocityX * (1 - a) + clampedVx * a;
-        this.mouseVelocityY = this.mouseVelocityY * (1 - a) + clampedVy * a;
-      }
-      
-      this.lastMouseTime = now;
-
-      if (this.mouseIdleTimeoutId) {
-        clearTimeout(this.mouseIdleTimeoutId);
-      }
-      this.mouseIdleTimeoutId = setTimeout(() => {
-        this.mouseVelocityX = 0;
-        this.mouseVelocityY = 0;
-        this.lastMouseTime = performance.now();
-        if (this.renderer && this.mouseInteractionEnabled) {
-          this.renderer.updateMousePosition?.(this.mouseX, this.mouseY, 0, 0);
-        }
-        if (this.gifLayer && this.mouseInteractionEnabled) {
-          this.gifLayer.updateMouse?.(this.mouseX, this.mouseY, 0, 0);
-        }
-      }, 32);
-      
-      if (this.renderer && this.mouseInteractionEnabled) {
-        this.renderer.updateMousePosition?.(this.mouseX, this.mouseY, this.mouseVelocityX, this.mouseVelocityY);
-      }
-      if (this.gifLayer && this.mouseInteractionEnabled) {
-        this.gifLayer.updateMouse?.(this.mouseX, this.mouseY, this.mouseVelocityX, this.mouseVelocityY);
-      }
-    };
-
-    this.mouseDownHandler = (e) => {
-      const button = getPointerButton(e);
-      if (button !== 0 && button !== 2) return;
-      const pointer = this.normalizePointerPosition(e);
-      if (button === 0) this.mouseLeftPressed = true;
-      if (button === 2) this.mouseRightPressed = true;
-      if (this.renderer && this.mouseInteractionEnabled) {
-        this.renderer.onMouseDown?.(pointer.x, pointer.y, button);
-      }
-      if (this.gifLayer && this.mouseInteractionEnabled) {
-        this.gifLayer.onMouseDown?.(pointer.x, pointer.y, button);
-      }
-    };
-
-    this.mouseUpHandler = (e) => {
-      const button = getPointerButton(e, true);
-      if (button !== 0 && button !== 2) return;
-      if (button === 0) this.mouseLeftPressed = false;
-      if (button === 2) this.mouseRightPressed = false;
-      if (this.renderer && this.mouseInteractionEnabled) {
-        this.renderer.onMouseUp?.(button);
-      }
-    };
-
-    this.mouseLeaveHandler = () => {
-      this.mouseLeftPressed = false;
-      this.mouseRightPressed = false;
-      this.mouseVelocityX = 0;
-      this.mouseVelocityY = 0;
-      if (this.mouseIdleTimeoutId) {
-        clearTimeout(this.mouseIdleTimeoutId);
-        this.mouseIdleTimeoutId = null;
-      }
-      if (this.renderer && this.mouseInteractionEnabled) {
-        this.renderer.onMouseLeave?.();
-      }
-      if (this.gifLayer && this.mouseInteractionEnabled) {
-        this.gifLayer.onMouseLeave?.();
-      }
-    };
-
-    // Отслеживаем события на document, чтобы не блокировать взаимодействие со страницей.
-    // Для мобильных/планшетов используем Pointer Events, с fallback на touch+mouse.
-    this.usingPointerEvents = supportsPointerEvents;
-    if (supportsPointerEvents) {
-      document.addEventListener('pointermove', this.mouseMoveHandler, { passive: true });
-      document.addEventListener('pointerdown', this.mouseDownHandler, { passive: true });
-      document.addEventListener('pointerup', this.mouseUpHandler, { passive: true });
-      document.addEventListener('pointercancel', this.mouseLeaveHandler, { passive: true });
-      document.addEventListener('pointerleave', this.mouseLeaveHandler, { passive: true });
-      return;
-    }
-
-    this.touchStartHandler = (e) => this.mouseDownHandler(e);
-    this.touchMoveHandler = (e) => this.mouseMoveHandler(e);
-    this.touchEndHandler = (e) => this.mouseUpHandler(e);
-
-    document.addEventListener('touchstart', this.touchStartHandler, { passive: true });
-    document.addEventListener('touchmove', this.touchMoveHandler, { passive: true });
-    document.addEventListener('touchend', this.touchEndHandler, { passive: true });
-    document.addEventListener('touchcancel', this.mouseLeaveHandler, { passive: true });
-
-    document.addEventListener('mousemove', this.mouseMoveHandler, { passive: true });
-    document.addEventListener('mousedown', this.mouseDownHandler, { passive: true });
-    document.addEventListener('mouseup', this.mouseUpHandler, { passive: true });
-    document.addEventListener('mouseleave', this.mouseLeaveHandler, { passive: true });
-  }
-
-  /**
-   * Удаление обработчиков событий мыши
-   */
-  removeMouseInteraction() {
-    if (this.usingPointerEvents) {
-      if (this.mouseMoveHandler) {
-        document.removeEventListener('pointermove', this.mouseMoveHandler);
-      }
-      if (this.mouseDownHandler) {
-        document.removeEventListener('pointerdown', this.mouseDownHandler);
-      }
-      if (this.mouseUpHandler) {
-        document.removeEventListener('pointerup', this.mouseUpHandler);
-      }
-      if (this.mouseLeaveHandler) {
-        document.removeEventListener('pointercancel', this.mouseLeaveHandler);
-        document.removeEventListener('pointerleave', this.mouseLeaveHandler);
-      }
-    }
-
-    if (this.touchStartHandler) {
-      document.removeEventListener('touchstart', this.touchStartHandler);
-    }
-    if (this.touchMoveHandler) {
-      document.removeEventListener('touchmove', this.touchMoveHandler);
-    }
-    if (this.touchEndHandler) {
-      document.removeEventListener('touchend', this.touchEndHandler);
-    }
-
-    if (this.mouseMoveHandler) {
-      document.removeEventListener('mousemove', this.mouseMoveHandler);
-    }
-    if (this.mouseDownHandler) {
-      document.removeEventListener('mousedown', this.mouseDownHandler);
-    }
-    if (this.mouseUpHandler) {
-      document.removeEventListener('mouseup', this.mouseUpHandler);
-    }
-    if (this.mouseLeaveHandler) {
-      document.removeEventListener('mouseleave', this.mouseLeaveHandler);
-    }
-
-    this.mouseMoveHandler = null;
-    this.mouseDownHandler = null;
-    this.mouseUpHandler = null;
-    this.mouseLeaveHandler = null;
-    this.touchStartHandler = null;
-    this.touchMoveHandler = null;
-    this.touchEndHandler = null;
-    this.usingPointerEvents = false;
-  }
-
-  /**
-   * Полная очистка и удаление снегопада
-   */
-  destroy() {
-    this.isDestroyed = true;
-
-    if (this.windSyncInterval) {
-      clearInterval(this.windSyncInterval);
-      this.windSyncInterval = null;
-    }
-
-    if (this.renderer) {
-      this.renderer.cleanup?.();
-      this.renderer.stop?.();
-      this.renderer = null;
-    }
-
-    this.stopGifLayer();
-    this.removeMouseInteraction();
-
-    if (this.canvas) {
-      this.canvas.remove();
-      this.canvas = null;
-    }
-
-    this.isPaused = false;
-  }
-}
-
-/**
  * Остановить снегопад
  */
 function stopSnow(options = {}) {
@@ -622,7 +99,8 @@ function stopSnow(options = {}) {
  * @param {Object} config - Конфигурация снегопада
  */
 async function startSnow(config, options = {}) {
-  const { reuseExistingProgress = true, autoStart = false } = options;
+  // Only auto-start (page navigation) continues an earlier snowfall; explicit starts begin at the top.
+  const { autoStart = false, reuseExistingProgress = autoStart } = options;
   if (!autoStart) explicitSnowCommandReceived = true;
   const generation = ++controllerGeneration;
   const initialTimeOffsetSeconds = await resolveInitialOffsetSeconds(reuseExistingProgress);
@@ -656,24 +134,110 @@ async function startSnow(config, options = {}) {
 }
 
 /**
- * Безопасная отправка postMessage
+ * Загружает сохранённые настройки снегопада из chrome.storage.sync.
+ * @param {Object} [overrides] - проверенные поля, перекрывающие сохранённые
+ * @returns {Promise<{config: Object, autoStart: boolean}>}
+ */
+async function loadStoredSnowConfig(overrides = {}) {
+  let stored = {};
+  if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
+    stored = (await chrome.storage.sync.get([
+      'autoStart',
+      'snowmax',
+      'sinkspeed',
+      'snowminsize',
+      'snowmaxsize',
+      'colors',
+      'symbols',
+      'symbolModes',
+      'sentences',
+      'sentenceCount',
+      'gifs',
+      'gifCount',
+      'rendererMode',
+      'snow3dThickness',
+      'mouseRadius',
+      'windEnabled',
+      'windDirection',
+      'windStrength',
+      'windGustFrequency'
+    ])) || {};
+  }
+
+  const sizeConfig = normalizeSizeConfig({
+    snowminsize: overrides.snowminsize ?? stored.snowminsize,
+    snowmaxsize: overrides.snowmaxsize ?? stored.snowmaxsize
+  });
+  const config = {
+    snowmax: stored.snowmax || 80,
+    sinkspeed: stored.sinkspeed || 0.4,
+    snowcolor: stored.colors || ['#ffffff'],
+    snowletters: stored.symbols || ['❄'],
+    snowglyphmodes: stored.symbolModes || ['text'],
+    snowsentences: stored.sentences || [],
+    sentenceCount: stored.sentenceCount || 0,
+    gifUrls: stored.gifs || [],
+    gifCount: stored.gifCount || 0,
+    rendererMode: stored.rendererMode === '3d' ? '3d' : 'auto',
+    snow3dThickness: stored.snow3dThickness ?? DEFAULT_CONFIG.snow3dThickness,
+    mouseRadius: stored.mouseRadius || 100,
+    windEnabled: stored.windEnabled || false,
+    windDirection: stored.windDirection || 'left',
+    windStrength: stored.windStrength || 0.5,
+    windGustFrequency: stored.windGustFrequency || 3,
+    ...overrides,
+    snowminsize: sizeConfig.snowminsize,
+    snowmaxsize: sizeConfig.snowmaxsize
+  };
+  return { config, autoStart: Boolean(stored.autoStart) };
+}
+
+// Исполнитель команд внешнего API (эффекты поверх основного снега)
+const commandRuntime = new SnowCommandRuntime({
+  getMainController: () => controller,
+  startMain: (config) => startSnow(config),
+  stopMain: () => stopSnow(),
+  resolveStartConfig: async (overrides) => (await loadStoredSnowConfig(overrides)).config
+});
+
+/**
+ * Выполняет внешнюю команду после повторной проверки.
+ * @param {unknown} rawCommand
+ * @param {{source: string}} context
+ */
+async function runSnowCommand(rawCommand, context) {
+  const validation = validateCommand(rawCommand);
+  if (!validation.ok) return { ok: false, error: validation.error };
+  try {
+    const result = await commandRuntime.execute(validation.command, context);
+    return { ...result, id: validation.command.id };
+  } catch (err) {
+    console.error('[Let It Snow] Command failed:', err);
+    return { ok: false, error: err?.message || 'command_failed', id: validation.command.id };
+  }
+}
+
+/**
+ * Безопасная отправка postMessage только в собственный origin страницы.
  * @param {Object} payload - Данные для отправки
  */
 const safePostMessage = (payload) => {
   if (typeof window === 'undefined') return;
   if (typeof window.postMessage !== 'function') return;
-  window.postMessage(payload, '*');
+  const targetOrigin = window.location?.origin && window.location.origin !== 'null'
+    ? window.location.origin
+    : '*';
+  window.postMessage(payload, targetOrigin);
 };
 
+const isPlaygroundHost = () => PLAYGROUND_HOSTNAMES.has(String(window.location?.hostname || '').toLowerCase());
+
 /**
- * Обработчик сообщений для playground режима
+ * Обработчик сообщений для playground режима (только localhost)
  * @param {MessageEvent} event - Событие сообщения
  */
-const handleWindowBridgeMessage = (event) => {
-  if (event.source !== window) return;
-
-  const { target, action, config } = event.data || {};
-  if (target !== PLAYGROUND_MESSAGE_TARGET) return;
+const handlePlaygroundMessage = (event) => {
+  const { action, config } = event.data || {};
 
   if (action === 'startSnow') {
     startSnow(config || {}).catch((err) => console.error(err));
@@ -690,18 +254,121 @@ const handleWindowBridgeMessage = (event) => {
   }
 };
 
-// Слушаем сообщения для playground режима
-window.addEventListener('message', handleWindowBridgeMessage);
-safePostMessage({ target: PLAYGROUND_MESSAGE_TARGET, action: 'ready' });
+// --- Page API: window.postMessage({ target: 'let-it-snow-api', command, params, id }) ---
+// Выключен по умолчанию; разрешается только для origin из явного списка в настройках.
+const pageApiState = {
+  enabled: false,
+  origins: [],
+  limiter: createRateLimiter({ max: 20, intervalMs: 10000 })
+};
+
+const applyPageApiSettings = (settings = {}) => {
+  pageApiState.enabled = settings.pageApiEnabled === true;
+  pageApiState.origins = parseOriginList(settings.pageApiOrigins || []);
+};
+
+const loadPageApiSettings = async () => {
+  if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+  try {
+    applyPageApiSettings(await chrome.storage.local.get(['pageApiEnabled', 'pageApiOrigins']));
+  } catch (err) {
+    console.warn('[Let It Snow] Failed to load page API settings:', err);
+  }
+};
+
+const isPageApiAllowed = () => pageApiState.enabled
+  && isOriginAllowed(window.location?.origin, pageApiState.origins);
+
+const estimatePayloadSize = (data) => {
+  try {
+    return JSON.stringify(data).length;
+  } catch {
+    return Infinity;
+  }
+};
+
+const handlePageApiMessage = async (event) => {
+  const data = event.data;
+  const id = typeof data?.id === 'string' && data.id.length <= LIMITS.maxIdLength ? data.id : null;
+  const reply = (result) => safePostMessage({ ...result, target: PAGE_API_RESPONSE_TARGET, id });
+
+  if (!isPageApiAllowed()) {
+    // Не раскрываем детали: страница узнаёт лишь, что API недоступен.
+    reply({ ok: false, error: 'page_api_disabled' });
+    return;
+  }
+  if (estimatePayloadSize(data) > LIMITS.maxPayloadBytes) {
+    reply({ ok: false, error: 'payload_too_large' });
+    return;
+  }
+  if (!pageApiState.limiter.tryConsume()) {
+    reply({ ok: false, error: 'rate_limited' });
+    return;
+  }
+
+  const { target: _target, ...rawCommand } = data;
+  reply(await runSnowCommand(rawCommand, { source: 'page' }));
+};
+
+const handleWindowMessage = (event) => {
+  if (event.source !== window) return;
+  if (event.origin && window.location?.origin && event.origin !== window.location.origin) return;
+  const target = event.data?.target;
+
+  if (target === PAGE_API_TARGET) {
+    handlePageApiMessage(event).catch((err) => console.error(err));
+    return;
+  }
+
+  if (target === PLAYGROUND_MESSAGE_TARGET && isPlaygroundHost()) {
+    handlePlaygroundMessage(event);
+  }
+};
+
+window.addEventListener('message', handleWindowMessage);
+if (isPlaygroundHost()) {
+  safePostMessage({ target: PLAYGROUND_MESSAGE_TARGET, action: 'ready' });
+}
+loadPageApiSettings();
+if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') return;
+    if (!changes.pageApiEnabled && !changes.pageApiOrigins) return;
+    loadPageApiSettings();
+  });
+}
 
 // Chrome/Firefox extension messaging
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const respond = typeof sendResponse === 'function' ? sendResponse : () => {};
     try {
+      if (message?.action === 'snowCommand') {
+        // Команды принимаются только от самого расширения (background/popup).
+        if (sender?.id && chrome.runtime.id && sender.id !== chrome.runtime.id) {
+          respond({ ok: false, error: 'forbidden' });
+          return;
+        }
+        runSnowCommand(message.command, { source: message.source === 'relay' ? 'relay' : 'extension' })
+          .then(respond)
+          .catch((err) => respond({ ok: false, error: err?.message || 'command_failed' }));
+        return true;
+      }
+
       if (message.action === 'startSnow') {
         startSnow(message.config || {}).catch((err) => console.error(err));
         respond({ ok: true });
+        return;
+      }
+
+      // Live preview from the popup: only refresh a snowfall that is already running.
+      if (message.action === 'previewSnow') {
+        if (!controller) {
+          respond({ ok: true, running: false });
+          return;
+        }
+        startSnow(message.config || {}, { reuseExistingProgress: true }).catch((err) => console.error(err));
+        respond({ ok: true, running: true });
         return;
       }
 
@@ -726,16 +393,23 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 
 // Очистка при закрытии страницы
 window.addEventListener('beforeunload', () => {
+  commandRuntime.destroy();
   stopSnow({ preserveProgress: true });
 });
 
 // Пауза/возобновление при смене вкладки
 const handleVisibilityChange = () => {
-  if (!controller) return;
+  if (!controller) {
+    if (document.hidden) commandRuntime.pauseAll();
+    else commandRuntime.resumeAll();
+    return;
+  }
   if (document.hidden) {
     controller.pauseAnimations();
+    commandRuntime.pauseAll();
   } else {
     controller.resumeAnimations();
+    commandRuntime.resumeAll();
   }
 };
 
@@ -745,56 +419,9 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
 (async () => {
   try {
     if (typeof chrome !== 'undefined' && chrome.storage) {
-      const stored = await chrome.storage.sync.get([
-        'autoStart',
-        'snowmax',
-        'sinkspeed',
-        'snowminsize',
-        'snowmaxsize',
-        'colors',
-        'symbols',
-        'symbolModes',
-        'sentences',
-        'sentenceCount',
-        'gifs',
-        'gifCount',
-        'rendererMode',
-        'snow3dThickness',
-        'mouseRadius',
-        'windEnabled',
-        'windDirection',
-        'windStrength',
-        'windGustFrequency'
-      ]);
-
-      if (stored.autoStart) {
-        const sizeConfig = normalizeSizeConfig({
-          snowminsize: stored.snowminsize,
-          snowmaxsize: stored.snowmaxsize
-        });
-        const config = {
-          snowmax: stored.snowmax || 80,
-          sinkspeed: stored.sinkspeed || 0.4,
-          snowminsize: sizeConfig.snowminsize,
-          snowmaxsize: sizeConfig.snowmaxsize,
-          snowcolor: stored.colors || ['#ffffff'],
-          snowletters: stored.symbols || ['❄'],
-          snowglyphmodes: stored.symbolModes || ['text'],
-          snowsentences: stored.sentences || [],
-          sentenceCount: stored.sentenceCount || 0,
-          gifUrls: stored.gifs || [],
-          gifCount: stored.gifCount || 0,
-          rendererMode: stored.rendererMode === '3d' ? '3d' : 'auto',
-          snow3dThickness: stored.snow3dThickness ?? DEFAULT_CONFIG.snow3dThickness,
-          mouseRadius: stored.mouseRadius || 100,
-          windEnabled: stored.windEnabled || false,
-          windDirection: stored.windDirection || 'left',
-          windStrength: stored.windStrength || 0.5,
-          windGustFrequency: stored.windGustFrequency || 3
-        };
-        if (!explicitSnowCommandReceived) {
-          startSnow(config, { autoStart: true }).catch((err) => console.error(err));
-        }
+      const { config, autoStart } = await loadStoredSnowConfig();
+      if (autoStart && !explicitSnowCommandReceived) {
+        startSnow(config, { autoStart: true }).catch((err) => console.error(err));
       }
     }
   } catch (err) {
@@ -803,4 +430,4 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
 })();
 
 // Экспорт для playground и тестирования
-export { SnowWebGPUController, startSnow, stopSnow };
+export { SnowWebGPUController, startSnow, stopSnow, runSnowCommand, commandRuntime, loadStoredSnowConfig };
