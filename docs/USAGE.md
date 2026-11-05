@@ -73,6 +73,8 @@ Respawned flakes re-enter from the top; API bursts with explicit coordinates are
 
 Small emoji can settle above suitable visible cards, images and blocks with free space.
 Text, media and controls are checked before landing; the overlay never intercepts clicks.
+Diagonal and fast falls land at the first safe surface crossed along the actual path,
+not at the end-of-frame position or in DOM order.
 The pile has a shared density limit of 32 flakes. Settled flakes never detach on a timer:
 only a sufficiently energetic impact (speed, acceleration and relative size) replaces one.
 Slow flakes bounce/roll off and fall nearby without snapping to a slot; a direct contact can
@@ -89,7 +91,9 @@ Landing preserves the current angle and contact height. Weak top contacts lose t
 and rolling starts with gradual acceleration rather than repeated sideways kicks.
 Weak wind leaves the pile intact; sustained strong gusts can blow flakes off.
 Scrolling (including nested containers) sheds the pile. Flakes follow layout movements;
-a removed/unsafe support is cleared.
+stacks spanning multiple effect layers move together without a one-frame delay.
+A removed, transparent or newly interactive support is cleared; upper flakes also fall
+if their supporting neighbours move apart.
 Moving the mouse across the row also knocks flakes down; left/right clicks retain
 their expanded explosion/suction radius. A stationary pointer does not disturb the row.
 Large emoji, sentences and GIFs keep falling.

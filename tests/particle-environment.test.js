@@ -61,6 +61,110 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     expect(environment.settled.size).toBe(1);
   });
 
+  it('lands at the swept contact point when a diagonal fall ends outside the surface', () => {
+    rect = { ...rect, right: 250, width: 200 };
+    const environment = create();
+    const flake = makeFlake({ x: 200, baseX: 200 });
+    environment.beginFrame(0.05, [flake], 800, 600);
+    flake.x = flake.baseX = 280;
+    flake.y = 210;
+
+    environment.finishFrame();
+
+    expect(flake.isSettled).toBe(true);
+    expect(flake.x).toBeCloseTo(236);
+    expect(flake.baseX).toBe(flake.x);
+    expect(flake.y).toBe(188);
+  });
+
+  it.each(['2d', 'webgpu', '3d'])('resolves diagonal landings in the actual %s update loop', (mode) => {
+    rect = { ...rect, right: 250, width: 200 };
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const environment = create();
+    const flake = makeFlake({ x: 200, baseX: 200, fallSpeed: 800, velocityX: 1600 });
+    const Renderer = { '2d': Fallback2DRenderer, webgpu: WebGPURenderer, '3d': ThreeDSnowRenderer }[mode];
+    const renderer = new Renderer(document.createElement('canvas'), {
+      enableCollisions: false, windEnabled: false, mouseRadius: 0, maxFlakeSpeed: 2000
+    });
+    renderer.environment = environment;
+    renderer.viewportWidth = 800;
+    renderer.viewportHeight = 600;
+    if (mode === 'webgpu') {
+      renderer.instances = [flake];
+      renderer.instanceData = new Float32Array(14);
+      renderer.updateSimulation(0.05);
+    } else {
+      renderer.flakes = [flake];
+      if (mode === '3d') {
+        renderer._updateInstances(0.05);
+      } else {
+        renderer.ctx = {
+          clearRect: vi.fn(), resetTransform: vi.fn(), setTransform: vi.fn(), fillText: vi.fn(),
+          save: vi.fn(), restore: vi.fn(),
+          measureText: vi.fn(() => ({ actualBoundingBoxLeft: 0, actualBoundingBoxRight: 20 }))
+        };
+        renderer.start();
+        renderer.drawCallback(1050);
+        renderer.stop();
+      }
+    }
+
+    expect(flake.isSettled).toBe(true);
+    expect(flake.x).toBeCloseTo(236);
+    expect(flake.y).toBe(188);
+  });
+
+  it('lands on the first crossed surface rather than the first element in DOM order', () => {
+    rect = { ...rect, bottom: 240, height: 40 };
+    const lower = document.createElement('article');
+    lower.style.cssText = 'visibility:visible;opacity:1';
+    const lowerRect = { ...rect, top: 300, bottom: 400, height: 100 };
+    lower.getBoundingClientRect = () => lowerRect;
+    document.body.prepend(lower);
+    document.elementFromPoint.mockImplementation((x, y) => {
+      if (y >= rect.top && y <= rect.bottom) return figure;
+      if (y >= lowerRect.top && y <= lowerRect.bottom) return lower;
+      return document.body;
+    });
+    const environment = create();
+    const flake = makeFlake();
+    environment.beginFrame(0.05, [flake], 800, 600);
+    flake.y = 340;
+
+    environment.finishFrame();
+
+    expect(flake.isSettled).toBe(true);
+    expect(environment.settled.get(flake).element).toBe(figure);
+    expect(flake.y).toBe(188);
+  });
+
+  it('does not tunnel through an earlier DOM surface to collide with a lower pile', () => {
+    rect = { ...rect, bottom: 240, height: 40 };
+    const lower = document.createElement('article');
+    lower.style.cssText = 'visibility:visible;opacity:1';
+    const lowerRect = { ...rect, top: 300, bottom: 400, height: 100 };
+    lower.getBoundingClientRect = () => lowerRect;
+    document.body.appendChild(lower);
+    document.elementFromPoint.mockImplementation((x, y) => {
+      if (y >= rect.top && y <= rect.bottom) return figure;
+      if (y >= lowerRect.top && y <= lowerRect.bottom) return lower;
+      return document.body;
+    });
+    const environment = create();
+    const support = makeFlake({ y: 288 });
+    environment.settle(support, { element: lower, ...lowerRect }, 288);
+    const incoming = makeFlake();
+    environment.beginFrame(0.05, [support, incoming], 800, 600);
+    incoming.y = 340;
+
+    environment.finishFrame();
+
+    expect(incoming.isSettled).toBe(true);
+    expect(environment.settled.get(incoming).element).toBe(figure);
+    expect(incoming.y).toBe(188);
+    expect(support.isSettled).toBe(true);
+  });
+
   it('does not accumulate sentences, non-emoji, oversized particles, or rising particles', () => {
     const environment = create();
     for (const overrides of [
@@ -807,6 +911,107 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     environment.beginFrame(1, [flake], 800, 600);
     expect(flake.isSettled).toBe(true);
   });
+
+  it('moves a cross-layer stack together regardless of renderer update order', () => {
+    const lowerEnvironment = create();
+    const upperEnvironment = create();
+    const lower = land(lowerEnvironment);
+    const upper = makeFlake({ y: 166 });
+    expect(upperEnvironment.settle(upper, lowerEnvironment.settled.get(lower), 166, lower)).toBe(true);
+    rect = { ...rect, left: 60, right: 760, top: 230, bottom: 430 };
+
+    upperEnvironment.beginFrame(1 / 60, [upper], 800, 600);
+
+    expect(lower.y).toBe(218);
+    expect(upper.y).toBe(196);
+    expect(upper.x).toBe(130);
+    lowerEnvironment.beginFrame(1 / 60, [lower], 800, 600);
+    expect(upper.y).toBe(196);
+    expect(lower.y - upper.y).toBe(22);
+  });
+
+  it('releases an upper flake when its still-settled supports move apart', () => {
+    rect = { ...rect, right: 120, width: 70 };
+    const otherElement = document.createElement('figure');
+    otherElement.style.cssText = 'visibility:visible;opacity:1';
+    let otherRect = { ...rect, left: 120, right: 190 };
+    otherElement.getBoundingClientRect = () => otherRect;
+    document.body.appendChild(otherElement);
+    const environment = create();
+    const left = makeFlake({ x: 108, y: 188 });
+    const right = makeFlake({ x: 132, y: 188 });
+    environment.settle(left, { element: figure, ...rect }, 188);
+    environment.settle(right, { element: otherElement, ...otherRect }, 188);
+    const y = 188 - Math.sqrt(22 ** 2 - 12 ** 2);
+    const upper = makeFlake({ y });
+    environment.settle(upper, environment.settled.get(left), y, left, [left, right]);
+    otherRect = { ...otherRect, left: 170, right: 240 };
+
+    environment.beginFrame(1 / 60, [left, right, upper], 800, 600);
+
+    expect(left.isSettled).toBe(true);
+    expect(right.isSettled).toBe(true);
+    expect(upper.isSettled).toBe(false);
+    expect(upper.hasShed).toBe(true);
+  });
+
+  it('uploads settled WebGPU positions when their DOM support moves', () => {
+    const environment = create();
+    const flake = land(environment);
+    const renderer = new WebGPURenderer(document.createElement('canvas'), { enableCollisions: false });
+    renderer.environment = environment;
+    renderer.viewportWidth = 800;
+    renderer.viewportHeight = 600;
+    renderer.instances = [flake];
+    renderer.instanceData = new Float32Array(14);
+    renderer.updateSimulation(1 / 60);
+    renderer.instanceBufferNeedsUpdate = false;
+    rect = { ...rect, left: 60, right: 760, top: 220, bottom: 420 };
+
+    renderer.updateSimulation(1 / 60);
+
+    expect(renderer.instanceData[0]).toBe(130);
+    expect(renderer.instanceData[1]).toBe(208);
+    expect(renderer.instanceBufferNeedsUpdate).toBe(true);
+  });
+
+  it('does not reupload unchanged fractional-sized WebGPU piles', () => {
+    const environment = create();
+    const flake = land(environment, [makeFlake({ size: 20.13 })]);
+    const renderer = new WebGPURenderer(document.createElement('canvas'), { enableCollisions: false });
+    renderer.environment = environment;
+    renderer.viewportWidth = 800;
+    renderer.viewportHeight = 600;
+    renderer.instances = [flake];
+    renderer.instanceData = new Float32Array(14);
+    renderer.updateSimulation(1 / 60);
+    renderer.instanceBufferNeedsUpdate = false;
+
+    renderer.updateSimulation(1 / 60);
+
+    expect(renderer.instanceBufferNeedsUpdate).toBe(false);
+  });
+
+  it.each(['transparent', 'transparent-parent', 'interactive'])(
+    'sheds a pile when its surface becomes unsafe (%s)',
+    (change) => {
+      const environment = create();
+      const flake = land(environment);
+      if (change === 'transparent') {
+        figure.style.opacity = '0';
+      } else {
+        const parent = document.createElement(change === 'interactive' ? 'a' : 'div');
+        if (change === 'transparent-parent') parent.style.opacity = '0';
+        figure.replaceWith(parent);
+        parent.appendChild(figure);
+      }
+
+      environment.beginFrame(0.8, [flake], 800, 600);
+
+      expect(flake.isSettled).toBe(false);
+      expect(environment.settled.size).toBe(0);
+    }
+  );
 
   it('releases particles if their DOM support is removed', () => {
     const environment = create();

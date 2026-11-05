@@ -1238,9 +1238,19 @@ export class WebGPURenderer {
     // Записываем финальные данные в буфер
     this.instances.forEach((flake, idx) => {
       const base = idx * strideFloats;
+      const size = flake.isFinished ? 0 : flake.size;
+      if (!hasChanges && (
+        this.instanceData[base + 0] !== Math.fround(flake.x)
+        || this.instanceData[base + 1] !== Math.fround(flake.y)
+        || this.instanceData[base + 2] !== Math.fround(size)
+        || this.instanceData[base + 3] !== Math.fround(flake.fallSpeed)
+        || this.instanceData[base + 4] !== Math.fround(flake.phase)
+        || this.instanceData[base + 7] !== Math.fround(flake.rotation)
+        || this.instanceData[base + 8] !== Math.fround(flake.rotationSpeed)
+      )) hasChanges = true;
       this.instanceData[base + 0] = flake.x;
       this.instanceData[base + 1] = flake.y;
-      this.instanceData[base + 2] = flake.isFinished ? 0 : flake.size;
+      this.instanceData[base + 2] = size;
       this.instanceData[base + 3] = flake.fallSpeed;
       this.instanceData[base + 4] = flake.phase;
       this.instanceData[base + 5] = flake.freq;

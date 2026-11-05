@@ -36,43 +36,30 @@ export class ParticleEnvironment {
     this.wind = wind;
     const now = performance.now();
     this.surfaces?.refresh(now);
+    this.surfaces?.syncPlacements();
     for (const [flake, placement] of this.settled) {
-      const rect = placement.element.getBoundingClientRect();
-      if (placement.revision !== this.surfaces.revision || !placement.element.isConnected
-        || placement.supports.some((support) => !support.isSettled)) {
+      const decay = Math.exp(-delta);
+      const exposure = Math.sqrt(20 / flake.size);
+      const force = wind?.windEnabled ? wind.currentWindForce || 0 : 0;
+      const lift = wind?.windEnabled ? wind.currentWindLift || 0 : 0;
+      const vortex = wind?.windEnabled ? wind.currentWindVortex || 0 : 0;
+      const gustX = (force * 40 + Math.sin(this.time + flake.x * 0.01) * vortex * 25) * exposure;
+      const gustY = -lift * 70 * exposure;
+      placement.windX = (placement.windX || 0) * decay + gustX * (1 - decay);
+      placement.windY = (placement.windY || 0) * decay + gustY * (1 - decay);
+      if (Math.hypot(placement.windX, placement.windY) >= MIN_IMPACT_SPEED) {
         this.release(flake);
-      } else {
-        flake.x += rect.left - placement.left;
-        flake.baseX = flake.x;
-        flake.y = placement.support
-          ? placement.support.y + placement.supportOffsetY
-          : rect.top - flake.size / 2 - 2;
-        placement.left = rect.left;
-        placement.right = rect.right;
-        placement.top = rect.top;
-        const decay = Math.exp(-delta);
-        const exposure = Math.sqrt(20 / flake.size);
-        const force = wind?.windEnabled ? wind.currentWindForce || 0 : 0;
-        const lift = wind?.windEnabled ? wind.currentWindLift || 0 : 0;
-        const vortex = wind?.windEnabled ? wind.currentWindVortex || 0 : 0;
-        const gustX = (force * 40 + Math.sin(this.time + flake.x * 0.01) * vortex * 25) * exposure;
-        const gustY = -lift * 70 * exposure;
-        placement.windX = (placement.windX || 0) * decay + gustX * (1 - decay);
-        placement.windY = (placement.windY || 0) * decay + gustY * (1 - decay);
-        if (Math.hypot(placement.windX, placement.windY) >= MIN_IMPACT_SPEED) {
-          this.release(flake);
-          flake.velocityX = placement.windX;
-          flake.velocityY = placement.windY;
-          continue;
+        flake.velocityX = placement.windX;
+        flake.velocityY = placement.windY;
+        continue;
+      }
+      if (this.time >= placement.nextCheck) {
+        placement.nextCheck = this.time + 0.75;
+        const ignored = new Set([flake, ...placement.supports]);
+        for (const [other, otherPlacement] of this.surfaces.placements) {
+          if (otherPlacement.supports.includes(flake)) ignored.add(other);
         }
-        if (this.time >= placement.nextCheck) {
-          placement.nextCheck = this.time + 0.75;
-          const ignored = new Set([flake, ...placement.supports]);
-          for (const [other, otherPlacement] of this.surfaces.placements) {
-            if (otherPlacement.supports.includes(flake)) ignored.add(other);
-          }
-          if (!this.surfaces.hasRoom(placement, flake.x, flake.size, ignored, flake.y)) this.release(flake);
-        }
+        if (!this.surfaces.hasRoom(placement, flake.x, flake.size, ignored, flake.y)) this.release(flake);
       }
     }
     if (this.surfaces && now - this.surfaces.lastScroll >= 350) {
@@ -191,6 +178,30 @@ export class ParticleEnvironment {
     return null;
   }
 
+  contactWithSurface(flake, startX, startY) {
+    const descent = flake.y - startY;
+    if (descent <= 0) return null;
+    const radius = flake.size / 2;
+    const contacts = [];
+    for (const surface of this.surfaces.surfaces) {
+      const y = surface.top - radius - 2;
+      const t = (y - startY) / descent;
+      if (t < 0 || t > 1) continue;
+      const x = startX + (flake.x - startX) * t;
+      if (x - radius < Math.max(0, surface.left)
+        || x + radius > Math.min(window.innerWidth, surface.right)) continue;
+      contacts.push({ surface, x, y, t });
+    }
+    contacts.sort((a, b) => a.t - b.t);
+    for (const contact of contacts) {
+      const room = this.surfaces.hasRoom(contact.surface, contact.x, flake.size);
+      if (room || this.surfaces.hasRoom(
+        contact.surface, contact.x, flake.size, new Set(this.surfaces.placements.keys())
+      )) return { ...contact, room };
+    }
+    return null;
+  }
+
   contactWithSettled(flake, startX = flake.previousSurfaceX ?? flake.x,
     startY = flake.previousSurfaceY ?? flake.y, ignored = null) {
     let first = null;
@@ -278,7 +289,7 @@ export class ParticleEnvironment {
       && !other.isAwaitingRespawn
       && Math.hypot(other.x - flake.x, other.y - y) < (other.size + flake.size) / 2)) return false;
     const placement = {
-      ...surface, support, supports, supportOffsetY: support ? y - support.y : 0, environment: this,
+      ...surface, support, supports, environment: this,
       nextCheck: this.time + 0.75, revision: tracker.revision
     };
     flake.y = y;
@@ -307,13 +318,24 @@ export class ParticleEnvironment {
       for (const flake of this.particles) {
         if (flake.isFinished || flake.isAwaitingRespawn || flake.isSettled || flake.isGrabbed) continue;
         const canSettle = this.canAccumulate(flake);
-        const radius = flake.size / 2;
         let startX = flake.previousSurfaceX ?? flake.x;
         let startY = flake.previousSurfaceY ?? flake.y;
         let remaining = this.delta;
         const contacted = new Set();
         for (let iteration = 0; !flake.hasShed && iteration < 6; iteration++) {
           const contact = this.contactWithSettled(flake, startX, startY, contacted);
+          const surfaceContact = canSettle ? this.contactWithSurface(flake, startX, startY) : null;
+          if (surfaceContact && (!contact || surfaceContact.t < contact.t)) {
+            const { surface, x, y, room } = surfaceContact;
+            flake.x = flake.baseX = x;
+            if (room && this.settle(flake, surface, y)) break;
+            flake.y = y;
+            this.contactsChanged = true;
+            flake.velocityY = -(flake.fallSpeed || 0);
+            const free = this.findLanding(surface, flake);
+            if (free) flake.velocityX += Math.sign(free.x - flake.x) * 24 * this.delta;
+            break;
+          }
           if (!contact) break;
           contacted.add(contact.other);
           this.contactsChanged = true;
@@ -357,23 +379,6 @@ export class ParticleEnvironment {
             flake.baseX = flake.x;
             flake.y += outgoing.y * remaining;
           }
-        }
-        if (flake.isSettled) continue;
-        if (!canSettle) continue;
-        for (const surface of tracker.surfaces) {
-          const y = surface.top - radius - 2;
-          if (flake.previousSurfaceY > y || flake.y < y || flake.y <= flake.previousSurfaceY
-            || flake.x - radius < Math.max(0, surface.left)
-            || flake.x + radius > Math.min(window.innerWidth, surface.right)) continue;
-          if (tracker.hasRoom(surface, flake.x, flake.size)
-            && this.settle(flake, surface, y)) break;
-          if (!tracker.hasRoom(surface, flake.x, flake.size, new Set(tracker.placements.keys()))) continue;
-          flake.y = y;
-          this.contactsChanged = true;
-          flake.velocityY = -(flake.fallSpeed || 0);
-          const free = this.findLanding(surface, flake);
-          if (free) flake.velocityX += Math.sign(free.x - flake.x) * 24 * this.delta;
-          break;
         }
       }
     }

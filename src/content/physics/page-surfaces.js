@@ -27,6 +27,21 @@ class PageSurfaceTracker {
     return Boolean(element.closest?.('[id^="let-it-snow-"]'));
   }
 
+  isSafeSurface(element) {
+    if (!element.isConnected || this.isOverlay(element) || element.closest(EXCLUDED)) return false;
+    const style = getComputedStyle(element);
+    if (style.visibility !== 'visible') return false;
+    let opacity = 1;
+    for (let ancestor = element; ancestor; ancestor = ancestor.parentElement) {
+      const current = ancestor === element ? style : getComputedStyle(ancestor);
+      if (current.display === 'none' || current.contentVisibility === 'hidden') return false;
+      const alpha = parseFloat(current.opacity);
+      if (Number.isFinite(alpha)) opacity *= alpha;
+      if (opacity < 0.1) return false;
+    }
+    return true;
+  }
+
   invalidate() {
     this.revision++;
     this.nextScan = 0;
@@ -41,19 +56,51 @@ class PageSurfaceTracker {
     let element;
     let visited = 0;
     while ((element = walker.nextNode()) && visited++ < MAX_VISITED && this.surfaces.length < MAX_SURFACES) {
-      if (!element.matches(CANDIDATES) || this.isOverlay(element) || element.closest(EXCLUDED)) continue;
+      if (!element.matches(CANDIDATES)) continue;
       const rect = element.getBoundingClientRect();
       if (rect.width < 64 || rect.height < 28 || rect.top < 28 || rect.top > window.innerHeight
         || rect.right <= 0 || rect.left >= window.innerWidth) continue;
+      if (!this.isSafeSurface(element)) continue;
       const style = getComputedStyle(element);
-      if (style.display === 'none' || style.visibility !== 'visible' || Number(style.opacity) < 0.1) continue;
       if (element.tagName === 'DIV' && parseFloat(style.borderTopWidth) === 0
         && (!style.backgroundColor || style.backgroundColor === 'rgba(0, 0, 0, 0)')) continue;
       this.surfaces.push({ element, left: rect.left, right: rect.right, top: rect.top });
     }
   }
 
+  syncPlacements() {
+    const rects = new Map();
+    for (const [flake, placement] of this.placements) {
+      if (placement.revision !== this.revision || !placement.element.isConnected) {
+        placement.environment.release(flake);
+        continue;
+      }
+      let rect = rects.get(placement.element);
+      if (!rect) {
+        rect = placement.element.getBoundingClientRect();
+        rects.set(placement.element, rect);
+      }
+      flake.x += rect.left - placement.left;
+      flake.baseX = flake.x;
+      flake.y = placement.support
+        ? flake.y + (rect.top - placement.top)
+        : rect.top - flake.size / 2 - 2;
+      placement.left = rect.left;
+      placement.right = rect.right;
+      placement.top = rect.top;
+    }
+    // Synchronize all layers before checking contacts, regardless of renderer order.
+    for (const [flake, placement] of this.placements) {
+      if (placement.supports.some((support) => {
+        const distance = Math.hypot(flake.x - support.x, flake.y - support.y);
+        return !support.isSettled || flake.y >= support.y
+          || Math.abs(distance - (flake.size + support.size) / 2 - 2) > 1.5;
+      })) placement.environment.release(flake);
+    }
+  }
+
   hasRoom(surface, x, size, ignore = null, y = surface.top - size / 2 - 2) {
+    if (!this.isSafeSurface(surface.element)) return false;
     const ignored = ignore?.size || 0;
     if (this.placements.size - ignored >= 32) return false;
     const radius = size / 2;
