@@ -724,6 +724,7 @@ export class ThreeDSnowRenderer {
   }
 
   updateMousePosition(x, y, velocityX = 0, velocityY = 0) {
+    this.environment?.updatePointer(x, y, velocityX, velocityY, this.mouseRadius);
     this.mouseX = x;
     this.mouseY = y;
     this.mouseVelocityX = velocityX;
@@ -734,6 +735,7 @@ export class ThreeDSnowRenderer {
     this.mouseX = x;
     this.mouseY = y;
     if (button === 0 || button === 2) {
+      this.environment?.dislodgeAt(x, y, this.mouseRadius * 3.5);
       this.mouseBurstMode = button === 0 ? 'explode' : 'suction';
       this.mouseBurstTimer = this.mouseBurstDuration;
     }
@@ -742,6 +744,7 @@ export class ThreeDSnowRenderer {
   onMouseUp() {}
 
   onMouseLeave() {
+    if (this.environment) this.environment.pointer = null;
     this.mouseX = -1000;
     this.mouseY = -1000;
     this.mouseVelocityX = 0;
@@ -816,6 +819,7 @@ export class ThreeDSnowRenderer {
       ((cx + GRID_OFFSET) * GRID_SPAN + (cy + GRID_OFFSET)) * GRID_SPAN + (cz + GRID_OFFSET);
 
     for (let index = 0; index < this.flakes.length; index++) {
+      if (this.flakes[index].isFinished || this.flakes[index].isSettled) continue;
       const position = worldPositions[index];
       const key = keyFor(
         Math.floor(position.x / cellSize),
@@ -829,6 +833,7 @@ export class ThreeDSnowRenderer {
 
     for (let i = 0; i < this.flakes.length; i++) {
       const a = this.flakes[i];
+      if (a.isFinished || a.isSettled) continue;
       const pa = worldPositions[i];
       const radiusA = (a.size * pa.scale) * 0.5;
       const cellX = Math.floor(pa.x / cellSize);
@@ -904,12 +909,14 @@ export class ThreeDSnowRenderer {
   }
 
   _updateInstances(delta) {
+    this.environment?.beginFrame(delta, this.flakes, this.viewportWidth, this.viewportHeight, this);
     this._stepWind(delta);
     this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - delta);
     if (!this.mouseBurstTimer) this.mouseBurstMode = null;
     const windPhase = this.windTime;
 
     this.flakes.forEach((flake) => {
+      if (flake.isFinished || flake.isSettled) return;
       this._applyMouseForce(flake, delta);
       const sizeRatio = Math.sqrt(flake.size / 20);
       flake.velocityX += this.currentWindForce * sizeRatio * 35 * delta;
@@ -934,17 +941,25 @@ export class ThreeDSnowRenderer {
         flake.z = THREE.MathUtils.clamp(flake.z, MIN_DEPTH, MAX_DEPTH);
         flake.velocityZ *= -0.5;
       }
-      if (flake.x < -flake.size) flake.x = this.viewportWidth + flake.size;
-      if (flake.x > this.viewportWidth + flake.size) flake.x = -flake.size;
+      if (flake.x < -flake.size) {
+        flake.x = this.viewportWidth + flake.size;
+        this.environment?.resetMotion(flake);
+      } else if (flake.x > this.viewportWidth + flake.size) {
+        flake.x = -flake.size;
+        this.environment?.resetMotion(flake);
+      }
       if (flake.y > this.viewportHeight + flake.size) {
+        if (this.environment?.retire(flake)) return;
         flake.y = -flake.size;
         flake.x = Math.random() * this.viewportWidth;
         flake.z = MIN_DEPTH + Math.random() * (MAX_DEPTH - MIN_DEPTH);
         flake.velocityX = 0;
         flake.velocityY = 0;
+        this.environment?.resetMotion(flake);
       }
     });
 
+    this.environment?.finishFrame();
     const positions = this._worldPositions;
     positions.length = this.flakes.length;
     for (let index = 0; index < this.flakes.length; index++) {
@@ -969,7 +984,7 @@ export class ThreeDSnowRenderer {
         position.set(worldPosition.x, worldPosition.y, worldPosition.z);
         euler.set(flake.rotationX, flake.rotationY, flake.rotationZ);
         quaternion.setFromEuler(euler);
-        const scale = flake.size * worldPosition.scale;
+        const scale = flake.isFinished ? 0 : flake.size * worldPosition.scale;
         scaleVector.set(scale, scale, scale);
         matrix.compose(position, quaternion, scaleVector);
         group.mesh.setMatrixAt(index, matrix);

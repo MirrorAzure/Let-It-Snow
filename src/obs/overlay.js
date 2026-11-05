@@ -160,6 +160,7 @@ function bootstrap() {
     const next = new SnowWebGPUController(config, { overlayId: OBS_OVERLAY_ID, mouseInteraction: false });
     mainController = next;
     await next.start();
+    syncPause();
   };
 
   const runtime = new SnowCommandRuntime({
@@ -174,10 +175,8 @@ function bootstrap() {
   const syncPause = () => {
     const shouldRun = visibility.visible && visibility.active && !document.hidden;
     if (shouldRun) {
-      mainController?.resumeAnimations();
       runtime.resumeAll();
     } else {
-      mainController?.pauseAnimations();
       runtime.pauseAll();
     }
   };
@@ -190,6 +189,7 @@ function bootstrap() {
     syncPause();
   });
   document.addEventListener('visibilitychange', syncPause);
+  syncPause();
 
   if (options.startSnow) {
     startMain({ ...options.config }).catch((err) => console.error('[Let It Snow OBS]', err));

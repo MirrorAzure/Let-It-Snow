@@ -385,6 +385,7 @@ export class Fallback2DRenderer {
       flake.char = this._nextSentence();
       this._prepareSentenceRenderData(flake);
     }
+    this.environment?.resetMotion(flake);
   }
 
   /**
@@ -468,7 +469,8 @@ export class Fallback2DRenderer {
     }
 
     const maxVerticalDrift = Math.max(2000, worldHeight * 2);
-    if (flake.y > worldHeight + maxVerticalDrift || flake.y < -maxVerticalDrift) {
+    if (!this.config.finiteParticles
+      && (flake.y > worldHeight + maxVerticalDrift || flake.y < -maxVerticalDrift)) {
       if (canRespawnFlake()) {
         this._respawnFlake(flake);
       } else {
@@ -769,14 +771,14 @@ export class Fallback2DRenderer {
         this.lowQualityMode = true;
         for (let _i = 0; _i < this.flakes.length; _i++) {
           const _f = this.flakes[_i];
-          if (_f.isAwaitingRespawn || _f.isGrabbed) continue;
+          if (_f.isAwaitingRespawn || _f.isGrabbed || _f.isSettled) continue;
           _f.cumulativeSpin = (_f.cumulativeSpin || 0) + (_f._sinPhase || 0) * 0.35 * (_f.swayLimit ?? 1.0);
         }
       } else if (this.lowQualityMode && this.currentFpsEstimate > 54) {
         this.lowQualityMode = false;
         for (let _i = 0; _i < this.flakes.length; _i++) {
           const _f = this.flakes[_i];
-          if (_f.isAwaitingRespawn || _f.isGrabbed) continue;
+          if (_f.isAwaitingRespawn || _f.isGrabbed || _f.isSettled) continue;
           _f.cumulativeSpin = (_f.cumulativeSpin || 0) - (_f._sinPhase || 0) * 0.35 * (_f.swayLimit ?? 1.0);
         }
       }
@@ -849,6 +851,7 @@ export class Fallback2DRenderer {
       }
 
       const flakes = this.flakes;
+      this.environment?.beginFrame(delta, flakes, worldWidth, worldHeight, this);
       const burstActive = this.mouseBurstTimer > 0;
       const radiusMultiplier = burstActive ? this.mouseBurstRadiusMultiplier : 1;
       const interactionRadius = this.mouseRadius * radiusMultiplier;
@@ -873,6 +876,7 @@ export class Fallback2DRenderer {
       for (let i = 0; i < flakes.length; i++) {
         const flake = flakes[i];
 
+        if (flake.isFinished || flake.isSettled) continue;
         if (this._sanitizeFlakeState(flake, worldWidth, worldHeight, canRespawnFlake)) {
           if (flake.isAwaitingRespawn) {
             continue;
@@ -1029,7 +1033,9 @@ export class Fallback2DRenderer {
 
         // Сброс позиции если вышла за экран
         if (flake.y - flake.size * 0.5 > worldHeight) {
-          if (canRespawnFlake()) {
+          if (this.environment?.retire(flake)) {
+            continue;
+          } else if (canRespawnFlake()) {
             this._respawnFlake(flake);
           } else {
             this._deferRespawn(flake, worldHeight);
@@ -1046,7 +1052,7 @@ export class Fallback2DRenderer {
 
         for (let wi = 0; wi < flakes.length; wi++) {
           const flake = flakes[wi];
-          if (flake.isAwaitingRespawn || flake.isGrabbed) continue;
+          if (flake.isAwaitingRespawn || flake.isGrabbed || flake.isSettled) continue;
           const sr = flake._sizeRatio;
           if (wf !== 0) flake.velocityX += wf * sr * 40 * delta;
           if (wl !== 0) flake.velocityY += -wl * sr * 70 * delta;
@@ -1059,9 +1065,10 @@ export class Fallback2DRenderer {
       }
       
       // КРИТИЧНЫЙ ШАГ: Обрабатываем коллизии между снежинками ДО рендеринга
+      this.environment?.finishFrame();
       // При высокой нагрузке считаем коллизии реже, чтобы стабилизировать FPS.
       this._collisionFrameCounter = (this._collisionFrameCounter + 1) % this._collisionFrameStride;
-      if (this._collisionFrameCounter === 0) {
+      if (this._collisionFrameCounter === 0 || this.environment?.contactsChanged) {
         this.handleCollisions(delta);
       }
       
@@ -1069,7 +1076,7 @@ export class Fallback2DRenderer {
       const damping = Math.pow(0.98, delta * 60);
       for (let i = 0; i < flakes.length; i++) {
         const flake = flakes[i];
-        if (flake.isAwaitingRespawn) continue;
+        if (flake.isAwaitingRespawn || flake.isSettled) continue;
         if (!flake.isGrabbed) {
           flake.velocityX *= damping;
           flake.velocityY *= damping;
@@ -1119,7 +1126,7 @@ export class Fallback2DRenderer {
         // чтобы координатное пространство оставалось единым и снежинки не прыгали
         // при переключении режима.
         const swayLimit = flake.swayLimit ?? 1.0;
-        const swingAngle = (!this.lowQualityMode && !flake.isGrabbed)
+        const swingAngle = (!this.lowQualityMode && !flake.isGrabbed && !flake.isSettled)
           ? (flake._sinPhase || 0) * 0.35 * swayLimit
           : 0;
         const finalRotation = (flake.cumulativeSpin || 0) + swingAngle;
@@ -1341,6 +1348,7 @@ export class Fallback2DRenderer {
    * @param {number} vy - Скорость по Y
    */
   updateMousePosition(x, y, vx = 0, vy = 0) {
+    this.environment?.updatePointer(x, y, vx, vy, this.mouseRadius);
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const maxMouseV = this.maxMouseVelocity;
     const smooth = clamp(this.mouseVelocitySmoothing, 0.05, 1);
@@ -1373,6 +1381,9 @@ export class Fallback2DRenderer {
    * @param {number} y - Y координата
    */
   onMouseDown(x, y, button) {
+    if (button === 0 || button === 2) {
+      this.environment?.dislodgeAt(x, y, this.mouseRadius * this.mouseBurstRadiusMultiplier);
+    }
     if (button === 0) {
       this.mouseLeftPressed = true;
       this.mouseBurstMode = 'explode';
@@ -1407,6 +1418,7 @@ export class Fallback2DRenderer {
    * Обработчик выхода мыши за пределы canvas
    */
   onMouseLeave() {
+    if (this.environment) this.environment.pointer = null;
     this.mouseLeftPressed = false;
     this.mouseRightPressed = false;
     this.mouseBurstTimer = 0;

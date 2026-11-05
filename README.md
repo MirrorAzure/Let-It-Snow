@@ -4,7 +4,7 @@
 
 A beautiful customizable snowfall effect extension for any website.
 
-Current version: **3.1.0**
+Current version: **3.1.1**
 
 Documentation:
 - Release notes: [CHANGELOG.md](./CHANGELOG.md) (Русский: [CHANGELOG_RU.md](./CHANGELOG_RU.md))
@@ -13,7 +13,7 @@ Documentation:
 - Playground: [playground/README.md](./playground/README.md) (Русский: [playground/README_RU.md](./playground/README_RU.md))
 - Architecture: [diagrams/architecture.md](./diagrams/architecture.md) (Русский: [diagrams/architecture_RU.md](./diagrams/architecture_RU.md))
 
-## Store Description (v3.1.0)
+## Store Description (v3.1.1)
 
 Let it snow adds a festive, customizable snowfall effect to any website.
 
@@ -36,6 +36,11 @@ Create your own winter look:
 - Use the extension in English and Russian
 
 Perfect for holiday vibes, stream styling, demos, and everyday beautiful browsing.
+
+Changes in version 3.1.1:
+- Emoji accumulate on suitable visible page surfaces and shed on scroll without blocking interaction
+- Coordinate bursts spawn selected emoji at a screen point; API particles fall to the bottom without timed disappearance or respawning
+- Added API status, pause/resume, live settings, and accumulation controls
 
 Changes in version 3.1.0:
 - Added a secure external API (local relay over HTTP/WebSocket and an opt-in page API) for bursts, wind, glyphs, and GIF effects

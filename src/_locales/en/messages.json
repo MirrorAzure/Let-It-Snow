@@ -669,7 +669,7 @@
     "message": "Quick effects"
   },
   "helpEffectsBody": {
-    "message": "The **API** tab has effect buttons on top of the current snowfall:\n• **Snow burst** — a dense wave of flakes from the top;\n• **Strong wind** — gusty wind for 10 seconds;\n• **Clear effects** — removes temporary layers without stopping the main snow.\nUp to four temporary layers run at once; they fade out smoothly when they end."
+    "message": "The **API** tab has effect buttons on top of the current snowfall:\n• **Snow burst** — a dense wave of flakes from the top, falling all the way down without respawning;\n• **Strong wind** — gusty wind for 10 seconds;\n• **Clear effects** — removes temporary layers without stopping the main snow.\nUp to four effect layers run at once; extra requests are rejected without removing existing particles. Small emoji settle above suitable page blocks and shed on scroll."
   },
   "helpSyncTitle": {
     "message": "Window sync"

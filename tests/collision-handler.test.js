@@ -49,6 +49,21 @@ describe('CollisionHandler', () => {
     expect(flakes[0].velocityX).toBe(10);
   });
 
+  it('uses rendered positions, not stale base coordinates or rotational sway, for collisions', () => {
+    const flakes = [
+      { x: 200, baseX: 120, y: 100, size: 20, velocityX: 0, velocityY: 0, _sinPhase: 1 },
+      { x: 125, y: 100, size: 20, velocityX: 0, velocityY: 0 }
+    ];
+    collisionHandler.handleCollisions(flakes, 1 / 60);
+    expect(flakes[0].x).toBe(200);
+    expect(flakes[1].x).toBe(125);
+    flakes[1].x = 215;
+    collisionHandler.handleCollisions(flakes, 1 / 60);
+    expect(Math.abs(flakes[0].x - 200)).toBeLessThan(1);
+    expect(flakes[0].baseX).toBe(flakes[0].x);
+    expect(flakes[0].x).toBeLessThan(200);
+  });
+
   it('detects collision between two flakes', () => {
     const flakes = [
       {
@@ -430,7 +445,7 @@ describe('CollisionHandler', () => {
     expect(flakes[1].velocityX).not.toBe(-10);
   });
 
-  it('detects collisions when sway brings base positions from non-neighboring cells together', () => {
+  it('does not turn rotational sway into horizontal displacement', () => {
     const flakes = [
       {
         x: 117,
@@ -456,7 +471,7 @@ describe('CollisionHandler', () => {
 
     collisionHandler.handleCollisions(flakes, 0.016);
 
-    expect(flakes[0].baseX).toBeLessThan(117);
-    expect(flakes[1].baseX).toBeGreaterThan(235);
+    expect(flakes[0].baseX).toBe(117);
+    expect(flakes[1].baseX).toBe(235);
   });
 });

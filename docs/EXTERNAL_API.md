@@ -1,8 +1,8 @@
-# Let It Snow — External API, Sync & OBS (v3.1.0)
+# Let It Snow — External API, Sync & OBS (v3.1.1)
 
 **English** | [Русский](./EXTERNAL_API_RU.md)
 
-Version 3.1.0 lets other programs and pages control the snow at runtime:
+Version 3.1.1 lets other programs and pages control the snow at runtime:
 sudden bursts, strong wind, specific glyphs, and GIF showers. It can also keep
 many windows (in one or several browsers) and OBS in sync.
 
@@ -22,8 +22,10 @@ Every command uses the same JSON shape:
 Every hop (page API, background, relay, OBS overlay, content script) validates commands
 again. Unknown fields are dropped, numbers are clamped, and strings, colors and URLs are checked
 against allowlists. Effects run on temporary layers on top of the main snow. At most
-4 layers run at once; when a new one starts past that limit, the oldest one is removed.
-Layers fade out when their own duration expires.
+4 layers run at once; extra requests return `effect_limit_reached` without deleting
+existing particles. `burst` and `glyphs` emit exactly `count` particles once, without
+respawning, and end only after the last particle falls past the bottom. Their
+`durationMs` remains accepted for compatibility but is ignored. GIF layers still fade on expiry.
 
 | Command        | Params (default → range)                                                                                                                                                                 |
 |----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -36,11 +38,68 @@ Layers fade out when their own duration expires.
 | `gif`          | **`urls`** (or `url`, ≤5): `https://` with hostname filtering (no common private/loopback addresses or local names, no credentials, port 443 only), or `data:image/(gif\|png\|webp\|apng);base64`. `count` 12 → 1–60, `durationMs` 10000, `speed` 0.8, `entry` `top` |
 | `clearEffects` | — (removes all temporary layers and restores the wind)                                                                                                                                 |
 
-`durationMs` is limited to 500–120000 ms, except that `wind` accepts `0` for a
+### Controls added in 3.1.1
+
+- `burst` also accepts **both** `x` and `y` (finite numbers, viewport CSS pixels from the top-left, clamped to the viewport).
+  With coordinates, new particles spawn at that point with radial impulses; `entry` is ignored.
+  Self-collisions are disabled for coordinate bursts so coincident particles can expand naturally; wind/pointer interaction remains.
+  `symbols` chooses the particles; `glyphMode: "emoji"` preserves emoji rendering.
+- `status`: returns `{ok, running, paused, main, effects}`. `main` is `null` or
+  `{paused, particles, settled, accumulationEnabled}`; `effects` contains these fields plus each layer's `id`.
+- `pause` / `resume`: control the main snow and all effects, including newly created layers.
+  Explicit pause is not cleared by switching tabs; resume waits while the page is hidden.
+- `update`: `{config: {...}}` changes the **main layer** without restarting or resetting particles.
+  Allowed fields: `sinkspeed` (0.1–3), `mouseRadius` (0–300), `accumulationEnabled` (boolean),
+  `windEnabled`, `windDirection`, `windStrength`, `windGustFrequency` (same ranges as `start`).
+  Empty/unsupported-only updates return `live_config_required`; no main snow returns `not_running`.
+  An active `wind` override takes precedence until it expires or is cleared.
+  Visual/count changes still use `start`. Updates are session-only, not saved popup settings.
+- `start.config` also accepts `mouseRadius` and `accumulationEnabled`.
+- `clearAccumulation`: sheds settled particles on **all layers**, without deleting them or stopping the snow.
+
+```json
+{"command":"burst","params":{"x":400,"y":250,"count":80,"symbols":["🎉","⭐"],"glyphMode":"emoji"}}
+{"command":"update","params":{"config":{"sinkspeed":1.2,"accumulationEnabled":false}}}
+{"command":"status"}
+```
+
+Accumulation is enabled by default. The shared DOM analysis checks up to 2,000 elements
+and 80 visible surfaces per scan (cached for 750 ms). Emoji sized 4–48 CSS pixels
+can rest in supported rows **above** cards, images and structural blocks, only where
+the landing strip has no detected text, media or controls. The global limit is 32 settled
+particles across all layers, with spacing to avoid overlaps. Overlays remain pointer-transparent.
+There is **no detachment timer**. An incoming flake can replace a settled particle only with
+enough impact speed (at least 100 CSS px/s along the contact normal) and energy:
+`(incomingSize / settledSize)^2 * (speed^2 + 2 * positiveAcceleration * incomingSize) >= 160^2`.
+Weak impacts bounce/roll off and can fall into a nearby free slot; particles are never
+teleported or pulled to slot coordinates. Settling requires physically crossing the support height.
+If the first row is full nearby, a direct contact can form a second row. A supported flake
+that cannot fall or roll for 0.3 seconds joins the pile even on higher rows, without moving
+to another position. Every landing strip is checked for information and the viewport top boundary.
+Contacts with the settled pile are swept
+along the particle's trajectory (including side impacts), before moving-particle collisions.
+Removing a lower supporting flake also releases particles resting on it.
+Rest detection uses final collision-resolved positions and tolerates bounded contact jitter.
+Shed particles pass through piles rather than getting trapped without permission to reattach.
+A resting particle that cannot join safely or exceeds the density limit is released to fall.
+Wind influences incoming velocity/acceleration and the settled row: weak gusts leave it intact,
+while sustained strong gusts overcome adhesion and release particles in the wind direction.
+The wind response includes lift/turbulence, particle size and frame-rate-independent damping.
+Scrolling (including nested containers) sheds the row immediately.
+Mouse movement also knocks settled flakes loose within `mouseRadius`, including fast sweeps.
+Left/right click effects release them within the existing expanded burst radius; a stationary
+pointer does not shed flakes, and `mouseRadius: 0` disables pointer shedding.
+Particles follow their support during layout changes. Removing the support or covering the
+landing strip with information releases particles for safety; explicit `clearAccumulation`
+and disabling accumulation also shed them. No landing occurs during scrolling
+or for 350 ms afterwards. GIFs and sentences do not accumulate; iframe/shadow DOM internals are not scanned.
+
+`durationMs` for GIF/wind is limited to 500–120000 ms, except that `wind` accepts `0` for a
 permanent override. A command payload can be at most 32 KiB.
 
 Possible errors include `unknown_command`, `invalid_params`, `invalid_id`, `symbols_required`,
-`valid_https_urls_required`, `rate_limited`, `payload_too_large` and `page_api_disabled`.
+`valid_https_urls_required`, `invalid_coordinates`, `effect_limit_reached`, `live_config_required`,
+`not_running`, `rate_limited`, `payload_too_large` and `page_api_disabled`.
 
 ## 1. Popup quick actions & multi-window sync
 

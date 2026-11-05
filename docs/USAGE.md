@@ -1,4 +1,4 @@
-# Let It Snow 3.1.0: User Guide
+# Let It Snow 3.1.1: User Guide
 
 **English** | [Русский](./USAGE_RU.md)
 
@@ -60,10 +60,43 @@ Open **Settings → API → Quick effects**:
 - **Clear effects** — removes temporary layers and restores normal wind
   without stopping the main snowfall.
 
-Temporary layers fade out smoothly when they end. At most four layers are
-active at the same time; when a fifth is added, the oldest is removed
-immediately. An effect with more than 320 snowflakes uses the automatic
+Burst/glyph particles emit once and fall all the way to the bottom; they do not
+disappear on a timer or respawn. GIF layers still fade on expiry. At most four layers
+are active; a fifth request returns `effect_limit_reached`, preserving existing particles.
+An effect with more than 320 snowflakes uses the automatic
 2D/WebGPU mode, even if the main snow is running in 3D.
+
+### Emoji accumulation
+
+Ordinary snowfall always starts above the viewport, including autostart and popup previews.
+Respawned flakes re-enter from the top; API bursts with explicit coordinates are the exception.
+
+Small emoji can settle above suitable visible cards, images and blocks with free space.
+Text, media and controls are checked before landing; the overlay never intercepts clicks.
+The pile has a shared density limit of 32 flakes. Settled flakes never detach on a timer:
+only a sufficiently energetic impact (speed, acceleration and relative size) replaces one.
+Slow flakes bounce/roll off and fall nearby without snapping to a slot; a direct contact can
+form a second row if there is no room below. Airborne flakes continue colliding normally.
+An almost motionless supported contact lasting 0.3 seconds becomes part of the pile,
+including on higher rows, provided it does not cover information or extend above the viewport.
+Rolling flakes stay mobile; losing contact resets the check.
+Rest is measured from final collision-resolved positions over a small region, so bounded
+contact jitter does not restart settling. Shed flakes pass through piles to keep falling;
+if a resting flake cannot safely join the pile or the density limit is reached, it is shed too.
+Flakes resting between two neighbours use the whole support pocket, not alternating single
+contacts; both supports are tracked, and losing either releases the flake.
+Landing preserves the current angle and contact height. Weak top contacts lose their bounce,
+and rolling starts with gradual acceleration rather than repeated sideways kicks.
+Weak wind leaves the pile intact; sustained strong gusts can blow flakes off.
+Scrolling (including nested containers) sheds the pile. Flakes follow layout movements;
+a removed/unsafe support is cleared.
+Moving the mouse across the row also knocks flakes down; left/right clicks retain
+their expanded explosion/suction radius. A stationary pointer does not disturb the row.
+Large emoji, sentences and GIFs keep falling.
+API controls: `clearAccumulation` sheds particles; `update` with
+`{"config":{"accumulationEnabled":false}}` disables landing for the main snow.
+API `burst` also supports `x`/`y` screen coordinates, while `status`, `pause`, `resume`
+and `update` provide runtime control. See the [API reference](./EXTERNAL_API.md#controls-added-in-311).
 
 ### Presets
 

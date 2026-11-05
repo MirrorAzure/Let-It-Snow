@@ -9,6 +9,7 @@ import { ThreeDSnowRenderer } from './three-d-renderer.js';
 import { GifLayer } from './gif-layer.js';
 import { splitSentences } from './utils/glyph-utils.js';
 import { normalizeGlyphSizePercentRange } from './utils/size-utils.js';
+import { ParticleEnvironment } from './physics/particle-environment.js';
 
 export const OVERLAY_ID = 'let-it-snow-webgpu-canvas';
 export const MAX_Z_INDEX = '2147483646';
@@ -33,7 +34,8 @@ const DEFAULT_CONFIG = {
   windEnabled: false,
   windDirection: 'left',
   windStrength: 0.5,
-  windGustFrequency: 3
+  windGustFrequency: 3,
+  accumulationEnabled: true
 };
 
 const SENTENCE_CELL_SIZE = 64;
@@ -119,6 +121,8 @@ export class SnowWebGPUController {
     this.mouseInteractionEnabled = true;
     this.windSyncInterval = null;
     this.isDestroyed = false;
+    this.onComplete = options.onComplete;
+    this.environment = null;
   }
 
   /**
@@ -141,7 +145,7 @@ export class SnowWebGPUController {
       const threeRenderer = new ThreeDSnowRenderer(this.canvas, this.config);
       if (threeRenderer.init()) {
         this.renderer = threeRenderer;
-        this.renderer.start();
+        this.startRenderer();
       } else if (debugEnabled) {
         console.warn('[Let It Snow] 3D rendering is unavailable; using Canvas 2D fallback.');
       }
@@ -169,7 +173,7 @@ export class SnowWebGPUController {
           const fallbackInit = fallbackRenderer.init();
           if (fallbackInit) {
             this.renderer = fallbackRenderer;
-            this.renderer.start();
+            this.startRenderer();
             if (this.gifLayer) {
               this.gifLayer.setMainRenderer?.(this.renderer);
             }
@@ -180,7 +184,7 @@ export class SnowWebGPUController {
             console.warn('[Let It Snow] Failed to initialize Canvas2D fallback after WebGPU device loss.');
           }
         });
-        this.renderer.start();
+        this.startRenderer();
       } else if (rendererMode === 'webgpu') {
         if (debugEnabled) {
           const info = webgpuRenderer.getLastInitInfo?.();
@@ -198,7 +202,7 @@ export class SnowWebGPUController {
       const fallbackInit = fallbackRenderer.init();
       if (fallbackInit) {
         this.renderer = fallbackRenderer;
-        this.renderer.start();
+        this.startRenderer();
       }
     }
 
@@ -253,6 +257,46 @@ export class SnowWebGPUController {
     if (wind.direction !== undefined) renderer.windDirection = wind.direction;
     if (Number.isFinite(wind.strength)) renderer.windStrength = wind.strength;
     if (Number.isFinite(wind.gustFrequency)) renderer.windGustFrequency = wind.gustFrequency;
+  }
+
+  startRenderer() {
+    this.environment?.destroy();
+    this.environment = new ParticleEnvironment(this.config, this.onComplete);
+    this.renderer.environment = this.environment;
+    this.renderer.start();
+    if (this.isPaused) this.renderer.pause();
+  }
+
+  updateConfig(patch) {
+    const previousSpeed = this.config.sinkspeed;
+    Object.assign(this.config, patch);
+    if (patch.sinkspeed !== undefined && this.renderer) {
+      const speedRatio = previousSpeed > 0 ? patch.sinkspeed / previousSpeed : null;
+      for (const flake of this.renderer.flakes || this.renderer.instances || []) {
+        flake.fallSpeed = speedRatio === null
+          ? patch.sinkspeed * flake.size
+          : flake.fallSpeed * speedRatio;
+        if (flake.speed !== undefined) flake.speed = flake.fallSpeed;
+      }
+    }
+    if (patch.mouseRadius !== undefined && this.renderer) this.renderer.mouseRadius = patch.mouseRadius;
+    if (patch.accumulationEnabled !== undefined) this.environment?.setEnabled(patch.accumulationEnabled);
+    this.gifLayer?.updateConfig(patch);
+    this.applyWindOverride(this.windOverride);
+  }
+
+  clearAccumulation() {
+    this.environment?.clear();
+  }
+
+  getState() {
+    const particles = this.renderer?.flakes || this.renderer?.instances || [];
+    return {
+      paused: this.isPaused,
+      particles: particles.filter((flake) => !flake.isFinished && !flake.isAwaitingRespawn).length,
+      settled: this.environment?.settled.size || 0,
+      accumulationEnabled: this.config.accumulationEnabled !== false
+    };
   }
 
   /**
@@ -586,6 +630,8 @@ export class SnowWebGPUController {
    */
   destroy() {
     this.isDestroyed = true;
+    this.environment?.destroy();
+    this.environment = null;
 
     if (this.windSyncInterval) {
       clearInterval(this.windSyncInterval);

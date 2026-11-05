@@ -36,6 +36,11 @@ export const COMMANDS = Object.freeze([
   'ping',
   'start',
   'stop',
+  'status',
+  'pause',
+  'resume',
+  'update',
+  'clearAccumulation',
   'burst',
   'wind',
   'glyphs',
@@ -206,6 +211,8 @@ export function sanitizeStartConfig(raw) {
   }
   if (RENDERER_MODES.has(raw.rendererMode)) config.rendererMode = raw.rendererMode;
   if (raw.windEnabled !== undefined) config.windEnabled = raw.windEnabled === true;
+  if (raw.accumulationEnabled !== undefined) config.accumulationEnabled = raw.accumulationEnabled === true;
+  if (raw.mouseRadius !== undefined) config.mouseRadius = clampNumber(raw.mouseRadius, 0, 300, 100);
   if (WIND_DIRECTIONS.has(raw.windDirection)) config.windDirection = raw.windDirection;
   if (raw.windStrength !== undefined) config.windStrength = clampNumber(raw.windStrength, 0, 3, 0.5);
   if (raw.windGustFrequency !== undefined) {
@@ -216,20 +223,49 @@ export function sanitizeStartConfig(raw) {
 
 const PARAM_SANITIZERS = {
   ping: () => ({ ok: true, params: {} }),
+  status: () => ({ ok: true, params: {} }),
+  pause: () => ({ ok: true, params: {} }),
+  resume: () => ({ ok: true, params: {} }),
+  clearAccumulation: () => ({ ok: true, params: {} }),
+  update: (raw) => {
+    const config = sanitizeStartConfig(raw.config);
+    const liveKeys = new Set([
+      'sinkspeed', 'mouseRadius', 'accumulationEnabled',
+      'windEnabled', 'windDirection', 'windStrength', 'windGustFrequency'
+    ]);
+    for (const key of Object.keys(config)) {
+      if (!liveKeys.has(key)) delete config[key];
+    }
+    return Object.keys(config).length
+      ? { ok: true, params: { config } }
+      : { ok: false, error: 'live_config_required' };
+  },
   stop: () => ({ ok: true, params: {} }),
   clearEffects: () => ({ ok: true, params: {} }),
   start: (raw) => ({ ok: true, params: { config: sanitizeStartConfig(raw.config) } }),
-  burst: (raw) => ({
-    ok: true,
-    params: {
-      count: clampInt(raw.count, 1, LIMITS.maxBurstCount, 250),
-      durationMs: sanitizeDuration(raw.durationMs, 6000),
-      speed: clampNumber(raw.speed, 0.1, 6, 1.6),
-      symbols: sanitizeSymbols(raw.symbols),
-      colors: sanitizeColors(raw.colors),
-      entry: sanitizeEntry(raw.entry, 'instant')
+  burst: (raw) => {
+    const hasOrigin = raw.x !== undefined || raw.y !== undefined;
+    if (hasOrigin && (typeof raw.x !== 'number' || typeof raw.y !== 'number'
+      || !Number.isFinite(raw.x) || !Number.isFinite(raw.y))) {
+      return { ok: false, error: 'invalid_coordinates' };
     }
-  }),
+    return {
+      ok: true,
+      params: {
+        count: clampInt(raw.count, 1, LIMITS.maxBurstCount, 250),
+        durationMs: sanitizeDuration(raw.durationMs, 6000),
+        speed: clampNumber(raw.speed, 0.1, 6, 1.6),
+        symbols: sanitizeSymbols(raw.symbols),
+        glyphMode: GLYPH_MODES.has(raw.glyphMode) ? raw.glyphMode : 'text',
+        colors: sanitizeColors(raw.colors),
+        entry: sanitizeEntry(raw.entry, 'instant'),
+        ...(hasOrigin ? {
+          x: clampNumber(raw.x, 0, 100000, 0),
+          y: clampNumber(raw.y, 0, 100000, 0)
+        } : {})
+      }
+    };
+  },
   wind: (raw) => ({
     ok: true,
     params: {

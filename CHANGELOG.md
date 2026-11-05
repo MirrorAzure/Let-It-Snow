@@ -2,6 +2,26 @@
 
 **English** | [Русский](./CHANGELOG_RU.md)
 
+## [3.1.1] - 2026-11-05
+
+### Added
+- Moving the mouse over accumulated flakes knocks them loose in all three renderers, including fast sweeps and the existing left/right click effects; an idle pointer leaves the row intact.
+- DOM-aware emoji accumulation in Canvas 2D, WebGPU, and 3D: supported non-overlapping rows above suitable visible surfaces, with text/control checks and shared density limits. Settled flakes stay indefinitely: only sufficient impact speed/acceleration/relative size knocks one off; weak impacts settle nearby or in the second row. Sustained strong wind can overcome adhesion; page/nested scrolling sheds the pile immediately.
+- API `burst` coordinates (`x`, `y`, viewport CSS pixels) and emoji mode for radial emission of selected symbols.
+- API `status`, `pause`, `resume`, `update` (live speed, mouse radius, wind, accumulation), and `clearAccumulation`. Explicit pause survives tab visibility changes.
+
+### Changed
+- Flakes resting between two settled neighbours recognize the entire support pocket despite alternating contacts, with both supports retained for stability checks and release propagation.
+- Ordinary starts, autostarts and popup previews always create snowfall above the viewport instead of restoring old elapsed-time positions. Respawns and 3D horizontal portals reset swept-contact history so an offscreen jump cannot teleport a particle into a pile. Coordinate-based API bursts are unchanged.
+- Fixed persistent airborne pile contacts: rest detection now samples final collision-resolved positions with a bounded jitter region and a subpixel contact tolerance. Shed flakes no longer collide with piles, and blocked unsafe/density-limited landings release instead of hovering.
+- Supported flakes unable to fall or roll now join the pile after stable contact even on higher rows or shallow slopes, rather than hovering as airborne particles. Text protection, viewport bounds and the 32-particle density limit remain enforced.
+- Fixed collision teleports to stale horizontal coordinates after pile contact in WebGPU. Landing preserves orientation and angled contact height; weak top contacts no longer bounce or receive repeated sideways kicks. Remaining movement checks neighbouring supports, with matching circular spacing for stable second-row contacts.
+- Flakes stalled against the lower row settle as second-row particles after 0.3 seconds of stable contact without snapping; rolling or interrupted contacts do not freeze. Angled contacts preserve their actual height and support.
+- Settled upper rows remain motionless: sway/spin are disabled until release, Canvas quality changes leave them untouched, and fractional-size contact tolerances prevent repeated detach/reattach jitter.
+- Accumulation no longer snaps particles to free slots: weak impacts roll/bounce physically, swept pile contacts include side impacts, and settling runs before airborne collisions. API descent control no longer overwrites resolved collision positions.
+- `burst` and `glyphs` emit once and remain until every particle falls past the bottom; `durationMs` is accepted for compatibility but no longer cuts these effects short. GIF effects retain their timers.
+- A fifth simultaneous effect returns `effect_limit_reached` instead of deleting a visible layer. Explicit `stop`/`clearEffects` still remove effects immediately.
+
 ## [3.1.0] - 2026-11-03
 
 ### Added

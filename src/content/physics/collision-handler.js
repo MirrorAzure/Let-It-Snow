@@ -42,11 +42,7 @@ export class CollisionHandler {
   }
 
   _getCollisionCenterX(flake) {
-    const baseX = flake.baseX ?? flake.x;
-    if (flake.isGrabbed) return baseX;
-
-    const sway = (flake._sinPhase || 0) * 0.35 * (flake.swayLimit ?? 1.0) * (flake.size ?? 20) * 0.5;
-    return baseX + sway;
+    return flake.x;
   }
 
   _processPair(flakes, i, j, delta) {
@@ -102,6 +98,7 @@ export class CollisionHandler {
     let maxVelocity = 0;
     for (let i = 0; i < flakes.length; i++) {
       const flake = flakes[i];
+      if (flake.isFinished || flake.isSettled || flake.isAwaitingRespawn) continue;
       flake.swayLimit = flake.isGrabbed ? 0 : 1.0;
 
       const radius = flake._collisionRadius ?? (flake.collisionSize ?? flake.size ?? 20) * 0.5;
@@ -129,6 +126,7 @@ export class CollisionHandler {
 
     for (let i = 0; i < flakes.length; i++) {
       const flake = flakes[i];
+      if (flake.isFinished || flake.isSettled || flake.isAwaitingRespawn) continue;
       this._bucketFlake(grid, i, this._getCollisionCenterX(flake), flake.y, invCellSize);
     }
 
@@ -385,11 +383,9 @@ export class CollisionHandler {
       }
       
       const applyToFlake = (flake, sx, sy) => {
+        flake.x += sx;
         if (flake.baseX !== undefined) {
-          flake.baseX += sx;
-          flake.x = flake.baseX;
-        } else {
-          flake.x += sx;
+          flake.baseX = flake.x;
         }
         flake.y += sy;
       };

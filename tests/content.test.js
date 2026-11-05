@@ -105,6 +105,27 @@ describe('content script snow control', () => {
     expect(removed).toBeNull();
   });
 
+  it.each([false, true])('starts ordinary snow above the screen instead of restoring old positions (autoStart=%s)', async (autoStart) => {
+    global.chrome.storage = {
+      local: {
+        get: vi.fn(async () => ({ snowProgressV1: { startedAt: Date.now() - 120000 } })),
+        set: vi.fn(async () => {}),
+        remove: vi.fn(async () => {})
+      },
+      sync: { get: vi.fn(async () => ({ autoStart: false })) }
+    };
+    const { startSnow, stopSnow, SnowWebGPUController } = await import('../src/content/index.js');
+    let activeController;
+    const start = vi.spyOn(SnowWebGPUController.prototype, 'start').mockImplementation(async function () {
+      activeController = this;
+    });
+    await startSnow({ snowmax: 10, initialTimeOffsetSeconds: 120 }, { autoStart, reuseExistingProgress: true });
+    expect(start).toHaveBeenCalledOnce();
+    expect(activeController.config.initialTimeOffsetSeconds).toBe(0);
+    stopSnow();
+    start.mockRestore();
+  });
+
   it('previewSnow only refreshes a snowfall that is already running', async () => {
     await import('../src/content/index.js');
     const handler = global.chrome.runtime.onMessage.addListener.mock.calls[0][0];

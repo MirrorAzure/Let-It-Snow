@@ -99,16 +99,16 @@ function stopSnow(options = {}) {
  * @param {Object} config - Конфигурация снегопада
  */
 async function startSnow(config, options = {}) {
-  // Only auto-start (page navigation) continues an earlier snowfall; explicit starts begin at the top.
+  // Keep progress metadata, but never restore particle positions inside the viewport.
   const { autoStart = false, reuseExistingProgress = autoStart } = options;
   if (!autoStart) explicitSnowCommandReceived = true;
   const generation = ++controllerGeneration;
-  const initialTimeOffsetSeconds = await resolveInitialOffsetSeconds(reuseExistingProgress);
+  await resolveInitialOffsetSeconds(reuseExistingProgress);
   if (generation !== controllerGeneration || (autoStart && explicitSnowCommandReceived)) return;
 
   const runtimeConfig = normalizeSizeConfig({
     ...config,
-    initialTimeOffsetSeconds
+    initialTimeOffsetSeconds: 0
   });
 
   if (controller) {
@@ -120,6 +120,7 @@ async function startSnow(config, options = {}) {
   controller = nextController;
   try {
     await nextController.start();
+    if (commandRuntime.isPaused || document.hidden) nextController.pauseAnimations();
   } catch (error) {
     if (controller === nextController) {
       nextController.destroy();
@@ -399,21 +400,15 @@ window.addEventListener('beforeunload', () => {
 
 // Пауза/возобновление при смене вкладки
 const handleVisibilityChange = () => {
-  if (!controller) {
-    if (document.hidden) commandRuntime.pauseAll();
-    else commandRuntime.resumeAll();
-    return;
-  }
   if (document.hidden) {
-    controller.pauseAnimations();
     commandRuntime.pauseAll();
   } else {
-    controller.resumeAnimations();
     commandRuntime.resumeAll();
   }
 };
 
 document.addEventListener('visibilitychange', handleVisibilityChange);
+handleVisibilityChange();
 
 // Автозапуск если включен в настройках
 (async () => {

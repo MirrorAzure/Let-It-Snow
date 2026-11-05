@@ -1011,6 +1011,7 @@ export class WebGPURenderer {
     const sentenceCount = this.atlasManager?.sentenceAtlas.count || 0;
     const monotoneFlags = this.glyphMonotoneFlags || this.atlasManager?.getMonotoneFlags() || [];
     let hasChanges = false;
+    this.environment?.beginFrame(delta, this.instances, width, height, this);
 
     // Обновляем параметры ветра
     if (this.windEnabled) {
@@ -1068,6 +1069,7 @@ export class WebGPURenderer {
     const vortexField = createWindVortexField(width, height, this.windTime, this.windVortexSeed);
 
     this.instances.forEach((flake, idx) => {
+      if (flake.isFinished || flake.isSettled) return;
       // Вычисляем скорость движения мыши
       const mouseSpeed = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
       const activityFactor = mouseSpeed > 0 ? 1 : 0;
@@ -1190,6 +1192,10 @@ export class WebGPURenderer {
 
       // Сброс позиции если снежинка вышла за экран
       if (flake.y - flake.size > height) {
+        if (this.environment?.retire(flake)) {
+          hasChanges = true;
+          return;
+        }
         flake.y = -flake.size;
         flake.x = Math.random() * width;
         flake.phase = Math.random() * Math.PI * 2;
@@ -1204,11 +1210,14 @@ export class WebGPURenderer {
           flake.sentenceIndex = this._nextSentenceIndex(sentenceCount);
           flake.glyphIndex = glyphCount + flake.sentenceIndex;
         }
+        this.environment?.resetMotion(flake);
       }
 
       hasChanges = true;
     });
     
+    this.environment?.finishFrame();
+
     // Обрабатываем коллизии между снежинками
     if (this.collisionHandler) {
       this.collisionHandler.handleCollisions(this.instances, delta);
@@ -1216,6 +1225,7 @@ export class WebGPURenderer {
     
     // Обрабатываем края экрана как порталы (wrapping)
     this.instances.forEach((flake) => {
+      if (flake.isFinished || flake.isSettled) return;
       const collisionRadius = (flake.collisionSize ?? flake.size ?? 20) * 0.5;
       
       if (flake.x + collisionRadius < 0) {
@@ -1230,7 +1240,7 @@ export class WebGPURenderer {
       const base = idx * strideFloats;
       this.instanceData[base + 0] = flake.x;
       this.instanceData[base + 1] = flake.y;
-      this.instanceData[base + 2] = flake.size;
+      this.instanceData[base + 2] = flake.isFinished ? 0 : flake.size;
       this.instanceData[base + 3] = flake.fallSpeed;
       this.instanceData[base + 4] = flake.phase;
       this.instanceData[base + 5] = flake.freq;
@@ -1454,6 +1464,7 @@ export class WebGPURenderer {
    * @param {number} vy - Скорость по Y
    */
   updateMousePosition(x, y, vx = 0, vy = 0) {
+    this.environment?.updatePointer(x, y, vx, vy, this.mouseRadius);
     this.mouseX = x;
     this.mouseY = y;
     this.mouseVelocityX = vx;
@@ -1466,6 +1477,9 @@ export class WebGPURenderer {
    * @param {number} y - Y координата
    */
   onMouseDown(x, y, button) {
+    if (button === 0 || button === 2) {
+      this.environment?.dislodgeAt(x, y, this.mouseRadius * this.mouseBurstRadiusMultiplier);
+    }
     if (button === 0) {
       this.mouseLeftPressed = true;
       this.mouseBurstMode = 'explode';
@@ -1492,6 +1506,7 @@ export class WebGPURenderer {
    * Обработчик выхода мыши за пределы canvas
    */
   onMouseLeave() {
+    if (this.environment) this.environment.pointer = null;
     this.mouseLeftPressed = false;
     this.mouseRightPressed = false;
     this.mouseBurstTimer = 0;

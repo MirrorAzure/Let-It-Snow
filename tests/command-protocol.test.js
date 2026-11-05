@@ -40,10 +40,37 @@ describe('command protocol', () => {
         durationMs: LIMITS.minDurationMs,
         speed: 1.6,
         symbols: [],
+        glyphMode: 'text',
         colors: ['#fff'],
         entry: 'instant'
       }
     });
+
+  });
+
+  it('validates paired finite viewport coordinates and preserves them across hops', () => {
+    for (const params of [{ x: 10 }, { y: 10 }, { x: '10', y: 20 }, { x: NaN, y: 0 }, { x: 0, y: Infinity }]) {
+      expect(validateCommand({ command: 'burst', params })).toEqual({ ok: false, error: 'invalid_coordinates' });
+    }
+    const result = validateCommand({
+      command: 'burst', params: { x: -1, y: 1e9, symbols: ['🎉'], glyphMode: 'emoji' }
+    });
+    expect(result.command.params).toMatchObject({ x: 0, y: 100000, symbols: ['🎉'], glyphMode: 'emoji' });
+    expect(validateCommand(result.command)).toEqual(result);
+  });
+
+  it('allows only live settings in update and rejects empty updates', () => {
+    expect(validateCommand({ command: 'update', params: { config: { snowmax: 10 } } }))
+      .toEqual({ ok: false, error: 'live_config_required' });
+    const result = validateCommand({
+      command: 'update',
+      params: { config: { sinkspeed: 10, mouseRadius: -10, accumulationEnabled: false, extra: 1 } }
+    });
+    expect(result.command.params.config).toEqual({ sinkspeed: 3, mouseRadius: 0, accumulationEnabled: false });
+    expect(validateCommand(result.command)).toEqual(result);
+    for (const command of ['status', 'pause', 'resume', 'clearAccumulation']) {
+      expect(validateCommand({ command }).ok).toBe(true);
+    }
   });
 
   it('supports permanent and timed wind', () => {

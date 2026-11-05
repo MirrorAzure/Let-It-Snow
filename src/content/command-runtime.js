@@ -2,7 +2,8 @@
  * Исполнитель команд внешнего API.
  *
  * Эффекты (burst / glyphs / gif) создаются как отдельные временные слои поверх
- * основного снегопада, поэтому основной снег не перезапускается. Ветер
+ * основного снегопада, поэтому основной снег не перезапускается. Снежинки
+ * эффектов не респаунятся; слой живёт до ухода последней частицы. Ветер
  * переопределяется на всех слоях сразу и восстанавливается по таймеру.
  * Команды должны быть заранее проверены через validateCommand().
  */
@@ -35,7 +36,8 @@ const pickVisualBase = (config = {}) => ({
   windEnabled: Boolean(config.windEnabled),
   windDirection: config.windDirection ?? DEFAULT_CONFIG.windDirection,
   windStrength: config.windStrength ?? DEFAULT_CONFIG.windStrength,
-  windGustFrequency: config.windGustFrequency ?? DEFAULT_CONFIG.windGustFrequency
+  windGustFrequency: config.windGustFrequency ?? DEFAULT_CONFIG.windGustFrequency,
+  accumulationEnabled: config.accumulationEnabled !== false
 });
 
 export class SnowCommandRuntime {
@@ -60,6 +62,8 @@ export class SnowCommandRuntime {
     this.windOverride = null;
     this.windTimer = null;
     this.isPaused = false;
+    this.userPaused = false;
+    this.suspended = false;
   }
 
   get effectCount() {
@@ -76,15 +80,44 @@ export class SnowCommandRuntime {
     switch (command?.command) {
       case 'ping':
         return { ok: true, pong: true, effects: this.layers.length, running: Boolean(this.getMainController()) };
+      case 'status':
+        return {
+          ok: true,
+          running: Boolean(this.getMainController()),
+          paused: this.isPaused,
+          main: this.getMainController()?.getState?.() || null,
+          effects: this.layers.map(({ id, controller }) => ({ id, ...controller.getState?.() }))
+        };
+      case 'pause':
+        this.userPaused = true;
+        this._syncPause();
+        return { ok: true };
+      case 'resume':
+        this.userPaused = false;
+        this._syncPause();
+        return { ok: true };
+      case 'update': {
+        const controller = this.getMainController();
+        if (!controller) return { ok: false, error: 'not_running' };
+        controller.updateConfig(params.config);
+        return { ok: true };
+      }
+      case 'clearAccumulation':
+        this.getMainController()?.clearAccumulation?.();
+        this.layers.forEach(({ controller }) => controller.clearAccumulation?.());
+        return { ok: true };
       case 'start': {
         const config = await this.resolveStartConfig(params.config || {});
         await this.startMain(config);
         this._applyWindToAll();
+        this._syncPause();
         return { ok: true };
       }
       case 'stop':
         this.clearEffects();
         this.stopMain();
+        this.userPaused = false;
+        this._syncPause();
         return { ok: true };
       case 'clearEffects':
         this.clearEffects();
@@ -97,8 +130,10 @@ export class SnowCommandRuntime {
           count: params.count,
           speed: params.speed,
           symbols: params.symbols,
+          glyphMode: params.glyphMode,
           colors: params.colors,
-          entry: params.entry
+          entry: params.entry,
+          origin: params.x !== undefined ? { x: params.x, y: params.y } : null
         }), params.durationMs, { source });
       case 'glyphs':
         return this._addLayer(this._buildSnowLayerConfig({
@@ -133,7 +168,7 @@ export class SnowCommandRuntime {
     };
   }
 
-  _buildSnowLayerConfig({ count, speed, symbols, glyphMode, colors, entry }) {
+  _buildSnowLayerConfig({ count, speed, symbols, glyphMode, colors, entry, origin }) {
     const base = this._baseConfig();
     const hasSymbols = Array.isArray(symbols) && symbols.length > 0;
     const letters = hasSymbols ? symbols : base.snowletters;
@@ -144,6 +179,10 @@ export class SnowCommandRuntime {
       ...this._windConfig(base),
       rendererMode,
       snowmax: count,
+      finiteParticles: true,
+      burstOrigin: origin || null,
+      // Coincident emission must expand radially, not be separated by the overlap solver.
+      enableCollisions: !origin,
       sinkspeed: speed,
       snowletters: letters,
       snowglyphmodes: hasSymbols
@@ -183,15 +222,14 @@ export class SnowCommandRuntime {
   }
 
   async _addLayer(config, durationMs, { source, renderSnow = true } = {}) {
-    while (this.layers.length >= LIMITS.maxEffectLayers) {
-      this._removeLayer(this.layers[0], { fade: false });
-    }
+    if (this.layers.length >= LIMITS.maxEffectLayers) return { ok: false, error: 'effect_limit_reached' };
 
     const id = `${EFFECT_OVERLAY_PREFIX}${++layerSequence}`;
     const controller = this.createController(config, {
       overlayId: id,
       gifLayerId: `${id}-gif`,
       renderSnow,
+      onComplete: () => this._removeLayer(layer, { fade: false }),
       mouseInteraction: true,
       windSource: () => this.getMainController()?.renderer || null
     });
@@ -209,7 +247,9 @@ export class SnowCommandRuntime {
     if (this.windOverride) controller.applyWindOverride?.(this.windOverride);
     if (this.isPaused) controller.pauseAnimations?.();
 
-    layer.timer = setTimeout(() => this._removeLayer(layer, { fade: true }), durationMs);
+    if (!config.finiteParticles) {
+      layer.timer = setTimeout(() => this._removeLayer(layer, { fade: true }), durationMs);
+    }
     return { ok: true, effectId: id };
   }
 
@@ -258,13 +298,20 @@ export class SnowCommandRuntime {
   }
 
   pauseAll() {
-    this.isPaused = true;
-    this.layers.forEach((layer) => layer.controller.pauseAnimations?.());
+    this.suspended = true;
+    this._syncPause();
   }
 
   resumeAll() {
-    this.isPaused = false;
-    this.layers.forEach((layer) => layer.controller.resumeAnimations?.());
+    this.suspended = false;
+    this._syncPause();
+  }
+
+  _syncPause() {
+    this.isPaused = this.userPaused || this.suspended;
+    const method = this.isPaused ? 'pauseAnimations' : 'resumeAnimations';
+    this.getMainController()?.[method]?.();
+    this.layers.forEach(({ controller }) => controller[method]?.());
   }
 
   destroy() {
