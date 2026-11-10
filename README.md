@@ -18,7 +18,7 @@ Documentation:
 Let it snow adds a festive, customizable snowfall effect to any website.
 
 Create your own winter look:
-- Adjust snowflake count, fall speed, and size range
+- Adjust snowflake count, size, and fluffiness; shape is automatic by default with manual global and per-flake overrides
 - Use custom symbols, long phrases, and multiple colors
 - Add animated GIF flakes from URLs or local files
 - Interact with snow using mouse and touch gestures
@@ -206,7 +206,7 @@ src/
 
 ## Features
 
-- **Customizable snowflakes**: Adjust count, size, and falling speed
+- **Customizable snowflakes**: Adjust count, size, and fluffiness; shape and fall speed are calculated automatically, with global and per-flake shape overrides
 - **Color selection**: Choose multiple colors for snowflakes
 - **Symbol customization**: Use different characters as snowflakes, with per-symbol text/emoji render mode toggle
 - **Presets**: Save and load custom presets; built-in seasonal templates (Winter, Spring, etc.)

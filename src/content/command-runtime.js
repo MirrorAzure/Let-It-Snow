@@ -128,7 +128,6 @@ export class SnowCommandRuntime {
       case 'burst':
         return this._addLayer(this._buildSnowLayerConfig({
           count: params.count,
-          speed: params.speed,
           symbols: params.symbols,
           glyphMode: params.glyphMode,
           colors: params.colors,
@@ -138,7 +137,6 @@ export class SnowCommandRuntime {
       case 'glyphs':
         return this._addLayer(this._buildSnowLayerConfig({
           count: params.count,
-          speed: params.speed,
           symbols: params.symbols,
           glyphMode: params.glyphMode,
           colors: params.colors,
@@ -168,7 +166,7 @@ export class SnowCommandRuntime {
     };
   }
 
-  _buildSnowLayerConfig({ count, speed, symbols, glyphMode, colors, entry, origin }) {
+  _buildSnowLayerConfig({ count, symbols, glyphMode, colors, entry, origin }) {
     const base = this._baseConfig();
     const hasSymbols = Array.isArray(symbols) && symbols.length > 0;
     const letters = hasSymbols ? symbols : base.snowletters;
@@ -183,7 +181,6 @@ export class SnowCommandRuntime {
       burstOrigin: origin || null,
       // Coincident emission must expand radially, not be separated by the overlap solver.
       enableCollisions: !origin,
-      sinkspeed: speed,
       snowletters: letters,
       snowglyphmodes: hasSymbols
         ? letters.map(() => glyphMode || 'text')

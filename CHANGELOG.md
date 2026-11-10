@@ -9,7 +9,7 @@
 - Moving the mouse over accumulated flakes knocks them loose in all three renderers, including fast sweeps and the existing left/right click effects; an idle pointer leaves the row intact.
 - DOM-aware emoji accumulation in Canvas 2D, WebGPU, and 3D: supported non-overlapping rows above suitable visible surfaces, with text/control checks and shared density limits. Settled flakes stay indefinitely: only sufficient impact speed/acceleration/relative size knocks one off; weak impacts settle nearby or in the second row. Sustained strong wind can overcome adhesion; page/nested scrolling sheds the pile immediately.
 - API `burst` coordinates (`x`, `y`, viewport CSS pixels) and emoji mode for radial emission of selected symbols.
-- API `status`, `pause`, `resume`, `update` (live speed, mouse radius, wind, accumulation), and `clearAccumulation`. Explicit pause survives tab visibility changes.
+- API `status`, `pause`, `resume`, `update` (live physics settings, mouse radius, wind, accumulation), and `clearAccumulation`. Explicit pause survives tab visibility changes.
 
 ### Changed
 - Trapped particles ineligible for accumulation now shed instead of hovering between supports. Pile contacts above the viewport release immediately, and layout shifts shed clipped upper rows.

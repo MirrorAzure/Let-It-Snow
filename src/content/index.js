@@ -148,6 +148,10 @@ async function loadStoredSnowConfig(overrides = {}) {
       'sinkspeed',
       'snowminsize',
       'snowmaxsize',
+      'snowFluffiness',
+      'snowShape',
+      'gravity',
+      'airDensity',
       'colors',
       'symbols',
       'symbolModes',
@@ -161,7 +165,10 @@ async function loadStoredSnowConfig(overrides = {}) {
       'windEnabled',
       'windDirection',
       'windStrength',
-      'windGustFrequency'
+      'windGustFrequency',
+      'windGustStrength',
+      'turbulenceStrength',
+      'updraftStrength'
     ])) || {};
   }
 
@@ -172,6 +179,10 @@ async function loadStoredSnowConfig(overrides = {}) {
   const config = {
     snowmax: stored.snowmax || 80,
     sinkspeed: stored.sinkspeed || 0.4,
+    snowFluffiness: stored.snowFluffiness ?? DEFAULT_CONFIG.snowFluffiness,
+    snowShape: stored.snowShape || DEFAULT_CONFIG.snowShape,
+    gravity: stored.gravity ?? DEFAULT_CONFIG.gravity,
+    airDensity: stored.airDensity ?? DEFAULT_CONFIG.airDensity,
     snowcolor: stored.colors || ['#ffffff'],
     snowletters: stored.symbols || ['❄'],
     snowglyphmodes: stored.symbolModes || ['text'],
@@ -184,8 +195,11 @@ async function loadStoredSnowConfig(overrides = {}) {
     mouseRadius: stored.mouseRadius || 100,
     windEnabled: stored.windEnabled || false,
     windDirection: stored.windDirection || 'left',
-    windStrength: stored.windStrength || 0.5,
-    windGustFrequency: stored.windGustFrequency || 3,
+    windStrength: stored.windStrength ?? 0.5,
+    windGustFrequency: stored.windGustFrequency ?? 3,
+    windGustStrength: stored.windGustStrength ?? DEFAULT_CONFIG.windGustStrength,
+    turbulenceStrength: stored.turbulenceStrength ?? DEFAULT_CONFIG.turbulenceStrength,
+    updraftStrength: stored.updraftStrength ?? DEFAULT_CONFIG.updraftStrength,
     ...overrides,
     snowminsize: sizeConfig.snowminsize,
     snowmaxsize: sizeConfig.snowmaxsize

@@ -5,7 +5,7 @@
  * Checks that all necessary files are in place for playground to work
  */
 
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -22,6 +22,16 @@ const requiredFiles = [
   'vite.config.js',
   'package.json'
 ];
+const requiredPhysicsControls = [
+  'snowFluffiness',
+  'snowShape',
+  'snowShapeOverrides',
+  'gravity',
+  'airDensity',
+  'windGustStrength',
+  'turbulenceStrength',
+  'updraftStrength'
+];
 
 console.log('🔍 Verifying playground setup...\n');
 
@@ -37,7 +47,27 @@ requiredFiles.forEach(file => {
 console.log();
 
 if (allOk) {
+  const indexHtml = readFileSync(resolve(rootDir, 'playground/index.html'), 'utf8');
+  const mainJs = readFileSync(resolve(rootDir, 'playground/main.js'), 'utf8');
+  const missingControls = requiredPhysicsControls.filter((id) =>
+    !indexHtml.includes(`id="${id}"`) || !mainJs.includes(`getElementById('${id}')`)
+  );
+  if (missingControls.length > 0) {
+    console.error(`❌ Missing physics controls: ${missingControls.join(', ')}`);
+    process.exit(1);
+  }
+  if (indexHtml.includes('id="sinkspeed"') || mainJs.includes('sinkspeed')) {
+    console.error('❌ Playground still exposes the legacy fall-speed control');
+    process.exit(1);
+  }
+  if (!indexHtml.includes('value="auto"') || !mainJs.includes('snowShapeOverrides: parseSnowShapeOverrides')) {
+    console.error('❌ Automatic shape selection or per-flake overrides are not configured');
+    process.exit(1);
+  }
+
   console.log('✅ All playground files are in place!');
+  console.log('✅ Physics controls, automatic shape selection, and per-flake overrides are wired.');
+  console.log('✅ Fall speed is calculated automatically.');
   console.log('\n📚 To start the playground:');
   console.log('   pnpm run playground');
   console.log('\n🎨 The playground will:');

@@ -64,9 +64,24 @@ describe('command protocol', () => {
       .toEqual({ ok: false, error: 'live_config_required' });
     const result = validateCommand({
       command: 'update',
-      params: { config: { sinkspeed: 10, mouseRadius: -10, accumulationEnabled: false, extra: 1 } }
+      params: {
+        config: {
+          gravity: 25,
+          snowFluffiness: 1.5,
+          snowShapeOverrides: ['lacy'],
+          mouseRadius: -10,
+          accumulationEnabled: false,
+          extra: 1
+        }
+      }
     });
-    expect(result.command.params.config).toEqual({ sinkspeed: 3, mouseRadius: 0, accumulationEnabled: false });
+    expect(result.command.params.config).toEqual({
+      gravity: 20,
+      snowFluffiness: 1,
+      snowShapeOverrides: ['lacy'],
+      mouseRadius: 0,
+      accumulationEnabled: false
+    });
     expect(validateCommand(result.command)).toEqual(result);
     for (const command of ['status', 'pause', 'resume', 'clearAccumulation']) {
       expect(validateCommand({ command }).ok).toBe(true);
@@ -134,6 +149,49 @@ describe('command protocol', () => {
       params: { config: { snowmax: 5000, rendererMode: 'webgpu', symbols: ['✦'], gifUrls: ['https://x'] } }
     });
     expect(result.command.params.config).toEqual({ snowmax: 320, snowletters: ['✦'], snowglyphmodes: ['text'] });
+  });
+
+  it('sanitizes physical snow and wind settings', () => {
+    const result = validateCommand({
+      command: 'start',
+      params: {
+        config: {
+          snowFluffiness: 1.5,
+          snowShape: 'unknown',
+          gravity: -5,
+          airDensity: 5,
+          windGustStrength: 2,
+          turbulenceStrength: 0.4,
+          updraftStrength: 90
+        }
+      }
+    });
+
+    expect(result.command.params.config).toEqual({
+      snowFluffiness: 1,
+      gravity: 0,
+      airDensity: 2,
+      windGustStrength: 1,
+      turbulenceStrength: 0.4,
+      updraftStrength: 80
+    });
+  });
+
+  it('accepts automatic shape selection and per-flake shape overrides', () => {
+    const result = validateCommand({
+      command: 'start',
+      params: {
+        config: {
+          snowShape: 'auto',
+          snowShapeOverrides: ['compact', null, 'lacy', 'invalid']
+        }
+      }
+    });
+
+    expect(result.command.params.config).toEqual({
+      snowShape: 'auto',
+      snowShapeOverrides: ['compact', null, 'lacy', null]
+    });
   });
 
   it('preserves validated start glyph modes across relay and content-script validation', () => {

@@ -20,15 +20,18 @@ import {
   showChoiceDialog
 } from './ui-controllers.js';
 import { normalizeGlyphSizePercentRange } from '../content/utils/size-utils.js';
-import { createBuiltInPresets } from './presets/built-in-presets.js';
+import { BUILT_IN_PRESET_TEMPLATES, createBuiltInPresets } from './presets/built-in-presets.js';
 import { initApiPanel, requestSnowSync } from './api-panel.js';
 import { initHelpPanel } from './help-panel.js';
 
 const SETTINGS_KEYS = [
   'snowmax',
-  'sinkspeed',
   'snowminsize',
   'snowmaxsize',
+  'snowFluffiness',
+  'snowShape',
+  'gravity',
+  'airDensity',
   'colors',
   'symbols',
   'symbolModes',
@@ -45,7 +48,10 @@ const SETTINGS_KEYS = [
   'windEnabled',
   'windDirection',
   'windStrength',
-  'windGustFrequency'
+  'windGustFrequency',
+  'windGustStrength',
+  'turbulenceStrength',
+  'updraftStrength'
 ];
 
 const PRESETS_STORAGE_KEY = 'savedPresets';
@@ -53,9 +59,17 @@ const ACTIVE_PRESET_STORAGE_KEY = 'activePresetId';
 // Id of the preset whose settings were edited but not saved yet (the edits live in the plain settings keys).
 const PRESET_DRAFT_STORAGE_KEY = 'presetDraftFor';
 const SYMBOL_MODE_MIGRATION_KEY = 'symbolModeAutoDetect';
+const BUILT_IN_PRESET_VERSION_KEY = 'builtInPresetVersion';
+// Increment when built-in templates change; user-created presets remain untouched.
+const BUILT_IN_PRESET_VERSION = 2;
 const LAST_SUBTAB_STORAGE_KEY = 'letItSnow.popup.subtab';
 const DELETE_CONFIRM_WINDOW_MS = 3000;
 const GLYPH_VISUAL_SCALE = 0.84;
+const WIND_PRESETS = {
+  weak: { windStrength: 0.4, windGustFrequency: 4, windGustStrength: 0.2, turbulenceStrength: 0.15, updraftStrength: 0 },
+  strong: { windStrength: 1.5, windGustFrequency: 3, windGustStrength: 0.6, turbulenceStrength: 0.55, updraftStrength: 8 },
+  hurricane: { windStrength: 3, windGustFrequency: 1.5, windGustStrength: 1, turbulenceStrength: 1, updraftStrength: 30 }
+};
 const POPUP_WIDTH_MIN_PX = 320;
 const POPUP_WIDTH_MAX_PX = 520;
 const POPUP_WIDTH_PERCENT_FLOOR = 10;
@@ -172,8 +186,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const elements = {
     snowmax: document.getElementById('snowmax'),
     snowmaxValue: document.getElementById('snowmaxValue'),
-    sinkspeed: document.getElementById('sinkspeed'),
-    sinkspeedValue: document.getElementById('sinkspeedValue'),
     snowminsize: document.getElementById('snowminsize'),
     snowmaxsize: document.getElementById('snowmaxsize'),
     minsizeValue: document.getElementById('minsizeValue'),
@@ -220,11 +232,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     popupWidthValue: document.getElementById('popupWidthValue'),
     windEnabled: document.getElementById('windEnabled'),
     windSettings: document.getElementById('windSettings'),
+    windPreset: document.getElementById('windPreset'),
     windDirection: document.getElementById('windDirection'),
     windStrength: document.getElementById('windStrength'),
     windStrengthValue: document.getElementById('windStrengthValue'),
     windGustFrequency: document.getElementById('windGustFrequency'),
-    windGustFrequencyValue: document.getElementById('windGustFrequencyValue')
+    windGustFrequencyValue: document.getElementById('windGustFrequencyValue'),
+    snowFluffiness: document.getElementById('snowFluffiness'),
+    snowFluffinessValue: document.getElementById('snowFluffinessValue'),
+    snowShape: document.getElementById('snowShape'),
+    gravity: document.getElementById('gravity'),
+    gravityValue: document.getElementById('gravityValue'),
+    airDensity: document.getElementById('airDensity'),
+    airDensityValue: document.getElementById('airDensityValue'),
+    windGustStrength: document.getElementById('windGustStrength'),
+    windGustStrengthValue: document.getElementById('windGustStrengthValue'),
+    turbulenceStrength: document.getElementById('turbulenceStrength'),
+    turbulenceStrengthValue: document.getElementById('turbulenceStrengthValue'),
+    updraftStrength: document.getElementById('updraftStrength'),
+    updraftStrengthValue: document.getElementById('updraftStrengthValue')
   };
 
   elements.presetNameInput.placeholder = t('presetNamePlaceholder');
@@ -505,9 +531,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     return {
       snowmax: Number.isFinite(config.snowmax) ? config.snowmax : DEFAULT_SETTINGS.snowmax,
-      sinkspeed: Number.isFinite(config.sinkspeed) ? config.sinkspeed : DEFAULT_SETTINGS.sinkspeed,
       snowminsize: minPercent,
       snowmaxsize: maxPercent,
+      snowFluffiness: Number.isFinite(config.snowFluffiness) ? clamp(config.snowFluffiness, 0, 1) : DEFAULT_SETTINGS.snowFluffiness,
+      snowShape: ['auto', 'compact', 'regular', 'lacy'].includes(config.snowShape) ? config.snowShape : DEFAULT_SETTINGS.snowShape,
+      gravity: Number.isFinite(config.gravity) ? clamp(config.gravity, 0, 20) : DEFAULT_SETTINGS.gravity,
+      airDensity: Number.isFinite(config.airDensity) ? clamp(config.airDensity, 0.4, 2) : DEFAULT_SETTINGS.airDensity,
       colors: Array.isArray(config.colors) && config.colors.length > 0
         ? config.colors
         : [...DEFAULT_SETTINGS.colors],
@@ -532,7 +561,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       windStrength: Number.isFinite(config.windStrength) ? config.windStrength : DEFAULT_SETTINGS.windStrength,
       windGustFrequency: Number.isFinite(config.windGustFrequency)
         ? config.windGustFrequency
-        : DEFAULT_SETTINGS.windGustFrequency
+        : DEFAULT_SETTINGS.windGustFrequency,
+      windGustStrength: Number.isFinite(config.windGustStrength)
+        ? clamp(config.windGustStrength, 0, 1)
+        : DEFAULT_SETTINGS.windGustStrength,
+      turbulenceStrength: Number.isFinite(config.turbulenceStrength)
+        ? clamp(config.turbulenceStrength, 0, 1)
+        : DEFAULT_SETTINGS.turbulenceStrength,
+      updraftStrength: Number.isFinite(config.updraftStrength)
+        ? clamp(config.updraftStrength, 0, 80)
+        : DEFAULT_SETTINGS.updraftStrength
     };
   };
 
@@ -653,42 +691,76 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const findPresetById = (presetId) => presets.find((preset) => preset.id === presetId);
 
-  const mergeBuiltInPresetTemplates = () => {
+  const mergeBuiltInPresetTemplates = ({ replaceExisting = false, migrateLegacy = false } = {}) => {
     const builtInPresets = createBuiltInPresets(DEFAULT_SETTINGS, { createPresetObject, t });
-    const indexByName = new Map();
+    const builtInByKey = new Map(builtInPresets.map((preset) => [preset.builtInKey, preset]));
+    const legacyKeyByName = new Map([
+      ['default', 'default'],
+      ['основной', 'default'],
+      ...BUILT_IN_PRESET_TEMPLATES.flatMap((template) =>
+        template.legacyNames.map((name) => [normalizePresetNameForMatch(name), template.id])
+      )
+    ]);
+    const merged = [];
+    const mergedByKey = new Map();
+    const previousActiveId = activePresetId;
+    let activeIdReplacement = null;
+    let changed = false;
 
-    presets.forEach((preset, index) => {
-      const normalized = normalizePresetNameForMatch(preset.name);
-      if (normalized && !indexByName.has(normalized)) {
-        indexByName.set(normalized, index);
+    presets.forEach((preset) => {
+      const key = builtInByKey.has(preset.builtInKey)
+        ? preset.builtInKey
+        : migrateLegacy ? legacyKeyByName.get(normalizePresetNameForMatch(preset.name)) : null;
+      const builtInPreset = builtInByKey.get(key);
+      if (!builtInPreset) {
+        merged.push(preset);
+        return;
       }
+
+      const existing = mergedByKey.get(key);
+      if (existing) {
+        changed = true;
+        if (preset.id === previousActiveId) activeIdReplacement = existing.id;
+        return;
+      }
+
+      const shouldReplace = replaceExisting || preset.builtInKey !== key;
+      const nextPreset = {
+        ...preset,
+        builtInKey: key,
+        name: replaceExisting ? builtInPreset.name : preset.name,
+        settings: shouldReplace ? builtInPreset.settings : preset.settings,
+        updatedAt: shouldReplace ? Date.now() : preset.updatedAt
+      };
+      if (
+        nextPreset.builtInKey !== preset.builtInKey
+        || nextPreset.name !== preset.name
+        || (shouldReplace && JSON.stringify(nextPreset.settings) !== JSON.stringify(preset.settings))
+      ) {
+        changed = true;
+      }
+      merged.push(nextPreset);
+      mergedByKey.set(key, nextPreset);
     });
 
     for (const builtInPreset of builtInPresets) {
-      const normalizedName = normalizePresetNameForMatch(builtInPreset.name);
-
-      if (normalizedName && indexByName.has(normalizedName)) {
-        const existingIndex = indexByName.get(normalizedName);
-        presets[existingIndex] = {
-          ...presets[existingIndex],
-          settings: builtInPreset.settings,
-          updatedAt: Date.now()
-        };
-        continue;
-      }
-
-      presets.push(builtInPreset);
-      if (normalizedName) {
-        indexByName.set(normalizedName, presets.length - 1);
-      }
+      if (mergedByKey.has(builtInPreset.builtInKey)) continue;
+      merged.push(builtInPreset);
+      mergedByKey.set(builtInPreset.builtInKey, builtInPreset);
+      changed = true;
     }
+
+    presets = merged;
+    if (activeIdReplacement) activePresetId = activeIdReplacement;
+    return changed;
   };
 
   const persistPresets = async () => {
     await saveSettings({
       [PRESETS_STORAGE_KEY]: presets,
       [ACTIVE_PRESET_STORAGE_KEY]: activePresetId,
-      [PRESET_DRAFT_STORAGE_KEY]: updatePresetDirtyState() ? activePresetId : ''
+      [PRESET_DRAFT_STORAGE_KEY]: updatePresetDirtyState() ? activePresetId : '',
+      [BUILT_IN_PRESET_VERSION_KEY]: BUILT_IN_PRESET_VERSION
     });
   };
 
@@ -773,9 +845,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     return {
       snowmax: parseInt(elements.snowmax.value),
-      sinkspeed: parseFloat(elements.sinkspeed.value),
       snowminsize: minPercent,
       snowmaxsize: maxPercent,
+      snowFluffiness: parseFloat(elements.snowFluffiness.value),
+      snowShape: elements.snowShape.value,
+      gravity: parseFloat(elements.gravity.value),
+      airDensity: parseFloat(elements.airDensity.value),
       colors: colors.length > 0 ? colors : ['#ffffff'],
       symbols: symbols.length > 0 ? symbols : ['❄'],
       symbolModes: symbolModes.length > 0 ? symbolModes : ['text'],
@@ -791,7 +866,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       windEnabled: elements.windEnabled.checked,
       windDirection: elements.windDirection.value,
       windStrength: parseFloat(elements.windStrength.value),
-      windGustFrequency: parseFloat(elements.windGustFrequency.value)
+      windGustFrequency: parseFloat(elements.windGustFrequency.value),
+      windGustStrength: parseFloat(elements.windGustStrength.value),
+      turbulenceStrength: parseFloat(elements.turbulenceStrength.value),
+      updraftStrength: parseFloat(elements.updraftStrength.value)
     };
   };
 
@@ -801,6 +879,9 @@ document.addEventListener('DOMContentLoaded', async () => {
    */
   const applySettingsToUI = (rawConfig = {}, { preservePopupWidth = false } = {}) => {
     const config = normalizeSettings(rawConfig);
+    const matchingWindPreset = Object.entries(WIND_PRESETS).find(([, values]) =>
+      Object.entries(values).every(([key, value]) => Math.abs(config[key] - value) < 0.001)
+    );
     const colors = Array.isArray(config.colors) && config.colors.length > 0
       ? config.colors
       : DEFAULT_SETTINGS.colors;
@@ -815,8 +896,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     elements.snowmax.value = config.snowmax;
     elements.snowmaxValue.textContent = config.snowmax;
-    elements.sinkspeed.value = config.sinkspeed;
-    elements.sinkspeedValue.textContent = parseFloat(config.sinkspeed).toFixed(1);
+    elements.snowFluffiness.value = config.snowFluffiness;
+    elements.snowFluffinessValue.textContent = Number(config.snowFluffiness).toFixed(2);
+    elements.snowShape.value = config.snowShape;
+    elements.gravity.value = config.gravity;
+    elements.gravityValue.textContent = Number(config.gravity).toFixed(1);
+    elements.airDensity.value = config.airDensity;
+    elements.airDensityValue.textContent = Number(config.airDensity).toFixed(1);
     elements.snowminsize.value = config.snowminsize;
     elements.snowmaxsize.value = config.snowmaxsize;
     elements.minsizeValue.textContent = formatPercent(config.snowminsize);
@@ -838,11 +924,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     elements.windEnabled.checked = Boolean(config.windEnabled);
+    elements.windPreset.value = matchingWindPreset?.[0] || 'custom';
     elements.windDirection.value = config.windDirection || 'left';
-    elements.windStrength.value = config.windStrength || 0.5;
-    elements.windStrengthValue.textContent = (config.windStrength || 0.5).toFixed(1);
-    elements.windGustFrequency.value = config.windGustFrequency || 3;
-    elements.windGustFrequencyValue.textContent = (config.windGustFrequency || 3).toFixed(1);
+    elements.windStrength.value = config.windStrength;
+    elements.windStrengthValue.textContent = Number(config.windStrength).toFixed(1);
+    elements.windGustFrequency.value = config.windGustFrequency;
+    elements.windGustFrequencyValue.textContent = Number(config.windGustFrequency).toFixed(1);
+    elements.windGustStrength.value = config.windGustStrength;
+    elements.windGustStrengthValue.textContent = Number(config.windGustStrength).toFixed(2);
+    elements.turbulenceStrength.value = config.turbulenceStrength;
+    elements.turbulenceStrengthValue.textContent = Number(config.turbulenceStrength).toFixed(2);
+    elements.updraftStrength.value = config.updraftStrength;
+    elements.updraftStrengthValue.textContent = Number(config.updraftStrength).toFixed(0);
     elements.windSettings.classList.toggle('wind-controls-disabled', !elements.windEnabled.checked);
 
     elements.colorsList.innerHTML = '';
@@ -854,7 +947,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     symbols.forEach((symbol, index) => createSymbolItem(
       symbol,
       elements.symbolsList,
-      saveAllSettings,
+      () => {
+        elements.windPreset.value = 'custom';
+        saveAllSettings();
+      },
       symbolModes[index] === 'emoji' ? 'emoji' : 'text'
     ));
     sentences.forEach((sentence) => createSentenceItem(sentence, elements.sentencesList, saveAllSettings));
@@ -892,7 +988,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     PRESETS_STORAGE_KEY,
     ACTIVE_PRESET_STORAGE_KEY,
     PRESET_DRAFT_STORAGE_KEY,
-    SYMBOL_MODE_MIGRATION_KEY
+    SYMBOL_MODE_MIGRATION_KEY,
+    BUILT_IN_PRESET_VERSION_KEY
   ]);
 
   const loadedPresets = Array.isArray(saved[PRESETS_STORAGE_KEY])
@@ -901,6 +998,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         .map((preset) => ({
           id: typeof preset.id === 'string' && preset.id.trim() ? preset.id : createPresetId(),
           name: typeof preset.name === 'string' && preset.name.trim() ? preset.name.trim() : t('presetNameFallback'),
+          ...(typeof preset.builtInKey === 'string' ? { builtInKey: preset.builtInKey } : {}),
           settings: normalizePresetSettings(preset.settings),
           updatedAt: Number.isFinite(preset.updatedAt) ? preset.updatedAt : Date.now()
         }))
@@ -908,13 +1006,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   setupPopupWidthSliderBounds();
   const config = normalizeSettings(saved);
+  const isFreshPresetList = loadedPresets.length === 0;
   presets = loadedPresets.length > 0
     ? loadedPresets
     : createBuiltInPresets(config, { createPresetObject, t });
   activePresetId = saved[ACTIVE_PRESET_STORAGE_KEY] || presets[0].id;
 
+  const builtInPresetsNeedUpgrade = !Number.isInteger(saved[BUILT_IN_PRESET_VERSION_KEY])
+    || saved[BUILT_IN_PRESET_VERSION_KEY] < BUILT_IN_PRESET_VERSION;
+  const builtInPresetsChanged = mergeBuiltInPresetTemplates({
+    replaceExisting: builtInPresetsNeedUpgrade && !isFreshPresetList,
+    migrateLegacy: builtInPresetsNeedUpgrade && !isFreshPresetList
+  });
   const activePreset = findPresetById(activePresetId) || presets[0];
   activePresetId = activePreset.id;
+  if (builtInPresetsChanged || saved[BUILT_IN_PRESET_VERSION_KEY] !== BUILT_IN_PRESET_VERSION) {
+    await persistPresets();
+  }
 
   // One-time upgrade: earlier versions defaulted every new symbol to "text",
   // which made color emoji (🌄, 🦖) render as monochrome outlines.
@@ -948,7 +1056,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     applySettingsToUI(config, { preservePopupWidth: true });
   }
   updatePresetDirtyState();
-  if (symbolModesMigrated) {
+  if (symbolModesMigrated || builtInPresetsChanged) {
     await saveAllSettings();
   }
 
@@ -1008,9 +1116,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     return {
       snowmax: payload.snowmax,
-      sinkspeed: payload.sinkspeed,
       snowminsize: payload.snowminsize,
       snowmaxsize: payload.snowmaxsize,
+      snowFluffiness: payload.snowFluffiness,
+      snowShape: payload.snowShape,
+      gravity: payload.gravity,
+      airDensity: payload.airDensity,
       snowcolor: payload.colors,
       snowletters: payload.symbols.length > 0 ? payload.symbols : ['❄'],
       snowglyphmodes: payload.symbolModes && payload.symbolModes.length > 0
@@ -1025,6 +1136,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       windDirection: payload.windDirection,
       windStrength: payload.windStrength,
       windGustFrequency: payload.windGustFrequency,
+      windGustStrength: payload.windGustStrength,
+      turbulenceStrength: payload.turbulenceStrength,
+      updraftStrength: payload.updraftStrength,
       rendererMode: payload.rendererMode,
       snow3dThickness: payload.snow3dThickness
     };
@@ -1204,7 +1318,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const selectedIdBeforeRestore = elements.presetSelect.value;
 
-    mergeBuiltInPresetTemplates();
+    mergeBuiltInPresetTemplates({ replaceExisting: true });
 
     if (findPresetById(selectedIdBeforeRestore)) {
       activePresetId = selectedIdBeforeRestore;
@@ -1328,12 +1442,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     (value) => parseFloat(value).toFixed(2)
   );
 
-  setupSliderListener(
-    elements.sinkspeed,
-    elements.sinkspeedValue,
-    saveAllSettings,
-    (val) => parseFloat(val).toFixed(1)
-  );
+  setupSliderListener(elements.snowFluffiness, elements.snowFluffinessValue, saveAllSettings, (value) => parseFloat(value).toFixed(2));
+  setupSliderListener(elements.gravity, elements.gravityValue, saveAllSettings, (value) => parseFloat(value).toFixed(1));
+  setupSliderListener(elements.airDensity, elements.airDensityValue, saveAllSettings, (value) => parseFloat(value).toFixed(1));
+  setupSliderListener(elements.windGustStrength, elements.windGustStrengthValue, () => {
+    elements.windPreset.value = 'custom';
+    saveAllSettings();
+  }, (value) => parseFloat(value).toFixed(2));
+  setupSliderListener(elements.turbulenceStrength, elements.turbulenceStrengthValue, () => {
+    elements.windPreset.value = 'custom';
+    saveAllSettings();
+  }, (value) => parseFloat(value).toFixed(2));
+  setupSliderListener(elements.updraftStrength, elements.updraftStrengthValue, () => {
+    elements.windPreset.value = 'custom';
+    saveAllSettings();
+  });
+  elements.snowShape.addEventListener('change', saveAllSettings);
 
   setupSliderListener(elements.gifCount, elements.gifCountValue, saveAllSettings);
   
@@ -1398,11 +1522,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveAllSettings();
   });
 
+  elements.windPreset.addEventListener('change', () => {
+    const profile = WIND_PRESETS[elements.windPreset.value];
+    if (!profile) return;
+    for (const [key, value] of Object.entries(profile)) {
+      elements[key].value = value;
+      const valueDisplay = elements[`${key}Value`];
+      if (valueDisplay) valueDisplay.textContent = key === 'windStrength'
+        || key === 'windGustFrequency' ? Number(value).toFixed(1) : Number(value).toFixed(2);
+    }
+    elements.windSettings.classList.remove('wind-controls-disabled');
+    elements.windEnabled.checked = true;
+    saveAllSettings();
+  });
+
   // Сила ветра
   setupSliderListener(
     elements.windStrength,
     elements.windStrengthValue,
-    saveAllSettings,
+    () => {
+      elements.windPreset.value = 'custom';
+      saveAllSettings();
+    },
     (val) => parseFloat(val).toFixed(1)
   );
 
@@ -1410,7 +1551,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSliderListener(
     elements.windGustFrequency,
     elements.windGustFrequencyValue,
-    saveAllSettings,
+    () => {
+      elements.windPreset.value = 'custom';
+      saveAllSettings();
+    },
     (val) => parseFloat(val).toFixed(1)
   );
 

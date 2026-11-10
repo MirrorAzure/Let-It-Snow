@@ -409,7 +409,6 @@ async function initPlayground() {
   };
 
   setupSlider('snowmax', 'snowmaxValue');
-  setupSlider('sinkspeed', 'sinkspeedValue', (v) => parseFloat(v).toFixed(1));
   setupSlider('gifCount', 'gifCountValue');
   setupSlider('sentenceCount', 'sentenceCountValue');
   setupSlider('mouseRadius', 'mouseRadiusValue');

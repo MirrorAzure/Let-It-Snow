@@ -32,8 +32,62 @@
   "snowCount": {
     "message": "Number of snowflakes (1–320):"
   },
-  "fallSpeed": {
-    "message": "Falling speed (0.1–3.0):"
+  "snowflakePhysics": {
+    "message": "Snowflake"
+  },
+  "snowPhysicsDescription": {
+    "message": "Mass and drag are calculated for each flake. Shape can be derived from fluffiness or selected manually."
+  },
+  "snowFluffiness": {
+    "message": "Fluffiness / lacy shape:"
+  },
+  "snowShape": {
+    "message": "Snowflake shape:"
+  },
+  "snowShapeAuto": {
+    "message": "Automatic (by fluffiness)"
+  },
+  "snowShapeCompact": {
+    "message": "Compact"
+  },
+  "snowShapeRegular": {
+    "message": "Regular"
+  },
+  "snowShapeLacy": {
+    "message": "Lacy"
+  },
+  "windGustStrength": {
+    "message": "Gust strength:"
+  },
+  "windPreset": {
+    "message": "Wind profile:"
+  },
+  "windPresetCustom": {
+    "message": "Custom"
+  },
+  "windPresetWeak": {
+    "message": "Light wind"
+  },
+  "windPresetStrong": {
+    "message": "Strong wind"
+  },
+  "windPresetHurricane": {
+    "message": "Hurricane"
+  },
+  "turbulenceStrength": {
+    "message": "Turbulence:"
+  },
+  "updraftStrength": {
+    "message": "Updraft (m/s):"
+  },
+  "environmentTitle": {
+    "message": "Environment"
+  },
+  "gravity": {
+    "message": "Gravity:"
+  },
+  "airDensity": {
+    "message": "Air density:"
   },
   "snowSize": {
     "message": "Snowflake size:"
@@ -123,7 +177,7 @@
     "message": "Presets"
   },
   "presetsHint": {
-    "message": "The selected preset is applied immediately, including a snowfall that is already running. Use \"Save\" to store changes in the preset."
+    "message": "The selected preset is applied immediately, including a snowfall that is already running. Use \"Save\" to store changes in the preset. Built-in templates update automatically; your custom presets are preserved."
   },
   "presetsCurrent": {
     "message": "Current preset"
@@ -357,7 +411,7 @@
     "message": "⟷  Random"
   },
   "windStrength": {
-    "message": "Wind strength (0.1–2.0):"
+    "message": "Wind strength (0.1–3.0):"
   },
   "windGustFrequency": {
     "message": "Gust frequency (1–10 sec):"
@@ -657,7 +711,7 @@
     "message": "Mouse and touch"
   },
   "helpMouseBody": {
-    "message": "Snow reacts to the pointer within the configured radius:\n• slow movement gently pushes flakes aside, fast movement carries them in an air stream;\n• **left button** — an explosion that scatters the snow;\n• **right button** — pulls the snow towards the cursor.\nSnow never blocks clicks: the page stays fully usable."
+    "message": "Snow reacts to the pointer within the configured radius:\n• slow movement gently pushes flakes aside, fast movement carries them in an air stream;\n• **left click** — one outward burst that also lifts flakes;\n• **right click** — one impulse pulling nearby flakes toward the cursor.\nSnow never blocks clicks: the page stays fully usable."
   },
   "helpPresetsTitle": {
     "message": "Presets, import and export"

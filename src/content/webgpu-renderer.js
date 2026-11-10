@@ -13,7 +13,8 @@ import { UniformBufferManager } from './graphics/uniform-buffer.js';
 import { SimulationEngine } from './physics/simulation-engine.js';
 import { CollisionHandler } from './physics/collision-handler.js';
 import { MouseHandler, applyMouseRepulsion } from './physics/mouse-handler.js';
-import { stepWindState, createWindVortexField, applyVortexWindImpulse } from './physics/wind-field.js';
+import { stepWindState } from './physics/wind-field.js';
+import { applyAirBurstImpulse, getWindVelocity, stepSnowflakePhysics } from './physics/snow-physics.js';
 import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
 import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
@@ -101,7 +102,6 @@ export class WebGPURenderer {
     this.prevWindForce = 0;
     this.prevWindLift = 0;
     this.prevWindVortex = 0;
-    this.windVortexSeed = Math.random() * 1000000;
     this.windDirectionPhase = Math.random() * Math.PI * 2;
     this.lastWindLogged = false;
 
@@ -556,7 +556,7 @@ export class WebGPURenderer {
    * Настройка instance данных (снежинок)
    */
   setupInstances() {
-    const { snowmax, sinkspeed, snowcolor, snowletters, snowsentences, sentenceCount } = this.config;
+    const { snowmax, snowcolor, snowletters, snowsentences, sentenceCount } = this.config;
     const { minPx: snowminsize, maxPx: snowmaxsize } = resolveGlyphSizeRangePx(this.config);
     const initialOffsetSeconds = Math.max(0, Number(this.config.initialTimeOffsetSeconds) || 0);
     const viewportHeight = Math.max(1, window.innerHeight || 1);
@@ -599,7 +599,9 @@ export class WebGPURenderer {
       
       const colorHex = snowcolor[Math.floor(Math.random() * snowcolor.length)];
       const color = hexToRgb(colorHex);
-      const speed = sinkspeed * (size / 20) * 20;
+      const speed = Number.isFinite(this.config.gravity)
+        ? 0
+        : (Number.isFinite(this.config.sinkspeed) ? this.config.sinkspeed : 0.4) * size;
       const spawnX = this._findSafeSpawnX(collisionSize);
       const initialRotation = Math.random() * Math.PI * 2; // Случайный начальный угол для разнообразия
       const baseY = -size - Math.random() * spawnSpan;
@@ -608,6 +610,7 @@ export class WebGPURenderer {
         : baseY;
 
       this.instances.push({
+        _snowflakeIndex: idx,
         x: spawnX,
         y: startY,
         size,
@@ -831,7 +834,11 @@ export class WebGPURenderer {
         : snowminsize + Math.random() * sizeRange;
       
       flake.size = newSize;
-      flake.fallSpeed = this.config.sinkspeed * (newSize / 20) * 20;
+      flake.fallSpeed = Number.isFinite(this.config.gravity)
+        ? 0
+        : (Number.isFinite(this.config.sinkspeed) ? this.config.sinkspeed : 0.4) * newSize;
+      flake.verticalVelocity = 0;
+      flake._physicsInitialized = false;
       
       const sentenceHorizontalScale = 2.0;
       flake.collisionSize = isSentence ? newSize * sentenceHorizontalScale : newSize;
@@ -1032,7 +1039,7 @@ export class WebGPURenderer {
         prevWindLift: this.prevWindLift,
         prevWindVortex: this.prevWindVortex,
         highFreq3Scale: 0.02,
-        windSmoothFactor: 0.05
+        windResponseSeconds: 0.325
       });
       this.windTime = windState.windTime;
       this.currentWindForce = windState.currentWindForce;
@@ -1062,15 +1069,19 @@ export class WebGPURenderer {
       this.prevWindVortex = 0;
     }
 
+    const physicsWind = {
+      ...getWindVelocity(this.config, this.currentWindForce, this.currentWindLift, this.windEnabled),
+      time: this.windTime,
+      enabled: this.windEnabled
+    };
+
     if (this.mouseBurstTimer > 0) {
       this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - delta);
-      if (this.mouseBurstTimer === 0) {
-        this.mouseBurstMode = null;
-      }
+    }
+    if (this.mouseBurstTimer === 0) {
+      this.mouseBurstMode = null;
     }
 
-    const vortexActive = this.currentWindVortex !== 0;
-    const vortexField = createWindVortexField(width, height, this.windTime, this.windVortexSeed);
 
     this.instances.forEach((flake, idx) => {
       if (flake.isFinished || flake.isSettled) return;
@@ -1092,8 +1103,14 @@ export class WebGPURenderer {
         const burstFactor = burstActive ? Math.min(1, this.mouseBurstTimer / this.mouseBurstDuration) : 0;
         const activeInfluence = influence * Math.max(activityFactor, burstFactor);
 
-        // Кратковременный взрыв/втягивание при клике
-        if (burstActive && this.mouseBurstMode === 'explode') {
+        if (burstActive && this.mouseBurstMode === 'blower') {
+          const safeDistance = Math.max(distance, 0.0001);
+          const nx = dx / safeDistance;
+          const ny = dy / safeDistance;
+          const burstAccel = activeInfluence * this.mouseForce * 10.0;
+          flake.velocityX += nx * burstAccel * delta;
+          flake.velocityY += (ny - 4) * burstAccel * delta;
+        } else if (burstActive && this.mouseBurstMode === 'explode') {
           const safeDistance = Math.max(distance, 0.0001);
           const nx = dx / safeDistance;
           const ny = dy / safeDistance;
@@ -1141,6 +1158,10 @@ export class WebGPURenderer {
       }
       }
 
+      if (Number.isFinite(this.config.gravity)) {
+        stepSnowflakePhysics(flake, delta, this.config, physicsWind);
+      }
+
       // Применяем импульс к позиции
       flake.x += flake.velocityX * delta;
       flake.y += flake.velocityY * delta;
@@ -1170,30 +1191,6 @@ export class WebGPURenderer {
       
       flake.y += flake.fallSpeed * delta;
 
-      // Применяем ветер как горизонтальное и вертикальное воздействие
-      if ((this.currentWindForce !== 0 || this.currentWindLift !== 0 || this.currentWindVortex !== 0)) {
-        // Площадь поперечного сечения пропорциональна размеру
-        // Маленькие объекты поддаются ветру сильнее
-        const sizeRatio = Math.sqrt(flake.size / 20);
-        
-        // Горизонтальное воздействие ветра
-        if (this.currentWindForce !== 0) {
-          const windAccel = this.currentWindForce * sizeRatio * 40;
-          flake.x += windAccel * delta;
-        }
-        
-        // Вертикальное воздействие ветра (лифт)
-        if (this.currentWindLift !== 0) {
-          const liftAccel = -this.currentWindLift * sizeRatio * 70;
-          flake.y += liftAccel * delta;
-        }
-
-        if (vortexActive) {
-          const vortexAccel = this.currentWindVortex * sizeRatio * 420;
-          applyVortexWindImpulse(flake, delta, vortexAccel, vortexField);
-        }
-      }
-
       // Сброс позиции если снежинка вышла за экран
       if (flake.y - flake.size > height) {
         if (this.environment?.retire(flake)) {
@@ -1209,6 +1206,9 @@ export class WebGPURenderer {
         flake.rotationSpeed = 0;
         flake.velocityX = 0;
         flake.velocityY = 0;
+        flake.fallSpeed = 0;
+        flake.verticalVelocity = 0;
+        flake._physicsInitialized = false;
 
         if (flake.isSentence && sentenceCount > 0) {
           flake.sentenceIndex = this._nextSentenceIndex(sentenceCount);
@@ -1495,21 +1495,27 @@ export class WebGPURenderer {
    * @param {number} y - Y координата
    */
   onMouseDown(x, y, button) {
-    if (button === 0 || button === 2) {
-      this.environment?.dislodgeAt(x, y, this.mouseRadius * this.mouseBurstRadiusMultiplier);
-    }
     if (button === 0) {
       this.mouseLeftPressed = true;
-      this.mouseBurstMode = 'explode';
-      this.mouseBurstTimer = this.mouseBurstDuration;
+      this.mouseBurstMode = 'blower';
     }
     if (button === 2) {
       this.mouseRightPressed = true;
       this.mouseBurstMode = 'suction';
-      this.mouseBurstTimer = this.mouseBurstDuration;
     }
     this.mouseX = x;
     this.mouseY = y;
+    this.mouseVelocityX = 0;
+    this.mouseVelocityY = 0;
+    if (button === 0 || button === 2) {
+      const radius = this.mouseRadius * this.mouseBurstRadiusMultiplier;
+      const strength = this.mouseForce * 10;
+      this.environment?.applyAirBurst(x, y, radius, this.mouseBurstMode, strength, this.mouseBurstDuration);
+      for (const flake of this.instances) {
+        if (flake.isFinished || flake.isAwaitingRespawn || flake.isSettled) continue;
+        applyAirBurstImpulse(flake, x, y, radius, this.mouseBurstMode, strength, this.mouseBurstDuration);
+      }
+    }
   }
 
   /**
@@ -1518,6 +1524,10 @@ export class WebGPURenderer {
   onMouseUp(button) {
     if (button === 0) this.mouseLeftPressed = false;
     if (button === 2) this.mouseRightPressed = false;
+    if (!this.mouseLeftPressed && !this.mouseRightPressed) {
+      this.mouseBurstTimer = 0;
+      this.mouseBurstMode = null;
+    }
   }
 
   /**

@@ -1,4 +1,5 @@
 import { acquirePageSurfaces, releasePageSurfaces } from './page-surfaces.js';
+import { applyAirBurstImpulse } from './snow-physics.js';
 
 const EMOJI = /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u;
 const MIN_IMPACT_SPEED = 100;
@@ -116,6 +117,22 @@ export class ParticleEnvironment {
       this.dislodgeAt(x, y, radius, this.pointer);
     }
     this.pointer = { x, y };
+  }
+
+  applyAirBurst(x, y, radius, mode, strength, duration = 0.2) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)
+      || !Number.isFinite(radius) || radius <= 0
+      || !Number.isFinite(strength) || strength <= 0
+      || !Number.isFinite(duration) || duration < 0
+      || (mode !== 'blower' && mode !== 'suction')) return 0;
+    let affected = 0;
+    for (const flake of [...this.settled.keys()]) {
+      if (!this.settled.has(flake) || Math.hypot(flake.x - x, flake.y - y) >= radius) continue;
+      this.release(flake);
+      applyAirBurstImpulse(flake, x, y, radius, mode, strength, duration);
+      affected++;
+    }
+    return affected;
   }
 
   dislodgeAt(x, y, radius, previous = null) {

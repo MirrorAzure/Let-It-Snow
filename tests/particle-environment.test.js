@@ -29,6 +29,23 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     return flakes[0];
   };
 
+  it('updates 3D wind before accumulation reads its current state', () => {
+    const renderer = new ThreeDSnowRenderer(null, { enableCollisions: false });
+    const order = [];
+    renderer._stepWind = () => {
+      order.push('wind');
+      renderer.currentWindForce = 1;
+    };
+    renderer.environment = {
+      beginFrame: () => order.push('accumulate'),
+      finishFrame: vi.fn()
+    };
+
+    renderer._updateInstances(1 / 60);
+
+    expect(order).toEqual(['wind', 'accumulate']);
+  });
+
   beforeEach(() => {
     environments = [];
     document.body.innerHTML = '<figure style="visibility:visible;opacity:1"></figure>';
@@ -1072,12 +1089,43 @@ describe('DOM accumulation and finite particle lifecycle', () => {
       expect(flake.isSettled).toBe(true);
     });
 
-    it.each([0, 2])('releases flakes within the existing click burst radius (button %s)', (button) => {
-      const { flake, renderer } = setup();
-      renderer.onMouseDown(flake.x - 60, flake.y, button);
+    it.each([0, 2])('applies one click impulse to settled flakes (button %s)', (button) => {
+      const { environment, flake, renderer } = setup();
+      renderer.onMouseDown(flake.x - 20, flake.y, button);
       expect(flake.isSettled).toBe(false);
-      expect(renderer.mouseBurstTimer).toBeGreaterThan(0);
-      expect(renderer.mouseBurstMode).toBe(button === 0 ? 'explode' : 'suction');
+      expect(renderer.mouseBurstTimer).toBe(0);
+      expect(renderer.mouseBurstMode).toBe(button === 0 ? 'blower' : 'suction');
+      expect(environment.airBurst).toBeUndefined();
+      if (button === 0) {
+        expect(flake.velocityX).toBeGreaterThan(0);
+        expect(flake.velocityY).toBeLessThan(0);
+        expect(Math.abs(flake.velocityY)).toBeGreaterThan(flake.velocityX);
+      } else {
+        expect(flake.velocityX).toBeLessThan(0);
+      }
+      const velocity = { x: flake.velocityX, y: flake.velocityY };
+      renderer.onMouseUp(button);
+      expect(flake.velocityX).toBe(velocity.x);
+      expect(flake.velocityY).toBe(velocity.y);
+    });
+
+    it.each([0, 2])('does not repeat an airborne impulse while held (button %s)', (button) => {
+      const { renderer } = setup();
+      const flake = makeFlake({ x: 120, y: 170 });
+      if (renderer.instances) renderer.instances = [flake];
+      else renderer.flakes = [flake];
+
+      renderer.onMouseDown(100, 170, button);
+      const velocity = { x: flake.velocityX, y: flake.velocityY };
+      expect(velocity.x).not.toBe(0);
+      expect(renderer.mouseBurstTimer).toBe(0);
+
+      for (let frame = 0; frame < 5; frame++) {
+        renderer.updateMousePosition(100, 170, 0, 0);
+      }
+
+      expect(flake.velocityX).toBe(velocity.x);
+      expect(flake.velocityY).toBe(velocity.y);
     });
   });
 
@@ -1421,24 +1469,27 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     const flake = makeFlake({ speed: 30 });
     controller.renderer = { flakes: [flake] };
     const renderer = controller.renderer;
-    controller.updateConfig({ sinkspeed: 1, mouseRadius: 0, windEnabled: true, windStrength: 2 });
+    controller.updateConfig({ gravity: 12, mouseRadius: 0, windEnabled: true, windStrength: 2 });
     expect(controller.renderer).toBe(renderer);
-    expect(flake.fallSpeed).toBe(60);
-    expect(flake.speed).toBe(60);
+    expect(controller.config.gravity).toBe(12);
+    expect(flake.fallSpeed).toBe(30);
+    expect(flake.speed).toBe(30);
     expect(flake.y).toBe(170);
     expect(renderer.mouseRadius).toBe(0);
     expect(renderer.windStrength).toBe(2);
   });
 
-  it('recovers particle speeds when live speed changes from zero', () => {
-    const controller = new SnowWebGPUController({ sinkspeed: 0 });
+  it('changes live physical settings without editing calculated particle speed', () => {
+    const controller = new SnowWebGPUController();
     const flake = makeFlake({ size: 20, fallSpeed: 0, speed: 0 });
     controller.renderer = { flakes: [flake] };
 
-    controller.updateConfig({ sinkspeed: 1 });
+    controller.updateConfig({ gravity: 15, airDensity: 0.8 });
 
-    expect(flake.fallSpeed).toBe(20);
-    expect(flake.speed).toBe(20);
+    expect(controller.config.gravity).toBe(15);
+    expect(controller.config.airDensity).toBe(0.8);
+    expect(flake.fallSpeed).toBe(0);
+    expect(flake.speed).toBe(0);
     expect(Number.isFinite(flake.fallSpeed)).toBe(true);
   });
 });

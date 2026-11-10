@@ -183,8 +183,8 @@ describe('content script snow control', () => {
     });
     document.dispatchEvent(mouseDownEvent);
 
-    expect(controller.renderer.mouseBurstMode).toBe('explode');
-    expect(controller.renderer.mouseBurstTimer).toBeGreaterThan(0);
+    expect(controller.renderer.mouseBurstMode).toBe('blower');
+    expect(controller.renderer.mouseBurstTimer).toBe(0);
 
     controller.destroy();
   });
@@ -208,7 +208,7 @@ describe('content script snow control', () => {
     document.dispatchEvent(mouseDownEvent);
 
     expect(controller.renderer.mouseBurstMode).toBe('suction');
-    expect(controller.renderer.mouseBurstTimer).toBeGreaterThan(0);
+    expect(controller.renderer.mouseBurstTimer).toBe(0);
 
     controller.destroy();
   });
@@ -464,7 +464,7 @@ describe('content script snow control', () => {
       document.dispatchEvent(touchStartEvent);
     }
 
-    expect(controller.renderer.mouseBurstMode).toBe('explode');
+    expect(controller.renderer.mouseBurstMode).toBe('blower');
 
     if (usePointer) {
       document.dispatchEvent(createInputEvent('mouseup', {

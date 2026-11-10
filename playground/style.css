@@ -79,6 +79,7 @@ body.theme-light .background-layer { opacity: 0.12; }
 }
 .status-ready { color: #0f3b22; background: rgba(52, 211, 153, 0.18); border-color: rgba(52, 211, 153, 0.35); }
 .status-missing { color: #3b0f12; background: rgba(248, 113, 113, 0.18); border-color: rgba(248, 113, 113, 0.35); }
+.status-error { color: #3b0f12; background: rgba(248, 113, 113, 0.18); border-color: rgba(248, 113, 113, 0.35); }
 
 .panel {
   margin-top: 28px;
@@ -187,7 +188,7 @@ body.theme-light .background-layer { opacity: 0.12; }
   border-color: rgba(34, 211, 238, 0.5);
 }
 
-input, textarea {
+input, textarea, select {
   width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 8px;
@@ -198,7 +199,7 @@ input, textarea {
   transition: border 0.2s ease, background 0.2s ease;
 }
 
-input:focus, textarea:focus { outline: none; border-color: var(--accent); background: rgba(255, 255, 255, 0.12); }
+input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); background: rgba(255, 255, 255, 0.12); }
 
 textarea { resize: vertical; min-height: 84px; }
 

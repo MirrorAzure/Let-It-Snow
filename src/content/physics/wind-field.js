@@ -18,7 +18,7 @@ export function stepWindState({
   prevWindLift,
   prevWindVortex,
   highFreq3Scale = 0.02,
-  windSmoothFactor = 0.05
+  windResponseSeconds = 0.325
 }) {
   if (!enabled) {
     return {
@@ -62,12 +62,14 @@ export function stepWindState({
   }
 
   const targetWindForce = directionFactor * gustIntensity * windStrength;
-  const targetWindLift = gustIntensity * 0.3 * windStrength;
+  const targetWindLift = gustIntensity * 0.75 * windStrength;
   const targetWindVortex = gustIntensity * windStrength * windVortexStrength;
 
-  const currentWindForce = prevWindForce * (1 - windSmoothFactor) + targetWindForce * windSmoothFactor;
-  const currentWindLift = prevWindLift * (1 - windSmoothFactor) + targetWindLift * windSmoothFactor;
-  const currentWindVortex = prevWindVortex * (1 - windSmoothFactor) + targetWindVortex * windSmoothFactor;
+  const responseSeconds = Math.max(0.01, windResponseSeconds);
+  const response = 1 - Math.exp(-delta / responseSeconds);
+  const currentWindForce = prevWindForce + (targetWindForce - prevWindForce) * response;
+  const currentWindLift = prevWindLift + (targetWindLift - prevWindLift) * response;
+  const currentWindVortex = prevWindVortex + (targetWindVortex - prevWindVortex) * response;
 
   return {
     windTime: nextWindTime,

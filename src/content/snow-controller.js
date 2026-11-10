@@ -18,6 +18,10 @@ export const MAX_Z_INDEX = '2147483646';
 const DEFAULT_CONFIG = {
   snowmax: 80,
   sinkspeed: 0.4,
+  snowFluffiness: 0.3,
+  snowShape: 'auto',
+  gravity: 9.81,
+  airDensity: 1.2,
   snowminsize: 2.0,
   snowmaxsize: 4.0,
   snowcolor: ['#ffffff'],
@@ -35,6 +39,9 @@ const DEFAULT_CONFIG = {
   windDirection: 'left',
   windStrength: 0.5,
   windGustFrequency: 3,
+  windGustStrength: 0.35,
+  turbulenceStrength: 0.2,
+  updraftStrength: 0,
   accumulationEnabled: true
 };
 
@@ -268,17 +275,7 @@ export class SnowWebGPUController {
   }
 
   updateConfig(patch) {
-    const previousSpeed = this.config.sinkspeed;
     Object.assign(this.config, patch);
-    if (patch.sinkspeed !== undefined && this.renderer) {
-      const speedRatio = previousSpeed > 0 ? patch.sinkspeed / previousSpeed : null;
-      for (const flake of this.renderer.flakes || this.renderer.instances || []) {
-        flake.fallSpeed = speedRatio === null
-          ? patch.sinkspeed * flake.size
-          : flake.fallSpeed * speedRatio;
-        if (flake.speed !== undefined) flake.speed = flake.fallSpeed;
-      }
-    }
     if (patch.mouseRadius !== undefined && this.renderer) this.renderer.mouseRadius = patch.mouseRadius;
     if (patch.accumulationEnabled !== undefined) this.environment?.setEnabled(patch.accumulationEnabled);
     this.gifLayer?.updateConfig(patch);
@@ -291,11 +288,31 @@ export class SnowWebGPUController {
 
   getState() {
     const particles = this.renderer?.flakes || this.renderer?.instances || [];
+    const sample = particles.find((flake) => Number.isFinite(flake.terminalVelocity));
     return {
       paused: this.isPaused,
       particles: particles.filter((flake) => !flake.isFinished && !flake.isAwaitingRespawn).length,
       settled: this.environment?.settled.size || 0,
-      accumulationEnabled: this.config.accumulationEnabled !== false
+      accumulationEnabled: this.config.accumulationEnabled !== false,
+      physics: sample ? {
+        snowShape: sample.resolvedSnowShape,
+        snowFluffiness: sample.effectiveFluffiness,
+        mass: sample.mass,
+        area: sample.area,
+        perimeter: sample.perimeter,
+        compactness: sample.compactness,
+        dragCoefficient: sample.dragCoefficient,
+        gravity: sample.gravity,
+        airDensity: sample.airDensity,
+        windSpeed: sample.windSpeed,
+        windX: sample.windX,
+        windVerticalSpeed: sample.windVerticalSpeed,
+        windGustStrength: sample.windGustStrength,
+        turbulenceStrength: sample.turbulenceStrength,
+        verticalVelocity: sample.verticalVelocity,
+        terminalVelocity: sample.terminalVelocity,
+        relativeVelocity: sample.relativeVelocity
+      } : null
     };
   }
 

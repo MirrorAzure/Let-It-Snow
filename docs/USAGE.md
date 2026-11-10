@@ -16,6 +16,23 @@ format and protocol is available in [External API](./EXTERNAL_API.md).
    configured on the **Symbols** tab.
 4. Click **Let it snow!** at the bottom of the window. To stop, click **Stop**.
 
+Snowflakes start from rest and accelerate under gravity until air resistance
+limits their speed. Mass, projected area, perimeter, compactness, and drag are
+calculated automatically from each flake's size, selected shape, and fluffiness.
+By default, the shape class is derived from fluffiness; you can choose a shape
+globally, or assign individual classes with `snowShapeOverrides` in API configs.
+Automatic shape thresholds are compact below 0.25 fluffiness, regular from
+0.25 to below 0.65, and lacy at 0.65 or above. Their drag-coefficient ranges
+are 0.7–1.0, 1.0–1.4, and 1.4–2.0, respectively. In the Playground, enter a
+JSON array in **Per-flake shape overrides**; each array index maps to a flake
+index, and `null` inherits the global shape setting.
+Use the **Wind** and **Environment** settings to change airflow, gusts,
+turbulence, gravity, or air density; there is no manual fall-speed control.
+Wind profiles include light, strong, and hurricane conditions, and each profile
+can be adjusted manually. Updraft is measured in m/s; sufficiently strong airflow
+can slow flakes and lift them upward. Wind strength affects both horizontal flow
+and upward gusts; wind response is time-smoothed and frame-rate independent.
+
 The glow follows the volumetric silhouette of the snowflake and smoothly pulses
 and flickers (each snowflake has its own rhythm). It automatically adapts to a
 light or dark page background and changes smoothly when the theme switches — the
@@ -113,8 +130,11 @@ stacks spanning multiple effect layers move together without a one-frame delay.
 A removed, transparent or newly interactive support is cleared immediately; flakes also
 fall if a resize leaves them beyond the support's edges or their supporting neighbours
 move apart.
-Moving the mouse across the row also knocks flakes down; left/right clicks retain
-their expanded explosion/suction radius. A stationary pointer does not disturb the row.
+Moving the mouse across the row also knocks flakes down. Hold the left mouse button
+to create airflow outward in all directions with additional upward lift: flakes
+scatter away from the pointer and rise instead of moving only sideways. The right
+button attracts them toward the pointer. The effect lasts only while held. A
+stationary pointer without a held button does not disturb the row.
 Large emoji, sentences and GIFs keep falling.
 API controls: `clearAccumulation` sheds particles; `update` with
 `{"config":{"accumulationEnabled":false}}` disables landing for the main snow.
@@ -140,6 +160,10 @@ unsaved edits, the popup asks what to do with them:
 - **Save to "…"** — to the preset that was selected before;
 - **Don't save** — discard the edits;
 - **Cancel** — stay on the current preset.
+
+Built-in templates are refreshed when their bundled version changes. The
+current built-in set is available to every installation; user-created presets
+are kept during upgrades and when built-in templates are restored.
 
 ## 2. Synchronizing windows of one browser
 
@@ -280,7 +304,7 @@ Parameters are specified **before** `#token=…` and separated by `&`:
 |---|---|---|
 | `snowmax` | `120` | Number of regular snowflakes, 1–320. |
 | `renderer` | `3d` | `3d` or `auto`; 3D requires WebGL2 in OBS. |
-| `speed` | `0.4` | Fall speed, 0.1–3. |
+| `speed` | `0.4` | Legacy parameter; ignored by the automatic snowflake physics. |
 | `minsize`, `maxsize` | `3`, `6` | Sizes as a percentage of the window's shorter side, within 2–10. |
 | `colors` | `%23d9f3ff,%23a9d8ff` | Comma-separated colors; `#` must be written as `%23`. |
 | `symbols` | `❄,✦` | Comma-separated symbols; URL-encode them if necessary. |

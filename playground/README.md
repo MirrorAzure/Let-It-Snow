@@ -104,10 +104,17 @@ When changing the look or logic of the popup menu in `src/popup/`:
 The playground lets you change in real time:
 
 - **Snowflake count** - from 1 to 400
-- **Fall speed** - from 0.05 to 2
+- **Snowflake shape and fluffiness** - shape is automatic by default, with a global selector and per-flake JSON overrides
+- **Gravity and air density** - tune the environmental physics
+- **Wind** - direction, strength, gusts, turbulence, and updraft
 - **Minimum glow strength** - from 0 to 1 for comparing the glow in WebGPU and Canvas2D
 - **3D glyph thickness** - extrusion depth of the selected symbols in 3D mode
 - **Size** - minimum and maximum sizes
 - **Colors** - add your own hex colors
 - **Symbols** - use any Unicode characters
 - **GIF** - add links to GIF files
+
+The shape selector defaults to **Automatic (by fluffiness)**. For individual
+flakes, enter an indexed JSON array in **Per-flake shape overrides**, for example
+`["compact", null, "lacy"]`; `null` inherits the selected global mode, while
+`"auto"` explicitly derives that flake's shape from fluffiness.

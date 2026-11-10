@@ -32,7 +32,6 @@ function makePreset(id, name, settings = {}) {
     name,
     settings: {
       snowmax: 80,
-      sinkspeed: 0.4,
       snowminsize: 2,
       snowmaxsize: 4,
       colors: ['#ffffff'],
@@ -56,7 +55,6 @@ function makePreset(id, name, settings = {}) {
 function createChromeMock(overrides = {}) {
   const stored = {
     snowmax: 80,
-    sinkspeed: 0.4,
     snowminsize: 2.0,
     snowmaxsize: 4.0,
     colors: ['#ffffff'],
@@ -64,6 +62,7 @@ function createChromeMock(overrides = {}) {
     sentenceCount: 0,
     popupWidthPercent: 20,
     popupWidth: 380,
+    builtInPresetVersion: 2,
     mouseRadius: 100,
     windEnabled: false,
     windDirection: 'left',
@@ -149,7 +148,6 @@ describe('popup UI', () => {
     // Устанавливаем мок до импорта модуля
     global.chrome = createChromeMock({
       snowmax: 120,
-      sinkspeed: 1.1,
       snowminsize: 2.2,
       snowmaxsize: 3.0,
       colors: ['#111111', '#222222'],
@@ -162,7 +160,7 @@ describe('popup UI', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(document.getElementById('snowmax').value).toBe('120');
-    expect(document.getElementById('sinkspeedValue').textContent).toBe('1.1');
+    expect(document.getElementById('sinkspeed')).toBeNull();
     expect(global.chrome.storage.sync.get).toHaveBeenCalled();
 
     document.getElementById('startSnow').click();
@@ -174,7 +172,6 @@ describe('popup UI', () => {
       action: 'startSnow',
       config: {
         snowmax: 120,
-        sinkspeed: 1.1,
         snowminsize: 2.2,
         snowmaxsize: 3,
         snowcolor: ['#111111', '#222222'],
@@ -189,6 +186,13 @@ describe('popup UI', () => {
         windDirection: 'left',
         windStrength: 0.5,
         windGustFrequency: 3,
+        snowFluffiness: 0.3,
+        snowShape: 'auto',
+        gravity: 9.81,
+        airDensity: 1.2,
+        windGustStrength: 0.35,
+        turbulenceStrength: 0.2,
+        updraftStrength: 0,
         rendererMode: 'auto',
         snow3dThickness: 0.07
       }
@@ -382,6 +386,20 @@ describe('popup UI', () => {
     );
     expect(savedData).toBeDefined();
     expect(savedData[0].windStrength).toBe(1.0);
+
+    const windPreset = document.getElementById('windPreset');
+    windPreset.value = 'hurricane';
+    windPreset.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(document.getElementById('windStrength').value).toBe('3');
+    expect(document.getElementById('windGustFrequency').value).toBe('1.5');
+    expect(document.getElementById('windGustStrength').value).toBe('1');
+    expect(document.getElementById('turbulenceStrength').value).toBe('1');
+    expect(document.getElementById('updraftStrength').value).toBe('30');
+    const hurricaneSettings = global.chrome.storage.sync.set.mock.calls.findLast(
+      (call) => call[0].windStrength === 3
+    );
+    expect(hurricaneSettings[0].windEnabled).toBe(true);
   });
 
   it('creates a new preset on import and selects it', async () => {
@@ -475,7 +493,6 @@ describe('popup UI', () => {
           name: 'Holiday Magic',
           settings: {
             snowmax: 140,
-            sinkspeed: 0.7,
             snowminsize: 10,
             snowmaxsize: 24,
             colors: ['#abcdef'],
@@ -584,8 +601,8 @@ describe('popup UI', () => {
 
     expect(exportedJson.exportScope).toBe('all-presets');
     expect(Array.isArray(exportedJson.presets)).toBe(true);
-    expect(exportedJson.presets).toHaveLength(2);
-    expect(exportedJson.presets.map((preset) => preset.name)).toEqual(['First', 'Second']);
+    expect(exportedJson.presets).toHaveLength(8);
+    expect(exportedJson.presets.slice(0, 2).map((preset) => preset.name)).toEqual(['First', 'Second']);
 
     Object.defineProperty(URL, 'createObjectURL', {
       value: originalCreateObjectURL,
@@ -646,15 +663,15 @@ describe('popup UI', () => {
     expect(savedNames).toContain('Pack Two');
   });
 
-  it('restores built-in templates and overwrites existing presets by name', async () => {
+  it('restores built-in templates and preserves user presets', async () => {
     global.chrome = createChromeMock({
       savedPresets: [
         {
           id: 'custom-winter-id',
+          builtInKey: 'winter',
           name: 'Зимний',
           settings: {
             snowmax: 12,
-            sinkspeed: 0.2,
             snowminsize: 2,
             snowmaxsize: 3,
             colors: ['#101010'],
@@ -679,7 +696,6 @@ describe('popup UI', () => {
           name: 'Мой уникальный',
           settings: {
             snowmax: 77,
-            sinkspeed: 0.5,
             snowminsize: 2,
             snowmaxsize: 4,
             colors: ['#abcdef'],
@@ -700,7 +716,8 @@ describe('popup UI', () => {
           updatedAt: Date.now()
         }
       ],
-      activePresetId: 'custom-winter-id'
+      activePresetId: 'custom-winter-id',
+      builtInPresetVersion: 2
     });
 
     await import('../src/popup/popup.js?t=' + Date.now());
@@ -726,6 +743,80 @@ describe('popup UI', () => {
     expect(customPreset.settings.snowmax).toBe(77);
   });
 
+  it('migrates legacy built-ins, keeps user presets, and installs every current template', async () => {
+    const legacyWinter = {
+      id: 'legacy-winter',
+      name: 'Winter',
+      settings: {
+        snowmax: 120,
+        snowminsize: 2.1,
+        snowmaxsize: 4.5,
+        colors: ['#ffffff', '#dff4ff', '#bfe8ff', '#9bd7ff'],
+        symbols: ['❄', '❅', '❆', '✦', '⋆'],
+        symbolModes: ['text', 'text', 'text', 'text', 'text'],
+        windEnabled: true,
+        windDirection: 'random',
+        windStrength: 0.6,
+        windGustFrequency: 3.5
+      },
+      updatedAt: 1
+    };
+    const customPreset = makePreset('custom-id', 'My saved preset', { snowmax: 57 });
+    global.chrome = createChromeMock({
+      builtInPresetVersion: 1,
+      savedPresets: [legacyWinter, customPreset],
+      activePresetId: legacyWinter.id
+    });
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await flush();
+
+    const saved = global.chrome.storage.sync.set.mock.calls.findLast(
+      (call) => Array.isArray(call[0].savedPresets)
+    )[0];
+    const builtIns = saved.savedPresets.filter((preset) => preset.builtInKey);
+    const winter = builtIns.find((preset) => preset.builtInKey === 'winter');
+    const migratedCustom = saved.savedPresets.find((preset) => preset.id === customPreset.id);
+
+    expect(builtIns).toHaveLength(6);
+    expect(new Set(builtIns.map((preset) => preset.builtInKey)).size).toBe(6);
+    expect(winter.id).toBe(legacyWinter.id);
+    expect(winter.settings.snowShape).toBe('auto');
+    expect(winter.settings.snowFluffiness).toBe(0.3);
+    expect(winter.settings.windGustStrength).toBe(0.35);
+    expect(migratedCustom.settings.snowmax).toBe(57);
+    expect(saved.activePresetId).toBe(legacyWinter.id);
+    expect(saved.builtInPresetVersion).toBe(2);
+  });
+
+  it('does not rewrite user-edited built-ins or custom presets on every startup', async () => {
+    global.chrome = createChromeMock({
+      builtInPresetVersion: 2,
+      savedPresets: [
+        {
+          id: 'builtin-winter-user-id',
+          builtInKey: 'winter',
+          name: 'Зимний',
+          settings: { ...makePreset('unused', 'unused').settings, snowmax: 73 }
+        },
+        makePreset('custom-winter-id', 'Winter', { snowmax: 19 })
+      ],
+      activePresetId: 'builtin-winter-user-id'
+    });
+
+    await import('../src/popup/popup.js?t=' + Date.now());
+    document.dispatchEvent(new Event('DOMContentLoaded'));
+    await flush();
+
+    const saved = global.chrome.storage.sync.set.mock.calls.findLast(
+      (call) => Array.isArray(call[0].savedPresets)
+    )[0].savedPresets;
+    expect(saved.find((preset) => preset.builtInKey === 'winter').settings.snowmax).toBe(73);
+    expect(saved.find((preset) => preset.id === 'custom-winter-id').settings.snowmax).toBe(19);
+    expect(saved.filter((preset) => preset.builtInKey)).toHaveLength(6);
+  });
+
   it('keeps popup width separate when applying presets', async () => {
     global.chrome = createChromeMock({
       popupWidthPercent: 26,
@@ -735,7 +826,6 @@ describe('popup UI', () => {
           name: 'Preset One',
           settings: {
             snowmax: 111,
-            sinkspeed: 0.7,
             snowminsize: 2,
             snowmaxsize: 4,
             colors: ['#ffffff'],
@@ -789,7 +879,7 @@ describe('popup UI', () => {
       global.chrome = createChromeMock({
         savedPresets: [
           makePreset('preset-a', 'Alpha', { snowmax: 40 }),
-          makePreset('preset-b', 'Beta', { snowmax: 150, sinkspeed: 1.5 })
+          makePreset('preset-b', 'Beta', { snowmax: 150 })
         ],
         activePresetId: 'preset-a',
         ...overrides
@@ -902,7 +992,7 @@ describe('popup UI', () => {
 
       const saved = lastPresets();
       expect(saved.find((p) => p.id === 'preset-a').settings.snowmax).toBe(222);
-      expect(saved).toHaveLength(2);
+      expect(saved).toHaveLength(8);
       expect(document.getElementById('snowmax').value).toBe('150');
     });
 

@@ -30,13 +30,25 @@ respawning, and end only after the last particle falls past the bottom. Their
 | Command        | Params (default → range)                                                                                                                                                                 |
 |----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `ping`         | —                                                                                                                                                                                        |
-| `start`        | `config`: `snowmax` (1–320), `sinkspeed` (0.1–3), `snowminsize`/`snowmaxsize` (2–10), `colors` (≤12 `#hex`), `symbols` (≤16), `glyphMode` (`text`/`emoji`), `rendererMode` (`auto`/`3d`), `windEnabled`, `windDirection`, `windStrength` (0–3), `windGustFrequency` (0.5–10). Missing values come from saved settings. |
+| `start`        | `config`: `snowmax` (1–320), `snowminsize`/`snowmaxsize` (2–10), `snowFluffiness` (0–1), `snowShape` (`auto`/`compact`/`regular`/`lacy`), `snowShapeOverrides` (≤320 per-flake entries), `gravity` (0–20), `airDensity` (0.4–2), `colors` (≤12 `#hex`), `symbols` (≤16), `glyphMode` (`text`/`emoji`), `rendererMode` (`auto`/`3d`), `windEnabled`, `windDirection`, `windStrength` (0–3), `windGustFrequency` (0.5–10), `windGustStrength` and `turbulenceStrength` (0–1), `updraftStrength` (0–80 m/s). Missing values come from saved settings. |
 | `stop`         | — (stops the main snow and all effects)                                                                                                                                                  |
-| `burst`        | `count` 250 → 1–600, `durationMs` 6000, `speed` 1.6 → 0.1–6, `symbols`, `colors`, `entry` `instant`/`top` (default `instant`: the whole burst enters from the top as one dense wave; `top` trickles in) |
+| `burst`        | `count` 250 → 1–600, `durationMs` 6000, legacy `speed` 1.6 → 0.1–6 (ignored by snowflake physics), `symbols`, `colors`, `entry` `instant`/`top` (default `instant`: the whole burst enters from the top as one dense wave; `top` trickles in) |
 | `wind`         | `enabled` true, `direction` `left`/`right`/`random`, `strength` 1.6 → 0–3, `gustFrequency` 5 → 0.5–10, `durationMs` 8000 (`0` = until the next `wind` command)                              |
-| `glyphs`       | **`symbols`** (required, ≤16 symbols, ≤16 code points each), `glyphMode` `text`/`emoji`, `colors`, `count` 60 → 1–300, `durationMs` 10000, `speed` 0.8, `entry` `top`                       |
+| `glyphs`       | **`symbols`** (required, ≤16 symbols, ≤16 code points each), `glyphMode` `text`/`emoji`, `colors`, `count` 60 → 1–300, `durationMs` 10000, legacy `speed` (ignored by snowflake physics), `entry` `top`                       |
 | `gif`          | **`urls`** (or `url`, ≤5): `https://` with hostname filtering (no common private/loopback addresses or local names, no credentials, port 443 only), or `data:image/(gif\|png\|webp\|apng);base64`. `count` 12 → 1–60, `durationMs` 10000, `speed` 0.8, `entry` `top` |
 | `clearEffects` | — (removes all temporary layers and restores the wind)                                                                                                                                 |
+
+The legacy `sinkspeed` start field is still accepted for compatibility but is
+ignored for snowflakes. Snowflake mass and aerodynamic properties are derived
+from size, shape, and fluffiness. `snowShape` accepts `auto` (the default,
+deriving a class from fluffiness), `compact`, `regular`, or `lacy`.
+`snowShapeOverrides` is an optional array of up to 320 entries in particle spawn
+order; array positions correspond to particle indices. Each entry can be `auto`
+(derive from fluffiness), a shape class, or `null` to inherit `snowShape`.
+Automatic selection uses compact below 0.25 fluffiness, regular from 0.25 to
+below 0.65, and lacy at 0.65 or above. The corresponding drag-coefficient ranges
+are 0.7–1.0, 1.0–1.4, and 1.4–2.0.
+The `speed` parameter for GIF layers remains available.
 
 ### Controls added in 3.1.1
 
@@ -45,12 +57,17 @@ respawning, and end only after the last particle falls past the bottom. Their
   Self-collisions are disabled for coordinate bursts so coincident particles can expand naturally; wind/pointer interaction remains.
   `symbols` chooses the particles; `glyphMode: "emoji"` preserves emoji rendering.
 - `status`: returns `{ok, running, paused, main, effects}`. `main` is `null` or
-  `{paused, particles, settled, accumulationEnabled}`; `effects` contains these fields plus each layer's `id`.
+  `{paused, particles, settled, accumulationEnabled, physics}`; `physics` is a
+  sample flake's resolved shape, fluffiness, calculated mass, area, perimeter, compactness, drag coefficient,
+  gravity, air density, wind vector/speed, vertical and terminal velocity, and
+  relative velocity (or `null` before the first simulation step). `effects`
+  contains these fields plus each layer's `id`.
 - `pause` / `resume`: control the main snow and all effects, including newly created layers.
   Explicit pause is not cleared by switching tabs; resume waits while the page is hidden.
 - `update`: `{config: {...}}` changes the **main layer** without restarting or resetting particles.
-  Allowed fields: `sinkspeed` (0.1–3), `mouseRadius` (0–300), `accumulationEnabled` (boolean),
-  `windEnabled`, `windDirection`, `windStrength`, `windGustFrequency` (same ranges as `start`).
+  Allowed fields: `snowFluffiness`, `snowShape`, `snowShapeOverrides`, `gravity`, `airDensity`, `mouseRadius` (0–300),
+  `accumulationEnabled` (boolean), `windEnabled`, `windDirection`, `windStrength`,
+  `windGustFrequency`, `windGustStrength`, `turbulenceStrength`, `updraftStrength` (same ranges as `start`).
   Empty/unsupported-only updates return `live_config_required`; no main snow returns `not_running`.
   An active `wind` override takes precedence until it expires or is cleared.
   Visual/count changes still use `start`. Updates are session-only, not saved popup settings.
@@ -59,8 +76,9 @@ respawning, and end only after the last particle falls past the bottom. Their
 
 ```json
 {"command":"burst","params":{"x":400,"y":250,"count":80,"symbols":["🎉","⭐"],"glyphMode":"emoji"}}
-{"command":"update","params":{"config":{"sinkspeed":1.2,"accumulationEnabled":false}}}
+{"command":"update","params":{"config":{"gravity":8.5,"accumulationEnabled":false}}}
 {"command":"status"}
+{"command":"start","params":{"config":{"snowShape":"auto","snowFluffiness":0.8,"snowShapeOverrides":["compact",null,"lacy"]}}}
 ```
 
 Accumulation is enabled by default. The shared DOM analysis checks up to 2,000 elements

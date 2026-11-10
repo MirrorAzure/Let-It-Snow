@@ -188,6 +188,15 @@ export function sanitizeStartConfig(raw) {
   const config = {};
   if (raw.snowmax !== undefined) config.snowmax = clampInt(raw.snowmax, 1, 320, 80);
   if (raw.sinkspeed !== undefined) config.sinkspeed = clampNumber(raw.sinkspeed, 0.1, 3, 0.4);
+  if (raw.snowFluffiness !== undefined) config.snowFluffiness = clampNumber(raw.snowFluffiness, 0, 1, 0.3);
+  if (['auto', 'compact', 'regular', 'lacy'].includes(raw.snowShape)) config.snowShape = raw.snowShape;
+  if (Array.isArray(raw.snowShapeOverrides)) {
+    config.snowShapeOverrides = raw.snowShapeOverrides.slice(0, 320).map((shape) =>
+      ['auto', 'compact', 'regular', 'lacy'].includes(shape) ? shape : null
+    );
+  }
+  if (raw.gravity !== undefined) config.gravity = clampNumber(raw.gravity, 0, 20, 9.81);
+  if (raw.airDensity !== undefined) config.airDensity = clampNumber(raw.airDensity, 0.4, 2, 1.2);
   if (raw.snowminsize !== undefined) config.snowminsize = clampNumber(raw.snowminsize, 2, 10, 2);
   if (raw.snowmaxsize !== undefined) config.snowmaxsize = clampNumber(raw.snowmaxsize, 2.1, 10, 4);
   const colors = sanitizeColors(raw.colors ?? raw.snowcolor);
@@ -218,6 +227,9 @@ export function sanitizeStartConfig(raw) {
   if (raw.windGustFrequency !== undefined) {
     config.windGustFrequency = clampNumber(raw.windGustFrequency, 0.5, 10, 3);
   }
+  if (raw.windGustStrength !== undefined) config.windGustStrength = clampNumber(raw.windGustStrength, 0, 1, 0.35);
+  if (raw.turbulenceStrength !== undefined) config.turbulenceStrength = clampNumber(raw.turbulenceStrength, 0, 1, 0.2);
+  if (raw.updraftStrength !== undefined) config.updraftStrength = clampNumber(raw.updraftStrength, 0, 80, 0);
   return config;
 }
 
@@ -230,8 +242,10 @@ const PARAM_SANITIZERS = {
   update: (raw) => {
     const config = sanitizeStartConfig(raw.config);
     const liveKeys = new Set([
-      'sinkspeed', 'mouseRadius', 'accumulationEnabled',
-      'windEnabled', 'windDirection', 'windStrength', 'windGustFrequency'
+      'snowFluffiness', 'snowShape', 'snowShapeOverrides', 'gravity', 'airDensity',
+      'mouseRadius', 'accumulationEnabled',
+      'windEnabled', 'windDirection', 'windStrength', 'windGustFrequency',
+      'windGustStrength', 'turbulenceStrength', 'updraftStrength'
     ]);
     for (const key of Object.keys(config)) {
       if (!liveKeys.has(key)) delete config[key];

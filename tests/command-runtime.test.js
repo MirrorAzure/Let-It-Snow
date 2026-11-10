@@ -110,8 +110,8 @@ describe('SnowCommandRuntime', () => {
   });
 
   it('updates live settings and reports status without restarting the main controller', async () => {
-    await runtime.execute(cmd({ command: 'update', params: { config: { sinkspeed: 1, accumulationEnabled: false } } }));
-    expect(main.updateConfig).toHaveBeenCalledWith({ sinkspeed: 1, accumulationEnabled: false });
+    await runtime.execute(cmd({ command: 'update', params: { config: { gravity: 8.5, accumulationEnabled: false } } }));
+    expect(main.updateConfig).toHaveBeenCalledWith({ gravity: 8.5, accumulationEnabled: false });
     expect(runtime.startMain).not.toHaveBeenCalled();
     expect(await runtime.execute(cmd({ command: 'status' }))).toMatchObject({
       ok: true, running: true, main: { settled: 2 }, effects: []
@@ -119,7 +119,7 @@ describe('SnowCommandRuntime', () => {
     await runtime.execute(cmd({ command: 'clearAccumulation' }));
     expect(main.clearAccumulation).toHaveBeenCalledOnce();
     main = null;
-    expect(await runtime.execute(cmd({ command: 'update', params: { config: { sinkspeed: 1 } } })))
+    expect(await runtime.execute(cmd({ command: 'update', params: { config: { gravity: 8.5 } } })))
       .toEqual({ ok: false, error: 'not_running' });
   });
 

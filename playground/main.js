@@ -11,6 +11,24 @@ if (import.meta.hot) {
   });
 }
 
+function parseSnowShapeOverrides(text) {
+  const raw = text.trim();
+  if (!raw) return [];
+  let overrides;
+  try {
+    overrides = JSON.parse(raw);
+  } catch {
+    throw new Error('Per-flake shape overrides must be valid JSON.');
+  }
+  if (!Array.isArray(overrides) || overrides.length > 320) {
+    throw new Error('Per-flake shape overrides must be an array of at most 320 entries.');
+  }
+  if (overrides.some((shape) => shape !== null && !['auto', 'compact', 'regular', 'lacy'].includes(shape))) {
+    throw new Error('Each override must be null, "auto", "compact", "regular", or "lacy".');
+  }
+  return overrides;
+}
+
 const els = {
   start: document.getElementById('start-btn'),
   stop: document.getElementById('stop-btn'),
@@ -19,9 +37,13 @@ const els = {
   reset: document.getElementById('reset-btn'),
   debug: document.getElementById('debug-btn'),
   snowmax: document.getElementById('snowmax'),
-  sinkspeed: document.getElementById('sinkspeed'),
   snowminsize: document.getElementById('snowminsize'),
   snowmaxsize: document.getElementById('snowmaxsize'),
+  snowFluffiness: document.getElementById('snowFluffiness'),
+  snowShape: document.getElementById('snowShape'),
+  snowShapeOverrides: document.getElementById('snowShapeOverrides'),
+  gravity: document.getElementById('gravity'),
+  airDensity: document.getElementById('airDensity'),
   gifs: document.getElementById('gifs'),
   gifCount: document.getElementById('gifCount'),
   mouseRadius: document.getElementById('mouseRadius'),
@@ -43,6 +65,9 @@ const els = {
   windRandom: document.getElementById('wind-random'),
   windStrength: document.getElementById('windStrength'),
   windGustFrequency: document.getElementById('windGustFrequency'),
+  windGustStrength: document.getElementById('windGustStrength'),
+  turbulenceStrength: document.getElementById('turbulenceStrength'),
+  updraftStrength: document.getElementById('updraftStrength'),
   rendererAuto: document.getElementById('renderer-auto'),
   rendererWebgpu: document.getElementById('renderer-webgpu'),
   renderer2d: document.getElementById('renderer-2d'),
@@ -61,9 +86,13 @@ const els = {
 
 const defaults = {
   snowmax: 120,
-  sinkspeed: 1.0,
   snowminsize: 2.0,
   snowmaxsize: 4.0,
+  snowFluffiness: 0.3,
+  snowShape: 'auto',
+  snowShapeOverrides: [],
+  gravity: 9.81,
+  airDensity: 1.2,
   colors: ['#ffffff', '#b7e0ff', '#7dd3fc'],
   symbols: ['❄', '✺', '✴'],
   sentences: [],
@@ -76,6 +105,9 @@ const defaults = {
   windDirection: 'left',
   windStrength: 0.5,
   windGustFrequency: 3,
+  windGustStrength: 0.35,
+  turbulenceStrength: 0.2,
+  updraftStrength: 0,
   rendererMode: 'auto',
   minGlowStrength: 0.42,
   snow3dThickness: 0.07
@@ -99,6 +131,10 @@ const SIZE_PERCENT_STEP = Number(els.snowminsize.step) || 0.1;
 const GLYPH_VISUAL_SCALE = 0.84;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const readNumber = (input, fallback) => {
+  const value = Number(input.value);
+  return Number.isFinite(value) ? value : fallback;
+};
 const getViewportBaseSize = () => {
   const width = Number(window?.innerWidth) || 1920;
   const height = Number(window?.innerHeight) || 1080;
@@ -186,7 +222,7 @@ function updateSizePreview() {
 
 function setStatus(mode, text) {
   els.status.textContent = text;
-  els.status.classList.remove('status-wait', 'status-ready', 'status-missing');
+  els.status.classList.remove('status-wait', 'status-ready', 'status-missing', 'status-error');
   els.status.classList.add(`status-${mode}`);
 }
 
@@ -294,9 +330,13 @@ function getConfigFromForm() {
 
   return {
     snowmax: Math.max(1, Math.min(400, Number(els.snowmax.value) || defaults.snowmax)),
-    sinkspeed: Math.max(0.05, Math.min(2, Number(els.sinkspeed.value) || defaults.sinkspeed)),
     snowminsize: minSize,
     snowmaxsize: maxSize,
+    snowFluffiness: clamp(readNumber(els.snowFluffiness, defaults.snowFluffiness), 0, 1),
+    snowShape: els.snowShape.value,
+    snowShapeOverrides: parseSnowShapeOverrides(els.snowShapeOverrides.value),
+    gravity: clamp(readNumber(els.gravity, defaults.gravity), 0, 20),
+    airDensity: clamp(readNumber(els.airDensity, defaults.airDensity), 0.4, 2),
     snowcolor: state.colors.slice(0, 12),
     snowletters: state.symbols.slice(0, 12),
     snowsentences: state.sentences.slice(0, 12),
@@ -308,8 +348,11 @@ function getConfigFromForm() {
     playgroundDebugMode: state.debugCollisions,
     windEnabled: state.windEnabled,
     windDirection: state.windDirection,
-    windStrength: Math.max(0, Number(els.windStrength.value) || defaults.windStrength),
-    windGustFrequency: Math.max(0.5, Number(els.windGustFrequency.value) || defaults.windGustFrequency),
+    windStrength: clamp(readNumber(els.windStrength, defaults.windStrength), 0, 5),
+    windGustFrequency: clamp(readNumber(els.windGustFrequency, defaults.windGustFrequency), 0.5, 10),
+    windGustStrength: clamp(readNumber(els.windGustStrength, defaults.windGustStrength), 0, 1),
+    turbulenceStrength: clamp(readNumber(els.turbulenceStrength, defaults.turbulenceStrength), 0, 1),
+    updraftStrength: clamp(readNumber(els.updraftStrength, defaults.updraftStrength), 0, 80),
     rendererMode: state.rendererMode,
     minGlowStrength: Number(els.minGlowStrength.value),
     snow3dThickness: Number(els.snow3dThickness.value)
@@ -341,9 +384,13 @@ function setTheme(theme) {
 
 function resetForm() {
   els.snowmax.value = defaults.snowmax;
-  els.sinkspeed.value = defaults.sinkspeed;
   els.snowminsize.value = defaults.snowminsize;
   els.snowmaxsize.value = defaults.snowmaxsize;
+  els.snowFluffiness.value = defaults.snowFluffiness;
+  els.snowShape.value = defaults.snowShape;
+  els.snowShapeOverrides.value = JSON.stringify(defaults.snowShapeOverrides);
+  els.gravity.value = defaults.gravity;
+  els.airDensity.value = defaults.airDensity;
   els.gifCount.value = defaults.gifCount;
   els.mouseRadius.value = defaults.mouseRadius;
   els.sentenceCount.value = defaults.sentenceCount;
@@ -351,6 +398,9 @@ function resetForm() {
   els.windEnabled.checked = defaults.windEnabled;
   els.windStrength.value = defaults.windStrength;
   els.windGustFrequency.value = defaults.windGustFrequency;
+  els.windGustStrength.value = defaults.windGustStrength;
+  els.turbulenceStrength.value = defaults.turbulenceStrength;
+  els.updraftStrength.value = defaults.updraftStrength;
   els.minGlowStrength.value = defaults.minGlowStrength;
   els.minGlowStrengthValue.value = defaults.minGlowStrength.toFixed(2);
   els.snow3dThickness.value = defaults.snow3dThickness;
@@ -392,7 +442,12 @@ function updateRendererButtons() {
 }
 
 els.start.addEventListener('click', async () => {
-  await startSnow(getConfigFromForm());
+  try {
+    await startSnow(getConfigFromForm());
+  } catch (error) {
+    console.error('Unable to start playground snow:', error);
+    setStatus('error', error.message);
+  }
 });
 
 els.stop.addEventListener('click', () => {

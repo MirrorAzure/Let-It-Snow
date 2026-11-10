@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
 import { stepWindState } from './physics/wind-field.js';
+import { applyAirBurstImpulse, getWindVelocity, stepSnowflakePhysics } from './physics/snow-physics.js';
 import { BackgroundMonitor, getEffectiveBackgroundColor } from './utils/background-monitor.js';
 import { resolveMinGlowStrength } from './utils/glow-utils.js';
 import { ThreeDGlowPass } from './graphics/three-d-glow-pass.js';
@@ -337,11 +338,14 @@ export class ThreeDSnowRenderer {
     this.mouseY = -1000;
     this.mouseVelocityX = 0;
     this.mouseVelocityY = 0;
+    this.mouseLeftPressed = false;
+    this.mouseRightPressed = false;
     this.mouseRadius = config.mouseRadius ?? 100;
     this.mouseForce = config.mouseForce ?? 300;
     this.mouseDragThreshold = config.mouseDragThreshold ?? 500;
     this.mouseDragStrength = config.mouseDragStrength ?? 0.8;
     this.mouseBurstDuration = 0.2;
+    this.mouseBurstRadiusMultiplier = 3.5;
     this.mouseBurstTimer = 0;
     this.mouseBurstMode = null;
     this.windEnabled = config.windEnabled ?? false;
@@ -422,7 +426,6 @@ export class ThreeDSnowRenderer {
       });
       const groups = new Map();
       const thickness = this.config.snow3dThickness ?? 0.07;
-      const sinkSpeed = Number(this.config.sinkspeed) || 0.4;
       const viewportWidth = Math.max(1, window.innerWidth);
       const viewportHeight = Math.max(1, window.innerHeight);
       const initialOffsetSeconds = Math.max(0, Number(this.config.initialTimeOffsetSeconds) || 0);
@@ -436,14 +439,18 @@ export class ThreeDSnowRenderer {
           : minPx + Math.random() * Math.max(0, maxPx - minPx);
         const depth = MIN_DEPTH + Math.random() * (MAX_DEPTH - MIN_DEPTH);
         const color = new THREE.Color(appearance.color);
-        const fallSpeed = sinkSpeed * size;
+        const fallSpeed = Number.isFinite(this.config.gravity)
+          ? 0
+          : (Number.isFinite(this.config.sinkspeed) ? this.config.sinkspeed : 0.4) * size;
         const flake = {
+          _snowflakeIndex: index,
           x: Math.random() * viewportWidth,
           y: resolveInitialFlakeY(size, viewportHeight, fallSpeed, initialOffsetSeconds, spawnSpanRatio),
           z: depth,
           size,
           collisionSize: size,
-          fallSpeed,
+          fallSpeed: 0,
+          verticalVelocity: 0,
           velocityX: (Math.random() - 0.5) * 5,
           velocityY: 0,
           velocityZ: (Math.random() - 0.5) * 0.08,
@@ -754,17 +761,39 @@ export class ThreeDSnowRenderer {
   onMouseDown(x, y, button) {
     this.mouseX = x;
     this.mouseY = y;
+    this.mouseVelocityX = 0;
+    this.mouseVelocityY = 0;
+    if (button === 0) {
+      this.mouseLeftPressed = true;
+      this.mouseBurstMode = 'blower';
+    } else if (button === 2) {
+      this.mouseRightPressed = true;
+      this.mouseBurstMode = 'suction';
+    }
     if (button === 0 || button === 2) {
-      this.environment?.dislodgeAt(x, y, this.mouseRadius * 3.5);
-      this.mouseBurstMode = button === 0 ? 'explode' : 'suction';
-      this.mouseBurstTimer = this.mouseBurstDuration;
+      const radius = this.mouseRadius * this.mouseBurstRadiusMultiplier;
+      const strength = this.mouseForce * 10;
+      this.environment?.applyAirBurst(x, y, radius, this.mouseBurstMode, strength, this.mouseBurstDuration);
+      for (const flake of this.flakes) {
+        if (flake.isFinished || flake.isAwaitingRespawn || flake.isSettled) continue;
+        applyAirBurstImpulse(flake, x, y, radius, this.mouseBurstMode, strength, this.mouseBurstDuration);
+      }
     }
   }
 
-  onMouseUp() {}
+  onMouseUp(button) {
+    if (button === 0) this.mouseLeftPressed = false;
+    if (button === 2) this.mouseRightPressed = false;
+    if (!this.mouseLeftPressed && !this.mouseRightPressed) {
+      this.mouseBurstTimer = 0;
+      this.mouseBurstMode = null;
+    }
+  }
 
   onMouseLeave() {
     if (this.environment) this.environment.pointer = null;
+    this.mouseLeftPressed = false;
+    this.mouseRightPressed = false;
     this.mouseX = -1000;
     this.mouseY = -1000;
     this.mouseVelocityX = 0;
@@ -779,15 +808,23 @@ export class ThreeDSnowRenderer {
     const distance = Math.hypot(dx, dy);
     const mouseSpeed = Math.hypot(this.mouseVelocityX, this.mouseVelocityY);
     const burst = this.mouseBurstTimer > 0;
-    const radius = this.mouseRadius * (burst ? 3.5 : 1);
+    const radius = this.mouseRadius * (burst ? this.mouseBurstRadiusMultiplier : 1);
     if (distance >= radius || (!burst && mouseSpeed < 1)) return;
 
-    const influence = (1 - distance / radius) * (burst ? this.mouseBurstTimer / this.mouseBurstDuration : 1);
+    const burstFactor = burst ? this.mouseBurstTimer / this.mouseBurstDuration : 1;
+    const influence = (1 - distance / radius) * burstFactor;
     const direction = this.mouseBurstMode === 'suction' ? -1 : 1;
     if (burst) {
-      const divisor = Math.max(distance, 0.001);
-      flake.velocityX += (dx / divisor) * direction * this.mouseForce * 10 * influence * delta;
-      flake.velocityY += (dy / divisor) * direction * this.mouseForce * 10 * influence * delta;
+      if (this.mouseBurstMode === 'blower') {
+        const divisor = Math.max(distance, 0.001);
+        const acceleration = this.mouseForce * 10 * influence * delta;
+        flake.velocityX += (dx / divisor) * acceleration;
+        flake.velocityY += (dy / divisor - 4) * acceleration;
+      } else {
+        const divisor = Math.max(distance, 0.001);
+        flake.velocityX += (dx / divisor) * direction * this.mouseForce * 10 * influence * delta;
+        flake.velocityY += (dy / divisor) * direction * this.mouseForce * 10 * influence * delta;
+      }
       flake.velocityZ += direction * (flake.z / CAMERA_Z) * this.mouseForce * 0.004 * influence * delta;
     } else if (mouseSpeed > this.mouseDragThreshold) {
       const drag = influence * this.mouseDragStrength * Math.min(mouseSpeed, 1600) * delta;
@@ -810,6 +847,7 @@ export class ThreeDSnowRenderer {
       windStrength: this.windStrength,
       windGustFrequency: this.windGustFrequency,
       windVortexStrength: 0.35,
+      windResponseSeconds: 0.325,
       ...this.windState
     });
     this.windTime = state.windTime;
@@ -929,20 +967,25 @@ export class ThreeDSnowRenderer {
   }
 
   _updateInstances(delta) {
-    this.environment?.beginFrame(delta, this.flakes, this.viewportWidth, this.viewportHeight, this);
     this._stepWind(delta);
+    this.environment?.beginFrame(delta, this.flakes, this.viewportWidth, this.viewportHeight, this);
     this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - delta);
     if (!this.mouseBurstTimer) this.mouseBurstMode = null;
     const windPhase = this.windTime;
+    const physicsWind = {
+      ...getWindVelocity(this.config, this.currentWindForce, this.currentWindLift, this.windEnabled),
+      time: windPhase,
+      enabled: this.windEnabled
+    };
 
     this.flakes.forEach((flake) => {
       if (flake.isFinished || flake.isSettled) return;
       this._applyMouseForce(flake, delta);
-      const sizeRatio = Math.sqrt(flake.size / 20);
-      flake.velocityX += this.currentWindForce * sizeRatio * 35 * delta;
-      flake.velocityY += -this.currentWindLift * sizeRatio * 48 * delta;
+      if (Number.isFinite(this.config.gravity)) {
+        stepSnowflakePhysics(flake, delta, this.config, physicsWind);
+      }
       flake.velocityZ += Math.sin(windPhase * 0.7 + flake.y * 0.008 + flake.x * 0.003)
-        * this.currentWindVortex * sizeRatio * 12 * delta;
+        * this.currentWindVortex * Math.sqrt(flake.size / 20) * 12 * delta;
       flake.velocityX += Math.sin(windPhase * 0.43 + flake.z) * 1.8 * delta;
       flake.velocityZ += Math.cos(windPhase * 0.31 + flake.x * 0.01) * 0.18 * delta;
 
@@ -975,6 +1018,9 @@ export class ThreeDSnowRenderer {
         flake.z = MIN_DEPTH + Math.random() * (MAX_DEPTH - MIN_DEPTH);
         flake.velocityX = 0;
         flake.velocityY = 0;
+        flake.fallSpeed = 0;
+        flake.verticalVelocity = 0;
+        flake._physicsInitialized = false;
         this.environment?.resetMotion(flake);
       }
     });

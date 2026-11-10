@@ -25,7 +25,10 @@ export async function loadSettings(keys) {
  */
 export const DEFAULT_SETTINGS = {
   snowmax: 80,
-  sinkspeed: 0.4,
+  snowFluffiness: 0.3,
+  snowShape: 'auto',
+  gravity: 9.81,
+  airDensity: 1.2,
   snowminsize: 2.0,
   snowmaxsize: 4.0,
   colors: ['#ffffff', '#4fc3f7', '#bbdefb', '#e1f5fe'],
@@ -43,6 +46,9 @@ export const DEFAULT_SETTINGS = {
   mouseRadius: 100,
   windEnabled: false,
   windDirection: 'left', // 'left', 'right', 'random'
-  windStrength: 0.5, // 0-1
-  windGustFrequency: 3 // Частота порывов в секундах
+  windStrength: 0.5, // 0.1-3
+  windGustFrequency: 3,
+  windGustStrength: 0.35,
+  turbulenceStrength: 0.2,
+  updraftStrength: 0
 };
