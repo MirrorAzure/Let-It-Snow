@@ -18,9 +18,13 @@ describe('3D glow pass', () => {
   it('bounds the glow buffers while keeping their aspect ratio', () => {
     expect(resolveGlowTargetSize(1000, 600)).toEqual({ width: 500, height: 300 });
     expect(resolveGlowTargetSize(3840, 2160)).toEqual({ width: 1024, height: 576 });
+    expect(resolveGlowTargetSize(1000, 600, 0.7)).toEqual({ width: 350, height: 210 });
+    expect(resolveGlowTargetSize(3840, 2160, 0.5)).toEqual({ width: 512, height: 288 });
     expect(resolveGlowTargetSize(0, 0)).toEqual({ width: 1, height: 1 });
     expect(() => resolveGlowTargetSize(NaN, 600)).toThrow(RangeError);
     expect(() => resolveGlowTargetSize(1000, -1)).toThrow(RangeError);
+    expect(() => resolveGlowTargetSize(1000, 600, 0)).toThrow(RangeError);
+    expect(() => resolveGlowTargetSize(1000, 600, 2)).toThrow(RangeError);
   });
 
   it('uses the exact glyph geometry and instance transforms, including edge-on rotations', () => {

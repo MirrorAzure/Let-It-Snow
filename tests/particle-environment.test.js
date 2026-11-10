@@ -281,6 +281,73 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     expect(incoming.x).toBeLessThan(right.x);
   });
 
+  it.each([
+    [40, 40, 8, 44],
+    [8, 40, 12, 30],
+    [40, 8, 12, 30],
+    [20, 20, 20, 40],
+    [20, 20, 20, 43],
+    [40, 40, 4, 44]
+  ])('settles a %s/%s support pocket with a size %s flake and spacing %s', (leftSize, rightSize, size, spacing) => {
+    for (const hz of [30, 60, 120]) {
+      const environment = create();
+      const left = land(environment, [makeFlake({ x: 110, size: leftSize })]);
+      const right = land(environment, [makeFlake({ x: 110 + spacing, size: rightSize })]);
+      expect(left.isSettled).toBe(true);
+      expect(right.isSettled).toBe(true);
+      const incoming = makeFlake({ x: 110 + spacing / 2, y: 120, size });
+      for (let frame = 0; frame < hz * 8 && !incoming.isSettled && !incoming.hasShed; frame++) {
+        environment.beginFrame(1 / hz, [left, right, incoming], 800, 600);
+        if (!incoming.isSettled) {
+          incoming.x += incoming.velocityX / hz;
+          incoming.y += (incoming.fallSpeed + incoming.velocityY) / hz;
+          incoming.velocityX *= Math.pow(0.98, 60 / hz);
+          incoming.velocityY *= Math.pow(0.98, 60 / hz);
+        }
+        environment.finishFrame();
+      }
+      expect(incoming.isSettled, JSON.stringify({
+        hz, x: incoming.x, y: incoming.y, vx: incoming.velocityX, vy: incoming.velocityY,
+        contacts: environment.restingContacts.get(incoming)
+      })).toBe(true);
+      for (const support of [left, right]) {
+        expect(Math.hypot(incoming.x - support.x, incoming.y - support.y))
+          .toBeGreaterThanOrEqual((incoming.size + support.size) / 2 + 2 - 0.05);
+      }
+      environment.destroy();
+    }
+  });
+
+  it.each([30, 60, 120])('settles asymmetric pockets under continued snowfall at %s FPS', (hz) => {
+    for (const finiteParticles of [false, true]) {
+      for (const fallSpeed of [30, 80]) {
+        for (const spacing of [23, 35, 40, 43]) {
+          for (const offset of [-3, 0, 3]) {
+            const environment = create({ finiteParticles });
+            const left = land(environment, [makeFlake({ x: 110, size: 20.13 })]);
+            const right = land(environment, [makeFlake({ x: 110 + spacing, size: 20.23 })]);
+            const incoming = makeFlake({ x: 110 + spacing / 2 + offset, y: 145, size: 20.17, fallSpeed });
+            for (let frame = 0; frame < hz * 6 && !incoming.isSettled && !incoming.hasShed; frame++) {
+              environment.beginFrame(1 / hz, [left, right, incoming], 800, 600);
+              if (!incoming.isSettled) {
+                incoming.x += incoming.velocityX / hz;
+                incoming.y += (incoming.fallSpeed + incoming.velocityY) / hz;
+                incoming.velocityX *= Math.pow(0.98, 60 / hz);
+                incoming.velocityY *= Math.pow(0.98, 60 / hz);
+              }
+              environment.finishFrame();
+            }
+            expect(incoming.isSettled, JSON.stringify({
+              hz, finiteParticles, fallSpeed, spacing, offset,
+              x: incoming.x, y: incoming.y, contacts: environment.restingContacts.get(incoming)
+            })).toBe(true);
+            environment.destroy();
+          }
+        }
+      }
+    }
+  });
+
   it('preserves the contact height when immediately settling at an angle', () => {
     rect = { ...rect, left: 80, right: 144, width: 64 };
     const environment = create();
@@ -294,6 +361,67 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     expect(incoming.isSettled).toBe(true);
     expect(incoming.x).toBe(103);
     expect(incoming.y).toBeCloseTo(height, 6);
+  });
+
+  it.each([
+    { size: 49 },
+    { char: '*', glyph: '*' },
+    { isSentence: true }
+  ])('releases particles that cannot accumulate when trapped between supports: %j', (overrides) => {
+    const environment = create();
+    const left = land(environment, [makeFlake({ x: 110 })]);
+    const right = land(environment, [makeFlake({ x: 133 })]);
+    const incoming = makeFlake({ x: 121.5, y: 120, ...overrides });
+    for (let frame = 0; frame < 360; frame++) {
+      environment.beginFrame(1 / 60, [left, right, incoming], 800, 600);
+      incoming.x += incoming.velocityX / 60;
+      incoming.y += (incoming.fallSpeed + incoming.velocityY) / 60;
+      incoming.velocityX *= 0.98;
+      incoming.velocityY *= 0.98;
+      environment.finishFrame();
+    }
+    expect(incoming.isSettled).not.toBe(true);
+    expect(incoming.hasShed).toBe(true);
+    expect(incoming.y).toBeGreaterThan(250);
+    expect(left.isSettled).toBe(true);
+    expect(right.isSettled).toBe(true);
+  });
+
+  it.each([30, 60, 120])('releases a pile contact outside the visible top at %s FPS', (hz) => {
+    rect = { ...rect, top: 28 };
+    const environment = create();
+    const surface = { element: figure, ...rect };
+    const left = makeFlake({ x: 110, y: 16 });
+    const right = makeFlake({ x: 133, y: 16 });
+    environment.settle(left, surface, 16);
+    environment.settle(right, surface, 16);
+    const incoming = makeFlake({ x: 121.5, y: -30 });
+    for (let frame = 0; frame < hz * 4; frame++) {
+      environment.beginFrame(1 / hz, [left, right, incoming], 800, 600);
+      incoming.x += incoming.velocityX / hz;
+      incoming.y += (incoming.fallSpeed + incoming.velocityY) / hz;
+      incoming.velocityX *= Math.pow(0.98, 60 / hz);
+      incoming.velocityY *= Math.pow(0.98, 60 / hz);
+      environment.finishFrame();
+      if (environment.contactsChanged && incoming.y - incoming.size / 2 < 0) {
+        expect(incoming.hasShed).toBe(true);
+      }
+    }
+    expect(incoming.isSettled).not.toBe(true);
+    expect(incoming.hasShed).toBe(true);
+    expect(incoming.y).toBeGreaterThan(100);
+  });
+
+  it('sheds an upper row moved above the viewport by a layout change', () => {
+    const environment = create();
+    const support = land(environment);
+    const upper = makeFlake({ y: 166 });
+    expect(environment.settle(upper, environment.settled.get(support), 166, support)).toBe(true);
+    rect = { ...rect, top: 28 };
+    environment.beginFrame(1 / 60, [support, upper], 800, 600);
+    expect(support.isSettled).toBe(true);
+    expect(upper.isSettled).toBe(false);
+    expect(upper.hasShed).toBe(true);
   });
 
   it.each([30, 60, 120])('recognizes a two-support pocket despite alternating contacts at %s FPS', (hz) => {
@@ -323,14 +451,15 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     expect(incoming.isSettled).toBe(false);
   });
 
-  it.each([Fallback2DRenderer, WebGPURenderer, ThreeDSnowRenderer])(
-    'makes a falling fractional-sized flake part of the pile between neighbours in %s',
-    (Renderer) => {
+  it.each([Fallback2DRenderer, WebGPURenderer, ThreeDSnowRenderer].flatMap((Renderer) =>
+    [23, 43].map((spacing) => [Renderer, spacing])))(
+    'makes a falling fractional-sized flake part of the pile between neighbours in %s with spacing %s',
+    (Renderer, spacing) => {
       for (const hz of [30, 60, 120]) {
         const environment = create();
         const left = land(environment, [makeFlake({ x: 110, size: 20.13 })]);
-        const right = land(environment, [makeFlake({ x: 133, size: 20.23 })]);
-        const incoming = makeFlake({ x: 121.5, y: 145, size: 20.17 });
+        const right = land(environment, [makeFlake({ x: 110 + spacing, size: 20.23 })]);
+        const incoming = makeFlake({ x: 110 + spacing / 2, y: 145, size: 20.17 });
         const particles = [left, right, incoming];
         const renderer = new Renderer(document.createElement('canvas'), {
           windEnabled: false, enableCollisions: true, mouseRadius: 0
@@ -367,11 +496,69 @@ describe('DOM accumulation and finite particle lifecycle', () => {
         for (const other of [left, right]) {
           const gap = Math.hypot(incoming.x - other.x, incoming.y - other.y)
             - (incoming.size + other.size) / 2 - 2;
+          expect(gap).toBeGreaterThanOrEqual(-0.05);
           if (gap <= 1) expect(supports).toContain(other);
         }
         expect(incoming.swayLimit).toBe(0);
         if (renderer instanceof Fallback2DRenderer) renderer.stop();
         environment.destroy();
+      }
+    }
+  );
+
+  it.each([Fallback2DRenderer, WebGPURenderer, ThreeDSnowRenderer])(
+    'does not trap rejected or offscreen pile contacts in %s',
+    (Renderer) => {
+      for (const hz of [30, 60, 120]) {
+        for (const scenario of ['oversized', 'text', 'top']) {
+          rect = { ...rect, top: scenario === 'top' ? 28 : 200 };
+          const environment = create({ finiteParticles: true });
+          const surface = { element: figure, ...rect };
+          const left = makeFlake({ x: 110, y: rect.top - 12 });
+          const right = makeFlake({ x: 133, y: rect.top - 12 });
+          environment.settle(left, surface, left.y);
+          environment.settle(right, surface, right.y);
+          const incoming = makeFlake({
+            x: 121.5, y: rect.top - 80,
+            ...(scenario === 'oversized' ? { size: 49 } : {}),
+            ...(scenario === 'text' ? { char: '*', glyph: '*' } : {})
+          });
+          const particles = [left, right, incoming];
+          const renderer = new Renderer(document.createElement('canvas'), {
+            windEnabled: false, enableCollisions: true, mouseRadius: 0
+          });
+          renderer.environment = environment;
+          renderer.viewportWidth = 800;
+          renderer.viewportHeight = 600;
+          if (renderer instanceof WebGPURenderer) {
+            renderer.instances = particles;
+            renderer.instanceData = new Float32Array(42);
+          } else renderer.flakes = particles;
+          if (renderer instanceof Fallback2DRenderer) {
+            renderer.ctx = {
+              clearRect: vi.fn(), resetTransform: vi.fn(), setTransform: vi.fn(), fillText: vi.fn(),
+              save: vi.fn(), restore: vi.fn(),
+              measureText: vi.fn(() => ({ actualBoundingBoxLeft: 0, actualBoundingBoxRight: 20 }))
+            };
+            renderer.start();
+          }
+          let now = performance.now();
+          for (let frame = 0; frame < hz * 4; frame++) {
+            if (renderer instanceof WebGPURenderer) renderer.updateSimulation(1 / hz);
+            else if (renderer instanceof ThreeDSnowRenderer) renderer._updateInstances(1 / hz);
+            else {
+              now += 1000 / hz;
+              renderer.drawCallback(now);
+            }
+          }
+          expect(incoming.isSettled, scenario).not.toBe(true);
+          expect(incoming.hasShed, scenario).toBe(true);
+          expect(incoming.y, scenario).toBeGreaterThan(rect.top + 40);
+          expect(left.isSettled).toBe(true);
+          expect(right.isSettled).toBe(true);
+          if (renderer instanceof Fallback2DRenderer) renderer.stop();
+          environment.destroy();
+        }
       }
     }
   );
@@ -728,7 +915,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     const support = land(environment);
     const placement = environment.settled.get(support);
     for (let index = 0; index < 31; index++) {
-      environment.surfaces.placements.set(makeFlake({ x: 300 + index * 23 }), placement);
+      environment.surfaces.placements.set(makeFlake({ x: 60 + index * 22 }), placement);
     }
     const incoming = makeFlake({ y: support.y - 22, fallSpeed: 0 });
     for (let frame = 0; frame < 60 && !incoming.hasShed; frame++) {
@@ -1006,12 +1193,24 @@ describe('DOM accumulation and finite particle lifecycle', () => {
         parent.appendChild(figure);
       }
 
-      environment.beginFrame(0.8, [flake], 800, 600);
+      environment.beginFrame(0.01, [flake], 800, 600);
 
       expect(flake.isSettled).toBe(false);
       expect(environment.settled.size).toBe(0);
     }
   );
+
+  it('sheds flakes immediately when a resized surface no longer supports their full width', () => {
+    const environment = create();
+    const flake = land(environment);
+    rect = { ...rect, right: 125, width: 75 };
+
+    environment.beginFrame(0.01, [flake], 800, 600);
+
+    expect(flake.isSettled).toBe(false);
+    expect(flake.hasShed).toBe(true);
+    expect(environment.settled.size).toBe(0);
+  });
 
   it('releases particles if their DOM support is removed', () => {
     const environment = create();

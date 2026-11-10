@@ -5,12 +5,15 @@
 ## [3.1.1] - 2026-11-05
 
 ### Added
+- Quality-first adaptive rendering across Canvas 2D, WebGPU and 3D, targeting the observed display cadence with gradual resolution/3D-detail reduction and automatic restoration, without FPS-based particle-count reduction.
 - Moving the mouse over accumulated flakes knocks them loose in all three renderers, including fast sweeps and the existing left/right click effects; an idle pointer leaves the row intact.
 - DOM-aware emoji accumulation in Canvas 2D, WebGPU, and 3D: supported non-overlapping rows above suitable visible surfaces, with text/control checks and shared density limits. Settled flakes stay indefinitely: only sufficient impact speed/acceleration/relative size knocks one off; weak impacts settle nearby or in the second row. Sustained strong wind can overcome adhesion; page/nested scrolling sheds the pile immediately.
 - API `burst` coordinates (`x`, `y`, viewport CSS pixels) and emoji mode for radial emission of selected symbols.
 - API `status`, `pause`, `resume`, `update` (live speed, mouse radius, wind, accumulation), and `clearAccumulation`. Explicit pause survives tab visibility changes.
 
 ### Changed
+- Trapped particles ineligible for accumulation now shed instead of hovering between supports. Pile contacts above the viewport release immediately, and layout shifts shed clipped upper rows.
+- Fixed flakes hovering in wide gaps between settled neighbours: each movement segment rechecks earlier supports after another collision redirects the flake.
 - Flakes resting between two settled neighbours recognize the entire support pocket despite alternating contacts, with both supports retained for stability checks and release propagation.
 - Ordinary starts, autostarts and popup previews always create snowfall above the viewport instead of restoring old elapsed-time positions. Respawns and 3D horizontal portals reset swept-contact history so an offscreen jump cannot teleport a particle into a pile. Coordinate-based API bursts are unchanged.
 - Fixed persistent airborne pile contacts: rest detection now samples final collision-resolved positions with a bounded jitter region and a subpixel contact tolerance. Shed flakes no longer collide with piles, and blocked unsafe/density-limited landings release instead of hovering.

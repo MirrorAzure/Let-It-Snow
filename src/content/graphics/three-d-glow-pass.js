@@ -51,13 +51,16 @@ void main() {
 }
 `;
 
-export function resolveGlowTargetSize(width, height) {
+export function resolveGlowTargetSize(width, height, qualityScale = 1) {
   if (![width, height].every((value) => Number.isFinite(value) && value >= 0)) {
     throw new RangeError('Glow target dimensions must be finite and non-negative.');
   }
+  if (!Number.isFinite(qualityScale) || qualityScale <= 0 || qualityScale > 1) {
+    throw new RangeError('Glow quality scale must be greater than zero and at most one.');
+  }
   const safeWidth = Math.max(1, width);
   const safeHeight = Math.max(1, height);
-  const scale = Math.min(GLOW_SCALE, MAX_GLOW_DIMENSION / Math.max(safeWidth, safeHeight));
+  const scale = Math.min(GLOW_SCALE, MAX_GLOW_DIMENSION / Math.max(safeWidth, safeHeight)) * qualityScale;
   return {
     width: Math.max(1, Math.ceil(safeWidth * scale)),
     height: Math.max(1, Math.ceil(safeHeight * scale))
@@ -126,8 +129,8 @@ export class ThreeDGlowPass {
     return { mesh, pulse };
   }
 
-  resize(width, height) {
-    const size = resolveGlowTargetSize(width, height);
+  resize(width, height, qualityScale = 1) {
+    const size = resolveGlowTargetSize(width, height, qualityScale);
     this.sourceTarget.setSize(size.width, size.height);
     this.blurTarget.setSize(size.width, size.height);
   }

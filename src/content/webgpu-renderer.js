@@ -18,6 +18,7 @@ import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/s
 import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
 import { resolveMinGlowStrength } from './utils/glow-utils.js';
+import { AdaptiveQuality } from './utils/adaptive-quality.js';
 
 /**
  * Класс для рендеринга снега через WebGPU
@@ -47,6 +48,7 @@ export class WebGPURenderer {
     this.visualViewportScrollHandler = null;
     this.lastTimestamp = 0;
     this.backgroundMonitor = null;
+    this.adaptiveQuality = new AdaptiveQuality();
     
     // Инициализация компонентов
     this.atlasManager = null;
@@ -836,35 +838,37 @@ export class WebGPURenderer {
     }
   }
 
+  _resizeCanvas() {
+    const viewport = this._getViewportSize();
+    const ratio = (window.devicePixelRatio || 1) * this.adaptiveQuality.resolutionScale;
+    const width = Math.floor(viewport.width * ratio);
+    const height = Math.floor(viewport.height * ratio);
+    if (width === this.canvasWidth && height === this.canvasHeight) return;
+
+    const viewportChanged = viewport.width !== this.viewportWidth || viewport.height !== this.viewportHeight;
+    this.canvasWidth = width;
+    this.canvasHeight = height;
+    this.viewportWidth = viewport.width;
+    this.viewportHeight = viewport.height;
+    this.canvas.width = width;
+    this.canvas.height = height;
+    this.uniformBufferManager?.setCanvasSize(viewport.width, viewport.height);
+    this.context?.configure({
+      device: this.device,
+      format: navigator.gpu.getPreferredCanvasFormat(),
+      alphaMode: 'premultiplied',
+      size: { width, height }
+    });
+
+    if (viewportChanged) this._rescaleFlakeSizes();
+
+    if (this.debugCollisions) {
+      this.setupDebugCanvas();
+    }
+  }
+
   handleResize() {
-    const resize = () => {
-      const viewport = this._getViewportSize();
-      const ratio = window.devicePixelRatio || 1;
-      const width = Math.floor(viewport.width * ratio);
-      const height = Math.floor(viewport.height * ratio);
-      if (width === this.canvasWidth && height === this.canvasHeight) return;
-
-      this.canvasWidth = width;
-      this.canvasHeight = height;
-      this.viewportWidth = viewport.width;
-      this.viewportHeight = viewport.height;
-      this.canvas.width = width;
-      this.canvas.height = height;
-      this.uniformBufferManager?.setCanvasSize(viewport.width, viewport.height);
-      this.context?.configure({
-        device: this.device,
-        format: navigator.gpu.getPreferredCanvasFormat(),
-        alphaMode: 'premultiplied',
-        size: { width, height }
-      });
-      
-      this._rescaleFlakeSizes();
-      
-      if (this.debugCollisions) {
-        this.setupDebugCanvas();
-      }
-    };
-
+    const resize = () => this._resizeCanvas();
     resize();
     this.resizeObserver = new ResizeObserver(resize);
     this.resizeObserver.observe(document.documentElement);
@@ -1340,8 +1344,10 @@ export class WebGPURenderer {
    * @param {number} timestamp - Текущее время
    */
   frame(timestamp) {
-    const delta = Math.max(0.001, (timestamp - this.lastTimestamp) / 1000);
+    const frameSeconds = (timestamp - this.lastTimestamp) / 1000;
+    const delta = Math.max(0.001, frameSeconds);
     this.lastTimestamp = timestamp;
+    if (this.adaptiveQuality.update(frameSeconds, document.hidden)) this._resizeCanvas();
     this.updateSimulation(delta);
     this.render();
     this.frameRequest = requestAnimationFrame((ts) => this.frame(ts));
@@ -1351,6 +1357,7 @@ export class WebGPURenderer {
    * Запуск рендеринга
    */
   start() {
+    this.adaptiveQuality.resetTiming();
     this.lastTimestamp = performance.now();
     this.frameRequest = requestAnimationFrame((ts) => this.frame(ts));
   }
@@ -1370,6 +1377,7 @@ export class WebGPURenderer {
    */
   resume() {
     if (!this.device || !this.context) return;
+    this.adaptiveQuality.resetTiming();
     this.lastTimestamp = performance.now();
     this.frameRequest = requestAnimationFrame((ts) => this.frame(ts));
   }

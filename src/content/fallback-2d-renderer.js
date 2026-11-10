@@ -10,6 +10,7 @@ import { resolveMinGlowStrength } from './utils/glow-utils.js';
 import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
 import { BackgroundMonitor } from './utils/background-monitor.js';
+import { AdaptiveQuality } from './utils/adaptive-quality.js';
 
 const TEXT_GLYPH_FONT_STACK = '"Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Times New Roman", serif';
 const EMOJI_GLYPH_FONT_STACK = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif';
@@ -64,21 +65,8 @@ export class Fallback2DRenderer {
     this.backgroundMonitor = null;
     this.glowStrength = resolveMinGlowStrength(config?.minGlowStrength);
 
-    // Адаптивный контроль респауна: если FPS проседает, новые снежинки временно не появляются
-    this.fpsSmoothing = 0.15; // Скорость EMA (выше = быстрее реакция)
-    this._avgFrameDelta = 1 / 60; // EMA по delta, а не по fps (точнее при рывках)
+    this.adaptiveQuality = new AdaptiveQuality();
     this.currentFpsEstimate = 60;
-    this.respawnPauseFps = config.canvas2dRespawnPauseFps ?? 57;
-    this.respawnResumeFps = config.canvas2dRespawnResumeFps ?? 59;
-    this._pauseFpsCustom = config.canvas2dRespawnPauseFps !== undefined;
-    this._resumeFpsCustom = config.canvas2dRespawnResumeFps !== undefined;
-    // Авто-калибровка: усредняем первые 60 кадров чтобы определить реальный hz монитора
-    this._calibrated = false;
-    this._calibrationDeltaSum = 0;
-    this._calibrationCount = 0;
-    this.allowNewFlakes = true;
-    this.minActiveFlakesWhenThrottled = config.canvas2dMinActiveFlakesWhenThrottled
-      ?? Math.max(8, Math.min(24, Math.ceil((config.snowmax ?? 80) * 0.15)));
     this.maxRespawnsPerSecond = config.canvas2dMaxRespawnsPerSecond
       ?? Math.max(20, Math.min(90, Math.ceil((config.snowmax ?? 80) * 0.45)));
     this.maxRespawnBurst = config.canvas2dMaxRespawnBurst
@@ -200,7 +188,8 @@ export class Fallback2DRenderer {
   _setupResizeHandler() {
     const resize = () => {
       const viewport = this._getViewportSize();
-      const ratio = Math.min(window.devicePixelRatio || 1, this.canvas2dMaxDpr);
+      const ratio = Math.min(window.devicePixelRatio || 1, this.canvas2dMaxDpr)
+        * this.adaptiveQuality.resolutionScale;
       const width = Math.floor(viewport.width * ratio);
       const height = Math.floor(viewport.height * ratio);
       
@@ -389,7 +378,7 @@ export class Fallback2DRenderer {
   }
 
   /**
-   * Помещает снежинку в режим ожидания респауна до восстановления FPS.
+   * Помещает снежинку в очередь равномерного респауна.
    * @private
    */
   _deferRespawn(flake, worldHeight) {
@@ -674,52 +663,17 @@ export class Fallback2DRenderer {
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
     let lastFrameTime = performance.now();
+    this.adaptiveQuality.resetTiming();
     const draw = (now = performance.now()) => {
-      const rawDelta = Math.min((now - lastFrameTime) / 1000, 0.05);
+      const frameSeconds = (now - lastFrameTime) / 1000;
+      const rawDelta = Math.max(0, Math.min(frameSeconds, 0.05));
       lastFrameTime = now;
 
-      // EMA по frame-delta (а не по fps): медленные кадры вносят больший вклад,
-      // поэтому просадки fps детектируются точнее чем при EMA(1/delta).
-      this._avgFrameDelta = this._avgFrameDelta * (1 - this.fpsSmoothing) + rawDelta * this.fpsSmoothing;
-      this.currentFpsEstimate = 1 / this._avgFrameDelta;
+      this.adaptiveQuality.update(frameSeconds, document.hidden);
+      this.currentFpsEstimate = this.adaptiveQuality.currentFps;
       // Для физики используем реальный rawDelta (не сглаженный), только ограничиваем
       // сверху чтобы снежинки не прыгали после длинной паузы вкладки.
       const delta = Math.min(rawDelta, 1 / 20);
-
-      // Авто-калибровка: первые 60 кадров определяют базовый fps монитора (60/120/144 Hz и т.д.)
-      if (!this._calibrated) {
-        this._calibrationDeltaSum += rawDelta;
-        this._calibrationCount++;
-        if (this._calibrationCount >= 60) {
-          const baseDelta = this._calibrationDeltaSum / this._calibrationCount;
-          this._avgFrameDelta = baseDelta;
-          this.currentFpsEstimate = 1 / baseDelta;
-          if (!this._pauseFpsCustom) this.respawnPauseFps = this.currentFpsEstimate * 0.95;
-          if (!this._resumeFpsCustom) this.respawnResumeFps = this.currentFpsEstimate * 0.98;
-          this._calibrated = true;
-        }
-      }
-
-      if (this.allowNewFlakes && this.currentFpsEstimate < this.respawnPauseFps) {
-        this.allowNewFlakes = false;
-      } else if (!this.allowNewFlakes && this.currentFpsEstimate >= this.respawnResumeFps) {
-        this.allowNewFlakes = true;
-      }
-
-      let forcedRespawnBudget = 0;
-      if (!this.allowNewFlakes) {
-        let activeFlakeCount = 0;
-        for (let i = 0; i < this.flakes.length; i++) {
-          if (!this.flakes[i]?.isAwaitingRespawn) {
-            activeFlakeCount++;
-          }
-        }
-
-        const minActive = Math.min(this.flakes.length, this.minActiveFlakesWhenThrottled);
-        if (activeFlakeCount < minActive) {
-          forcedRespawnBudget = minActive - activeFlakeCount;
-        }
-      }
 
       // Равномерный респаун предотвращает стартовый burst и выравнивает нагрузку на CPU.
       this._respawnCredit = Math.min(
@@ -734,16 +688,8 @@ export class Fallback2DRenderer {
         if (respawnFrameBudget <= 0) {
           return false;
         }
-        if (this.allowNewFlakes) {
-          if (respawnRateBudget > 0) {
-            respawnRateBudget--;
-            respawnFrameBudget--;
-            return true;
-          }
-          return false;
-        }
-        if (forcedRespawnBudget > 0) {
-          forcedRespawnBudget--;
+        if (respawnRateBudget > 0) {
+          respawnRateBudget--;
           respawnFrameBudget--;
           return true;
         }
@@ -763,27 +709,8 @@ export class Fallback2DRenderer {
         this._collisionFrameStride = 1;
       }
 
-      // Гистерезис: переключаемся в low-quality при fps < 48, выходим только при fps > 54.
-      // Без гистерезиса режим мог переключаться каждый кадр при fps ~52, вызывая прыжки.
-      // При смене режима поглощаем/изымаем swingAngle в cumulativeSpin, чтобы не было
-      // визуального скачка угла — рендерный finalRotation при этом не изменится.
-      if (!this.lowQualityMode && flakeCount >= 100 && this.currentFpsEstimate < 48) {
-        this.lowQualityMode = true;
-        for (let _i = 0; _i < this.flakes.length; _i++) {
-          const _f = this.flakes[_i];
-          if (_f.isAwaitingRespawn || _f.isGrabbed || _f.isSettled) continue;
-          _f.cumulativeSpin = (_f.cumulativeSpin || 0) + (_f._sinPhase || 0) * 0.35 * (_f.swayLimit ?? 1.0);
-        }
-      } else if (this.lowQualityMode && this.currentFpsEstimate > 54) {
-        this.lowQualityMode = false;
-        for (let _i = 0; _i < this.flakes.length; _i++) {
-          const _f = this.flakes[_i];
-          if (_f.isAwaitingRespawn || _f.isGrabbed || _f.isSettled) continue;
-          _f.cumulativeSpin = (_f.cumulativeSpin || 0) - (_f._sinPhase || 0) * 0.35 * (_f.swayLimit ?? 1.0);
-        }
-      }
-
-      const ratio = Math.min(window.devicePixelRatio || 1, this.canvas2dMaxDpr);
+      const ratio = Math.min(window.devicePixelRatio || 1, this.canvas2dMaxDpr)
+        * this.adaptiveQuality.resolutionScale;
       const viewport = this._getViewportSize();
       const worldWidth = viewport.width;
       const worldHeight = viewport.height;
@@ -1132,18 +1059,18 @@ export class Fallback2DRenderer {
         const finalRotation = (flake.cumulativeSpin || 0) + swingAngle;
         const cosR = Math.cos(finalRotation);
         const sinR = Math.sin(finalRotation);
-        ctx.setTransform(cosR, sinR, -sinR, cosR, x, y);
+        ctx.setTransform(cosR * ratio, sinR * ratio, -sinR * ratio, cosR * ratio, x, y);
 
         const glowStrength = this.glowStrength;
         const shouldDrawGlow =
           glowStrength > 0.02 &&
           !this.lowQualityMode &&
-          this.currentFpsEstimate > 24;
+          this.adaptiveQuality.level < 3;
         const glowPulse = 0.68 + 0.32 * Math.sin((flake.phase || 0) * 1.6);
         const glowAlpha = Math.min(1, (0.58 + glowStrength * 0.55) * glowPulse);
         const glowRadius = Math.min(
           flake.isSentence ? 6.5 : 5.8,
-          Math.max(1.5, Math.sqrt(Math.max(1, flake.size * ratio)) * (0.4 + glowStrength * 0.55))
+          Math.max(1.5, Math.sqrt(Math.max(1, flake.size)) * (0.4 + glowStrength * 0.55))
         );
 
         if (flake.isSentence) {
@@ -1303,6 +1230,7 @@ export class Fallback2DRenderer {
    */
   resume() {
     if (this.drawCallback) {
+      this.adaptiveQuality.resetTiming();
       this.frameRequest = requestAnimationFrame(this.drawCallback);
     }
   }

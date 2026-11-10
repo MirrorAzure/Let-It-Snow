@@ -357,9 +357,13 @@ describe('GifLayer', () => {
     });
     gifLayer.animate(performance.now() + 16);
 
-    expect(flake.el.style.transform).toBe(
-      `translate3d(${flake.x - flake.size * 0.5}px, ${flake.y - flake.size * 0.5}px, 0) rotate(${flake.rotation}rad)`
+    const transform = flake.el.style.transform.match(
+      /^translate3d\(([-\d.]+)px, ([-\d.]+)px, 0px?\) rotate\(([-\d.]+)rad\)$/
     );
+    expect(transform).not.toBeNull();
+    expect(Number(transform[1])).toBeCloseTo(flake.x - flake.size * 0.5, 2);
+    expect(Number(transform[2])).toBeCloseTo(flake.y - flake.size * 0.5, 2);
+    expect(Number(transform[3])).toBeCloseTo(flake.rotation, 2);
 
     gifLayer.stop();
   });

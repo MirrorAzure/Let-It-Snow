@@ -5,6 +5,7 @@ import { BackgroundMonitor, getEffectiveBackgroundColor } from './utils/backgrou
 import { resolveMinGlowStrength } from './utils/glow-utils.js';
 import { ThreeDGlowPass } from './graphics/three-d-glow-pass.js';
 import { isCellMonotone } from './utils/glyph-utils.js';
+import { AdaptiveQuality } from './utils/adaptive-quality.js';
 
 const CAMERA_Z = 35;
 const CAMERA_FOV = 52;
@@ -19,6 +20,32 @@ const SENTENCE_UNIT_PX = 200;
 const MASK_CACHE_LIMIT = 48;
 const GLOW_STATE_RATE = 5;
 const glyphMaskCache = new Map();
+
+export function createGlyphDetailGeometry(shape, thickness, step = 1) {
+  if (!Number.isInteger(step) || step < 1) {
+    throw new RangeError('Glyph detail step must be a positive integer.');
+  }
+  const width = Math.ceil(shape.width / step);
+  const height = Math.ceil(shape.height / step);
+  const mask = step === 1 ? shape.mask : new Uint8Array(width * height);
+  if (step > 1) {
+    // Keep thin branches when reducing detail instead of erasing small glyphs.
+    for (let y = 0; y < shape.height; y++) {
+      for (let x = 0; x < shape.width; x++) {
+        if (shape.mask[y * shape.width + x]) {
+          const cx = Math.min(width - 1, Math.floor(x * width / shape.width));
+          const cy = Math.min(height - 1, Math.floor(y * height / shape.height));
+          mask[cy * width + cx] = 1;
+        }
+      }
+    }
+  }
+  const scaleX = width / shape.width;
+  const scaleY = height / shape.height;
+  return createGlyphGeometry(mask, width, height, thickness,
+    shape.unit * scaleX, shape.unit * scaleY,
+    (shape.width - shape.unit) * scaleX / 2, (shape.height - shape.unit) * scaleY / 2);
+}
 
 export function resolveGlyphAppearance(config, index) {
   const count = Math.max(1, Math.floor(Number(config.snowmax) || 80));
@@ -344,7 +371,7 @@ export class ThreeDSnowRenderer {
     this._scale = new THREE.Vector3();
     this._worldPositions = [];
     this._collisionGrid = new Map();
-    this._slowFrameTime = 0;
+    this.adaptiveQuality = new AdaptiveQuality();
     this.isPaused = false;
     this.boundResize = () => this.resize();
   }
@@ -454,16 +481,7 @@ export class ThreeDSnowRenderer {
       for (const [glyphKey, group] of groups) {
         const shape = getCachedGlyphShape(group.glyph, group.glyphMode, (glyph, mode) =>
           this._createGlyphMask(glyph, mode));
-        const geometry = createGlyphGeometry(
-          shape.mask,
-          shape.width,
-          shape.height,
-          thickness,
-          shape.unit,
-          shape.unit,
-          (shape.width - shape.unit) / 2,
-          (shape.height - shape.unit) / 2
-        );
+        const geometry = createGlyphDetailGeometry(shape, thickness);
         const isEmoji = Boolean(shape.colorCanvas);
         const material = isEmoji ? this._createEmojiMaterial(shape.colorCanvas) : this.glyphMaterial;
         const mesh = new THREE.InstancedMesh(geometry, material, group.flakes.length);
@@ -483,7 +501,9 @@ export class ThreeDSnowRenderer {
         }
         const glow = this.glowPass.addGlyphMesh(mesh, group.flakes);
         this.scene.add(mesh);
-        this.glyphMeshes.set(glyphKey, { mesh, glow, flakes: group.flakes });
+        this.glyphMeshes.set(glyphKey, {
+          mesh, glow, flakes: group.flakes, shape, geometries: new Map([[1, geometry]])
+        });
       }
       this.startBackgroundMonitoring();
 
@@ -706,7 +726,7 @@ export class ThreeDSnowRenderer {
     this.camera.aspect = this.viewportWidth / this.viewportHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(this.viewportWidth, this.viewportHeight, false);
-    this.glowPass?.resize(this.viewportWidth, this.viewportHeight);
+    this.glowPass?.resize(this.viewportWidth, this.viewportHeight, this.adaptiveQuality.resolutionScale);
   }
 
   _worldScaleAtDepth(z) {
@@ -1002,15 +1022,30 @@ export class ThreeDSnowRenderer {
     }
   }
 
-  /** Drops the pixel ratio once if the device cannot hold ~40 fps. */
   _adaptQuality(frameSeconds) {
-    if (!this.renderer || this._qualityReduced) return;
-    this._slowFrameTime = frameSeconds > 1 / 40
-      ? this._slowFrameTime + frameSeconds
-      : Math.max(0, this._slowFrameTime - frameSeconds * 0.5);
-    if (this._slowFrameTime < 2) return;
-    this._qualityReduced = true;
-    this.renderer.setPixelRatio(1);
+    if (!this.renderer || !this.adaptiveQuality.update(frameSeconds, document.hidden)) return;
+    this.renderer.setPixelRatio(
+      Math.min(window.devicePixelRatio || 1, 1.5) * this.adaptiveQuality.resolutionScale
+    );
+    const step = Math.max(1, this.adaptiveQuality.level);
+    for (const group of this.glyphMeshes.values()) {
+      if (!group.geometries.has(step)) {
+        const detail = createGlyphDetailGeometry(group.shape, this.config.snow3dThickness ?? 0.07, step);
+        const original = group.geometries.get(1);
+        if (detail.getAttribute('position').count < original.getAttribute('position').count) {
+          if (group.glow) {
+            detail.setAttribute('glowColor', original.getAttribute('glowColor'));
+            detail.setAttribute('glowPulse', original.getAttribute('glowPulse'));
+          }
+          group.geometries.set(step, detail);
+        } else {
+          detail.dispose();
+          group.geometries.set(step, original);
+        }
+      }
+      group.mesh.geometry = group.geometries.get(step);
+      if (group.glow) group.glow.mesh.geometry = group.mesh.geometry;
+    }
     this.resize();
   }
 
@@ -1018,6 +1053,7 @@ export class ThreeDSnowRenderer {
     if (!this.renderer || this.frameRequest !== null) return;
     this.isPaused = false;
     this.lastTimestamp = performance.now();
+    this.adaptiveQuality.resetTiming();
     const animate = (timestamp) => {
       if (!this.renderer || this.isPaused) return;
       const frameSeconds = Math.max((timestamp - this.lastTimestamp) / 1000, 0);
@@ -1060,7 +1096,7 @@ export class ThreeDSnowRenderer {
     for (const group of this.glyphMeshes.values()) {
       this.scene?.remove(group.mesh);
       group.mesh.dispose();
-      group.mesh.geometry.dispose();
+      for (const geometry of new Set(group.geometries?.values() || [group.mesh.geometry])) geometry.dispose();
     }
     this.glyphMeshes.clear();
     this.glyphMaterial?.dispose();

@@ -70,6 +70,7 @@ class PageSurfaceTracker {
 
   syncPlacements() {
     const rects = new Map();
+    const safety = new Map();
     for (const [flake, placement] of this.placements) {
       if (placement.revision !== this.revision || !placement.element.isConnected) {
         placement.environment.release(flake);
@@ -80,6 +81,13 @@ class PageSurfaceTracker {
         rect = placement.element.getBoundingClientRect();
         rects.set(placement.element, rect);
       }
+      if (!safety.has(placement.element)) {
+        safety.set(placement.element, this.isSafeSurface(placement.element));
+      }
+      if (!safety.get(placement.element)) {
+        placement.environment.release(flake);
+        continue;
+      }
       flake.x += rect.left - placement.left;
       flake.baseX = flake.x;
       flake.y = placement.support
@@ -88,6 +96,12 @@ class PageSurfaceTracker {
       placement.left = rect.left;
       placement.right = rect.right;
       placement.top = rect.top;
+      if (rect.top < 28 || rect.top > window.innerHeight
+        || flake.y - flake.size / 2 < 0
+        || flake.x - flake.size / 2 < Math.max(0, rect.left)
+        || flake.x + flake.size / 2 > Math.min(window.innerWidth, rect.right)) {
+        placement.environment.release(flake);
+      }
     }
     // Synchronize all layers before checking contacts, regardless of renderer order.
     for (const [flake, placement] of this.placements) {
@@ -105,6 +119,7 @@ class PageSurfaceTracker {
     if (this.placements.size - ignored >= 32) return false;
     const radius = size / 2;
     const top = y - radius;
+    if (top < 0) return false;
     for (const [flake, placement] of this.placements) {
       if (ignore?.has(flake)) continue;
       if (Math.hypot(flake.x - x, flake.y - y) < (flake.size + size) / 2 + 2 - 0.05) return false;

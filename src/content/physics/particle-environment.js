@@ -65,7 +65,7 @@ export class ParticleEnvironment {
     if (this.surfaces && now - this.surfaces.lastScroll >= 350) {
       for (const flake of particles) {
         if (!flake.isFinished && !flake.isAwaitingRespawn && !flake.isSettled && !flake.isGrabbed
-          && this.canAccumulate(flake)) this.settleRestingContact(flake);
+          && !flake.hasShed) this.settleRestingContact(flake);
       }
     }
     for (const flake of particles) {
@@ -203,13 +203,12 @@ export class ParticleEnvironment {
   }
 
   contactWithSettled(flake, startX = flake.previousSurfaceX ?? flake.x,
-    startY = flake.previousSurfaceY ?? flake.y, ignored = null) {
+    startY = flake.previousSurfaceY ?? flake.y) {
     let first = null;
     const dx = flake.x - startX;
     const dy = flake.y - startY;
     const lengthSq = dx * dx + dy * dy;
     for (const [other, placement] of this.surfaces.placements) {
-      if (ignored?.has(other)) continue;
       const radius = (flake.size + other.size) / 2 + 2;
       const ox = startX - other.x;
       const oy = startY - other.y;
@@ -269,7 +268,8 @@ export class ParticleEnvironment {
     const support = supports.includes(previous) ? previous : supports[0];
     const surface = this.surfaces.placements.get(support);
     if (!this.isRestingOn(flake, support, flake.x, flake.y, pocket ? supports : [support])) return false;
-    if (this.surfaces.hasRoom(surface, flake.x, flake.size, new Set(supports), flake.y)
+    if (this.canAccumulate(flake)
+      && this.surfaces.hasRoom(surface, flake.x, flake.size, new Set(supports), flake.y)
       && this.settle(flake, surface, flake.y, support, supports)) return true;
     this.release(flake);
     return false;
@@ -321,9 +321,9 @@ export class ParticleEnvironment {
         let startX = flake.previousSurfaceX ?? flake.x;
         let startY = flake.previousSurfaceY ?? flake.y;
         let remaining = this.delta;
-        const contacted = new Set();
         for (let iteration = 0; !flake.hasShed && iteration < 6; iteration++) {
-          const contact = this.contactWithSettled(flake, startX, startY, contacted);
+          // A neighbouring support can redirect motion back into an earlier contact.
+          const contact = this.contactWithSettled(flake, startX, startY);
           const surfaceContact = canSettle ? this.contactWithSurface(flake, startX, startY) : null;
           if (surfaceContact && (!contact || surfaceContact.t < contact.t)) {
             const { surface, x, y, room } = surfaceContact;
@@ -337,7 +337,6 @@ export class ParticleEnvironment {
             break;
           }
           if (!contact) break;
-          contacted.add(contact.other);
           this.contactsChanged = true;
           const { other, placement, x, y } = contact;
           if (this.canDislodge(flake, other)) {
@@ -352,6 +351,10 @@ export class ParticleEnvironment {
             const separation = (flake.size + other.size) / 2 + 2;
             flake.x = flake.baseX = other.x + nx * separation;
             flake.y = other.y + ny * separation;
+            if (flake.y - flake.size / 2 < 0) {
+              this.release(flake);
+              break;
+            }
             const stackImmediately = ny < -0.95 && !this.findLanding(placement, flake);
             const landingY = flake.y;
             if (canSettle && !placement.support && stackImmediately

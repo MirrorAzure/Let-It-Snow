@@ -47,8 +47,23 @@ colors; background images and individual blocks are not always detected.
 - **Start** — when you click **Let it snow!**, snow starts falling from the top
   in all modes. When auto-starting on a new page, the snowfall continues from
   where it was, so it does not "start over" on every navigation.
-- On low-end devices, 3D mode automatically lowers the render resolution if
-  the frame rate stays below ~40 FPS for a long time.
+
+### Adaptive quality
+
+Canvas 2D, WebGPU and 3D start at their highest render quality and adapt automatically,
+without reducing the configured particle count or changing flake sizes, motion or pile positions.
+The target starts at 60 FPS and follows the fastest sustained browser frame cadence,
+including 120/144/240 Hz displays. Browsers do not expose the physical refresh rate directly;
+power-saving settings or browser frame limits can cap the observed cadence.
+
+After sustained performance below 85% of the target for two seconds (following a one-second
+warm-up), resolution decreases one step: 100%, 85%, 70%, then 55% of the renderer's normal
+pixel ratio. Detailed 3D geometry is preserved on the first step; lower steps use cached,
+coarser silhouettes that retain thin branches, with matching lower-resolution glow.
+WebGPU keeps its high-quality glyph atlas; Canvas 2D omits glow only at the lowest step.
+Eight seconds above 94% of the target restores one quality step, eventually returning
+to full detail. Short stalls, pauses and hidden-tab throttling do not trigger immediate
+downgrades. Canvas 2D no longer suppresses respawns based on FPS; its gradual spawn queue remains.
 
 ### Quick effects
 
@@ -85,6 +100,9 @@ Rolling flakes stay mobile; losing contact resets the check.
 Rest is measured from final collision-resolved positions over a small region, so bounded
 contact jitter does not restart settling. Shed flakes pass through piles to keep falling;
 if a resting flake cannot safely join the pile or the density limit is reached, it is shed too.
+Rest detection also releases trapped particles that are ineligible for accumulation,
+such as oversized emoji and text. A pile contact extending above the viewport is released
+immediately; layout changes also shed any settled rows moved above the visible top.
 Flakes resting between two neighbours use the whole support pocket, not alternating single
 contacts; both supports are tracked, and losing either releases the flake.
 Landing preserves the current angle and contact height. Weak top contacts lose their bounce,
@@ -92,8 +110,9 @@ and rolling starts with gradual acceleration rather than repeated sideways kicks
 Weak wind leaves the pile intact; sustained strong gusts can blow flakes off.
 Scrolling (including nested containers) sheds the pile. Flakes follow layout movements;
 stacks spanning multiple effect layers move together without a one-frame delay.
-A removed, transparent or newly interactive support is cleared; upper flakes also fall
-if their supporting neighbours move apart.
+A removed, transparent or newly interactive support is cleared immediately; flakes also
+fall if a resize leaves them beyond the support's edges or their supporting neighbours
+move apart.
 Moving the mouse across the row also knocks flakes down; left/right clicks retain
 their expanded explosion/suction radius. A stationary pointer does not disturb the row.
 Large emoji, sentences and GIFs keep falling.

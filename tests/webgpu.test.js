@@ -500,7 +500,7 @@ describe('Snow Animation System', () => {
       expect(flake).toHaveProperty('char');
     });
 
-    it('should keep minimum active flakes when respawn is throttled', async () => {
+    it('restores all flakes without FPS-based respawn throttling', async () => {
       const { Fallback2DRenderer } = await import('../src/content/fallback-2d-renderer.js');
       const canvas = document.createElement('canvas');
       const config = {
@@ -523,13 +523,11 @@ describe('Snow Animation System', () => {
       });
 
       renderer.start();
-      vi.advanceTimersByTime(96);
+      vi.advanceTimersByTime(1500);
 
       const activeFlakes = renderer.flakes.filter((flake) => !flake.isAwaitingRespawn);
-      const expectedMin = Math.min(renderer.flakes.length, renderer.minActiveFlakesWhenThrottled);
 
-      expect(activeFlakes.length).toBeGreaterThan(0);
-      expect(activeFlakes.length).toBeGreaterThanOrEqual(expectedMin);
+      expect(activeFlakes).toHaveLength(config.snowmax);
 
       renderer.stop();
     });
