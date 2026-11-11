@@ -463,9 +463,40 @@ describe('Snow Animation System', () => {
 
       renderer._resizeCanvas();
 
-      expect(canvas.width).toBe(Math.floor(window.innerWidth * 1.75));
-      expect(canvas.height).toBe(Math.floor(window.innerHeight * 1.75));
+      expect(canvas.width).toBe(Math.floor(window.innerWidth * 2));
+      expect(canvas.height).toBe(Math.floor(window.innerHeight * 2));
+
+      renderer.device = { limits: { maxTextureDimension2D: 1024 } };
+      renderer._resizeCanvas();
+      expect(canvas.width).toBe(1024);
+      expect(canvas.height).toBe(576);
     });
+  });
+
+  it.each(['2d', 'webgpu'])('fills the viewport only when requested in the %s renderer', async (mode) => {
+    const { Fallback2DRenderer } = await import('../src/content/fallback-2d-renderer.js');
+    const { WebGPURenderer } = await import('../src/content/webgpu-renderer.js');
+    const Renderer = mode === '2d' ? Fallback2DRenderer : WebGPURenderer;
+    const config = {
+      snowmax: 16, snowminsize: 3, snowmaxsize: 6, snowcolor: ['#ffffff'], snowletters: ['❄'],
+      canvas2dInitialActiveFlakes: 3
+    };
+    const normal = new Renderer(document.createElement('canvas'), config);
+    await normal.init();
+    const normalFlakes = normal.flakes || normal.instances;
+    const active = normalFlakes.filter((flake) => !flake.isAwaitingRespawn);
+    expect(active.length).toBeGreaterThan(0);
+    expect(active.every((flake) => flake.y < 0)).toBe(true);
+
+    const filled = new Renderer(document.createElement('canvas'), { ...config, initialDistribution: 'viewport' });
+    await filled.init();
+    const flakes = filled.flakes || filled.instances;
+    const bands = Array.from({ length: 4 }, (_, band) => flakes.filter((flake) =>
+      !flake.isAwaitingRespawn && flake.y >= band * window.innerHeight / 4
+      && flake.y < (band + 1) * window.innerHeight / 4).length);
+    expect(bands).toEqual([4, 4, 4, 4]);
+    normal.cleanup?.();
+    filled.cleanup?.();
   });
 
   describe('Fallback2DRenderer', () => {

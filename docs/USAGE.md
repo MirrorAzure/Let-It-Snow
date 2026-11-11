@@ -21,7 +21,8 @@ limits their speed. Mass, projected area, perimeter, compactness, and drag are
 calculated automatically from each flake's size, selected shape, and fluffiness.
 For similarly shaped flakes, mass scales with the cube of size, projected area
 with its square, and perimeter linearly; these are relative model properties,
-not measured snowflake mass or dimensions.
+not measured snowflake mass or dimensions. Terminal speeds are visual-model
+outputs and have not been calibrated against measured snow data.
 By default, the shape class is derived from fluffiness; you can choose a shape
 globally, or assign individual classes with `snowShapeOverrides` in API configs.
 Automatic shape thresholds are compact below 0.25 fluffiness, regular from
@@ -36,6 +37,14 @@ Wind profiles include light, strong, and hurricane conditions, and each profile
 can be adjusted manually. Updraft is measured in m/s; sufficiently strong airflow
 can slow flakes and lift them upward. Wind strength affects both horizontal flow
 and upward gusts; wind response is time-smoothed and frame-rate independent.
+
+Collision shapes are also visual approximations: 2D and WebGPU use circular
+radii (including a sway allowance), while 3D uses spheres and sweeps particle
+paths to catch fast impacts. Collision response is not a full rigid-body solver;
+3D resolves pairs in one pass, and a grabbed flake remains kinematic. When a tab
+is hidden, simulation pauses and resumes from its last state without catching up.
+After a long foreground stall, at most eight fixed 1/60-second steps are run per
+frame and excess simulation time is dropped to keep rendering responsive.
 
 The glow follows the volumetric silhouette of the snowflake and smoothly pulses
 and flickers (each snowflake has its own rhythm). It automatically adapts to a
@@ -73,6 +82,8 @@ colors; background images and individual blocks are not always detected.
 
 Canvas 2D, WebGPU and 3D start at their highest render quality and adapt automatically,
 without reducing the configured particle count or changing flake sizes, motion or pile positions.
+Their normal pixel ratio is capped at 2; WebGPU also respects the device's maximum texture
+dimension. The 3D glyph masks use a higher-resolution source for finer silhouettes.
 The target starts at 60 FPS and follows the fastest sustained browser frame cadence,
 including 120/144/240 Hz displays. Browsers do not expose the physical refresh rate directly;
 power-saving settings or browser frame limits can cap the observed cadence.
@@ -134,12 +145,14 @@ stacks spanning multiple effect layers move together without a one-frame delay.
 A removed, transparent or newly interactive support is cleared immediately; flakes also
 fall if a resize leaves them beyond the support's edges or their supporting neighbours
 move apart.
-Moving the mouse across the row also knocks flakes down. A left click triggers one
-radial explosion; holding the left button additionally creates airflow outward in
-all directions with upward lift. The right button attracts flakes toward the
-pointer. Held effects stop on release, and API `burst` remains a separate command.
-A stationary pointer without a held button does not disturb the row. In 3D mode,
-pointer forces use the screen projection and weaken with depth.
+Moving the pointer repels nearby flakes; fast movement also drags and spins them
+in the pointer's direction in 2D, WebGPU, and GIF layers. A left click triggers
+one radial explosion; holding the left button additionally creates airflow
+outward in all directions with upward lift. Holding the right button attracts
+flakes toward the pointer. Held effects stop on release, and API `burst` remains
+a separate command. A stationary pointer without a held button does not disturb
+the row. 3D pointer forces use the screen projection and weaken with depth; 3D
+flakes rotate independently rather than receiving pointer-driven spin.
 Large emoji, sentences and GIFs keep falling.
 API controls: `clearAccumulation` sheds particles; `update` with
 `{"config":{"accumulationEnabled":false}}` disables landing for the main snow.
@@ -510,6 +523,10 @@ right away:
 - `icon-128.png` and `README.md` with the list of files.
 
 Standalone run: `pnpm store:assets` (requires a finished `dist/` build).
+Each scene runs the normal snowfall for 100 seconds before capture rather than
+placing flakes artificially, so generating all seven scenes takes over 12 minutes.
+To regenerate only specific scenes, repeat the filename option, for example
+`pnpm store:assets --scene=screenshot-2.png --scene=promo-small-440x280.png`.
 Chrome, Chromium, or Edge must be installed; the path can be set in the
 `CHROME_PATH` variable. Without a browser, only the texts are generated. To
 skip the step during the build: `SKIP_STORE_ASSETS=1` or

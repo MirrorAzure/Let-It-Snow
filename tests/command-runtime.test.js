@@ -155,6 +155,25 @@ describe('SnowCommandRuntime', () => {
       .toEqual({ ok: false, error: 'not_running' });
   });
 
+  it('routes particle and force commands only to the main controller', async () => {
+    main.getParticle = vi.fn(() => ({ ok: true, particle: { index: 0 } }));
+    main.updateParticle = vi.fn(() => ({ ok: true }));
+    main.applyForce = vi.fn(() => ({ ok: true }));
+    main.clearForces = vi.fn(() => ({ ok: true, cleared: 1 }));
+    expect(await runtime.execute(cmd({ command: 'getParticle', params: { index: 0 } })))
+      .toEqual({ ok: true, particle: { index: 0 } });
+    await runtime.execute(cmd({ command: 'updateParticle', params: { index: 0, patch: { x: 50 } } }));
+    expect(main.updateParticle).toHaveBeenCalledWith(0, { x: 50 });
+    await runtime.execute(cmd({ command: 'applyForce', params: {
+      type: 'impulse', direction: 'outward', x: 0, y: 0, radius: 100, strength: 100
+    } }));
+    expect(main.applyForce).toHaveBeenCalledOnce();
+    expect(await runtime.execute(cmd({ command: 'clearForces' }))).toEqual({ ok: true, cleared: 1 });
+    main = null;
+    expect(await runtime.execute(cmd({ command: 'getParticle', params: { index: 0 } })))
+      .toEqual({ ok: false, error: 'not_running' });
+  });
+
   it('still expires GIF-only layers on their duration', async () => {
     await runtime.execute(cmd({
       command: 'gif', params: { urls: ['https://media.example.com/a.gif'], durationMs: 1000 }

@@ -29,6 +29,7 @@ export const LIMITS = Object.freeze({
   maxUrlLength: 2048,
   maxDataUrlLength: 512 * 1024,
   maxEffectLayers: 4,
+  maxForceFields: 4,
   maxIdLength: 64
 });
 
@@ -41,6 +42,10 @@ export const COMMANDS = Object.freeze([
   'resume',
   'update',
   'clearAccumulation',
+  'getParticle',
+  'updateParticle',
+  'applyForce',
+  'clearForces',
   'burst',
   'wind',
   'glyphs',
@@ -239,6 +244,63 @@ const PARAM_SANITIZERS = {
   pause: () => ({ ok: true, params: {} }),
   resume: () => ({ ok: true, params: {} }),
   clearAccumulation: () => ({ ok: true, params: {} }),
+  clearForces: () => ({ ok: true, params: {} }),
+  getParticle: (raw) => {
+    if (!Number.isInteger(raw.index) || raw.index < 0 || raw.index >= 100000) {
+      return { ok: false, error: 'invalid_particle_index' };
+    }
+    return { ok: true, params: { index: raw.index } };
+  },
+  updateParticle: (raw) => {
+    if (!Number.isInteger(raw.index) || raw.index < 0 || raw.index >= 100000) {
+      return { ok: false, error: 'invalid_particle_index' };
+    }
+    if (!isPlainObject(raw.patch)) return { ok: false, error: 'particle_patch_required' };
+    const patch = {};
+    for (const [key, min, max] of [
+      ['x', 0, 100000], ['y', 0, 100000],
+      ['velocityX', -900, 900], ['velocityY', -900, 900]
+    ]) {
+      if (raw.patch[key] === undefined) continue;
+      if (typeof raw.patch[key] !== 'number' || !Number.isFinite(raw.patch[key])) {
+        return { ok: false, error: 'invalid_particle_value' };
+      }
+      patch[key] = Math.max(min, Math.min(max, raw.patch[key]));
+    }
+    return Object.keys(patch).length
+      ? { ok: true, params: { index: raw.index, patch } }
+      : { ok: false, error: 'particle_patch_required' };
+  },
+  applyForce: (raw) => {
+    if (typeof raw.x !== 'number' || typeof raw.y !== 'number'
+      || !Number.isFinite(raw.x) || !Number.isFinite(raw.y)) {
+      return { ok: false, error: 'invalid_coordinates' };
+    }
+    if (!['impulse', 'field'].includes(raw.type)
+      || !['outward', 'inward'].includes(raw.direction)) {
+      return { ok: false, error: 'invalid_force_mode' };
+    }
+    if (typeof raw.radius !== 'number' || !Number.isFinite(raw.radius) || raw.radius <= 0
+      || typeof raw.strength !== 'number' || !Number.isFinite(raw.strength) || raw.strength <= 0) {
+      return { ok: false, error: 'invalid_force_value' };
+    }
+    if (raw.type === 'field' && (typeof raw.durationMs !== 'number'
+      || !Number.isFinite(raw.durationMs) || raw.durationMs <= 0)) {
+      return { ok: false, error: 'invalid_force_duration' };
+    }
+    return {
+      ok: true,
+      params: {
+        x: Math.max(0, Math.min(100000, raw.x)),
+        y: Math.max(0, Math.min(100000, raw.y)),
+        type: raw.type,
+        direction: raw.direction,
+        radius: Math.min(2000, raw.radius),
+        strength: Math.min(raw.type === 'impulse' ? 600 : 3000, raw.strength),
+        ...(raw.type === 'field' ? { durationMs: Math.min(30000, raw.durationMs) } : {})
+      }
+    };
+  },
   update: (raw) => {
     const config = sanitizeStartConfig(raw.config);
     const liveKeys = new Set([

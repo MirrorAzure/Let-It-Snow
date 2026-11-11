@@ -114,6 +114,17 @@ export class SnowCommandRuntime {
         this.getMainController()?.clearAccumulation?.();
         this.layers.forEach(({ controller }) => controller.clearAccumulation?.());
         return { ok: true };
+      case 'getParticle':
+      case 'updateParticle':
+      case 'applyForce':
+      case 'clearForces': {
+        const controller = this.getMainController();
+        if (!controller) return { ok: false, error: 'not_running' };
+        if (command.command === 'getParticle') return controller.getParticle(params.index);
+        if (command.command === 'updateParticle') return controller.updateParticle(params.index, params.patch);
+        if (command.command === 'applyForce') return controller.applyForce(params);
+        return controller.clearForces();
+      }
       case 'start': {
         const config = await this.resolveStartConfig(params.config || {});
         await this.startMain(config);

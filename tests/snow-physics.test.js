@@ -149,6 +149,22 @@ describe('snowflake physics', () => {
     expect(lacyFlake.dragCoefficient).toBeGreaterThan(lightFlake.dragCoefficient);
   });
 
+  it('keeps representative terminal speeds within the documented visual-model ranges', () => {
+    const cases = [
+      { size: 20, snowShape: 'regular', snowFluffiness: 0, range: [16, 16.4] },
+      { size: 40, snowShape: 'regular', snowFluffiness: 0, range: [22.7, 23.1] },
+      { size: 20, snowShape: 'lacy', snowFluffiness: 1, range: [6.1, 6.5] }
+    ];
+
+    for (const { size, snowShape, snowFluffiness, range } of cases) {
+      const flake = { ...makeFlake(size), _massVariation: 1 };
+      stepSnowflakePhysics(flake, 1 / 60, { ...config, snowShape, snowFluffiness });
+
+      expect(flake.terminalVelocity).toBeGreaterThanOrEqual(range[0]);
+      expect(flake.terminalVelocity).toBeLessThanOrEqual(range[1]);
+    }
+  });
+
   it('derives shape from fluffiness and honors per-flake shape overrides', () => {
     const automaticConfig = { ...config, snowShape: 'auto' };
     const compactFlake = makeFlake();

@@ -127,6 +127,50 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     document.body.innerHTML = '';
   });
 
+  it('controls main particles and applies bounded radial forces for simulation time only', () => {
+    const environment = create({ accumulationEnabled: false });
+    const flake = makeFlake({ x: 150, y: 100, velocityX: 0, velocityY: 0 });
+    const grabbed = makeFlake({ x: 150, y: 100, isGrabbed: true });
+    const controller = new SnowWebGPUController({ accumulationEnabled: false });
+    controller.environment = environment;
+    controller.renderer = { flakes: [flake, grabbed], viewportWidth: 800, viewportHeight: 600 };
+    expect(controller.getParticle(2)).toEqual({ ok: false, error: 'particle_unavailable' });
+    expect(controller.updateParticle(1, { x: 300 })).toEqual({ ok: false, error: 'particle_grabbed' });
+    expect(controller.updateParticle(0, { x: 1000, y: 200, velocityY: -50 }).particle)
+      .toMatchObject({ index: 0, x: 800, y: 200, velocityY: -50 });
+    expect(flake.baseX).toBe(800);
+    expect(flake.previousSurfaceY).toBe(200);
+    controller.updateParticle(0, { x: 150, y: 100, velocityY: 0 });
+    const impulse = { type: 'impulse', direction: 'outward', x: 100, y: 100, radius: 100, strength: 100 };
+    expect(controller.applyForce(impulse)).toEqual({ ok: true, affected: 1 });
+    expect(flake.velocityX).toBe(50);
+    expect(grabbed.velocityX).toBe(0);
+    const field = { ...impulse, type: 'field', direction: 'inward', durationMs: 150 };
+    expect(controller.applyForce(field)).toEqual({ ok: true, fields: 1 });
+    environment.beginFrame(0.1, [flake, grabbed], 800, 600);
+    expect(flake.velocityX).toBeCloseTo(45);
+    expect(environment.forceFields[0].remaining).toBeCloseTo(0.05);
+    environment.beginFrame(0.1, [flake, grabbed], 800, 600);
+    expect(flake.velocityX).toBeCloseTo(42.5);
+    expect(environment.forceFields).toHaveLength(0);
+    for (let i = 0; i < 4; i++) expect(controller.applyForce(field).ok).toBe(true);
+    expect(controller.applyForce(field)).toEqual({ ok: false, error: 'force_limit_reached' });
+    expect(controller.clearForces()).toEqual({ ok: true, cleared: 4 });
+    expect(environment.forceFields).toHaveLength(0);
+  });
+
+  it('releases settled particles and dependent placements when updating them', () => {
+    const environment = create();
+    const flake = land(environment);
+    const controller = new SnowWebGPUController();
+    controller.environment = environment;
+    controller.renderer = { flakes: [flake], viewportWidth: 800, viewportHeight: 600 };
+    const result = controller.updateParticle(0, { x: 350, velocityY: -20 });
+    expect(result.particle).toMatchObject({ x: 350, velocityY: -20, settled: false });
+    expect(environment.settled.size).toBe(0);
+    expect(environment.surfaces.placements.has(flake)).toBe(false);
+  });
+
   it('lands emoji in one bounded row above a visible surface, not over its contents', () => {
     const environment = create();
     const flake = land(environment);
@@ -135,6 +179,24 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     expect(flake.y + flake.size / 2).toBe(198);
     expect(flake.velocityY).toBe(0);
     expect(environment.settled.size).toBe(1);
+  });
+
+  it('reuses hit tests within a frame and invalidates them before the next frame', () => {
+    const environment = create();
+    environment.beginFrame(1 / 60, [], 800, 600);
+    const tracker = environment.surfaces;
+    const surface = tracker.surfaces[0];
+
+    expect(tracker.hasRoom(surface, 120, 20)).toBe(true);
+    const callsAfterFirstCheck = document.elementFromPoint.mock.calls.length;
+    expect(callsAfterFirstCheck).toBeGreaterThan(0);
+    expect(tracker.hasRoom(surface, 120, 20)).toBe(true);
+    expect(document.elementFromPoint).toHaveBeenCalledTimes(callsAfterFirstCheck);
+
+    document.elementFromPoint.mockReturnValue(document.body);
+    tracker.refresh(performance.now());
+    expect(tracker.hasRoom(surface, 120, 20)).toBe(false);
+    expect(document.elementFromPoint).toHaveBeenCalledTimes(callsAfterFirstCheck + 1);
   });
 
   it('refreshes Canvas collision radii when the flake geometry changes', () => {

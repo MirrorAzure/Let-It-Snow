@@ -129,6 +129,7 @@ describe('renderer quality integration', () => {
     };
     draw(120, 2);
     const originalWidth = canvas.width;
+    expect(renderer.canvas2dMaxDpr).toBe(2);
     draw(40, 4);
     expect(renderer.adaptiveQuality.level).toBeGreaterThan(0);
     const ratio = Math.min(window.devicePixelRatio || 1, renderer.canvas2dMaxDpr)

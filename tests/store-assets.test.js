@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildListing, extractChangelog } from '../scripts/store-assets/listing.js';
-import { stripPngAlpha } from '../scripts/build-store-assets.js';
+import { PROMOS, SCENES, SNOW_WARMUP_MS, promoOverlayOptions, selectStoreScenes, stripPngAlpha, writeCaptureFile } from '../scripts/build-store-assets.js';
 
 const rootDir = path.join(import.meta.dirname, '..');
 
@@ -58,6 +58,44 @@ function rgbaPng(width, height, pixel) {
 }
 
 describe('store assets', () => {
+  it('uses the normal snowfall spawn path and lets it run before capturing every scene', () => {
+    expect(SNOW_WARMUP_MS).toBeGreaterThanOrEqual(100000);
+    for (const options of [...SCENES.map((scene) => scene.overlay), ...PROMOS.map(promoOverlayOptions)]) {
+      expect(options.initialDistribution).toBeUndefined();
+      expect(options.initialSpawnSpanRatio).toBeUndefined();
+      expect(options.initialTimeOffsetSeconds).toBeUndefined();
+    }
+  });
+
+  it('can regenerate selected scenes without overwriting the others', () => {
+    const result = selectStoreScenes(['--scene=screenshot-2.png', '--scene=promo-small-440x280.png']);
+    expect(result.scenes.map(({ file }) => file)).toEqual(['screenshot-2.png']);
+    expect(result.promos.map(({ file }) => file)).toEqual(['promo-small-440x280.png']);
+    expect(() => selectStoreScenes(['--scene=missing.png'])).toThrow('Unknown store scene');
+  });
+
+  it('surfaces permanent write errors and retries transient Windows failures', async () => {
+    const write = vi.spyOn(fs, 'writeFileSync');
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const error = Object.assign(new Error('access denied'), { code: 'EACCES' });
+      write.mockImplementation(() => { throw error; });
+      await expect(writeCaptureFile('test.png', Buffer.alloc(0))).rejects.toBe(error);
+      expect(write).toHaveBeenCalledTimes(1);
+      if (process.platform === 'win32') {
+        write.mockReset();
+        write.mockImplementationOnce(() => { throw Object.assign(new Error('busy'), { code: 'UNKNOWN' }); });
+        write.mockImplementation(() => {});
+        await writeCaptureFile('test.png', Buffer.alloc(0));
+        expect(write).toHaveBeenCalledTimes(2);
+        expect(warning).toHaveBeenCalledOnce();
+      }
+    } finally {
+      write.mockRestore();
+      warning.mockRestore();
+    }
+  });
+
   it('strips the PNG alpha channel without changing colors', () => {
     const pixel = (x, y) => [(x * 37 + y) & 0xff, (y * 53) & 0xff, (x * y) & 0xff, 255];
     const result = stripPngAlpha(rgbaPng(9, 7, pixel));

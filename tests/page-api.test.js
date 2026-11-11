@@ -104,6 +104,18 @@ describe('page API gating', () => {
     expect(responses(postSpy).find((r) => r.id === 'p5')).toBeUndefined();
   });
 
+  it('validates particle commands and returns runtime errors to the requesting page', async () => {
+    setupChrome({ pageApiEnabled: true, pageApiOrigins: [window.location.origin] });
+    await import('../src/content/index.js');
+    await flush();
+    sendPageCommand({ command: 'getParticle', params: { index: -1 }, id: 'particle-invalid' });
+    sendPageCommand({ command: 'getParticle', params: { index: 0 }, id: 'particle-stopped' });
+    await flush();
+    const all = responses(postSpy);
+    expect(all.some((r) => r.id === 'particle-invalid' && r.error === 'invalid_particle_index')).toBe(true);
+    expect(all.some((r) => r.id === 'particle-stopped' && r.error === 'not_running')).toBe(true);
+  });
+
   it('rejects runtime snowCommand messages from other extensions', async () => {
     setupChrome({});
     await import('../src/content/index.js');

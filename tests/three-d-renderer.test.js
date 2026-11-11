@@ -9,6 +9,7 @@ import {
   resolveGlowFlicker,
   resolveInitialFlakeY
 } from '../src/content/three-d-renderer.js';
+import { applyMouseFieldForce } from '../src/content/physics/snow-physics.js';
 
 describe('ThreeDSnowRenderer', () => {
   it('never produces a dark glow color, even for dark flakes', () => {
@@ -90,6 +91,33 @@ describe('ThreeDSnowRenderer', () => {
     geometry.dispose();
   });
 
+  it('rasterizes text and emoji masks at the higher glyph detail resolution', () => {
+    const data = new Uint8ClampedArray(280 * 280 * 4);
+    data[(140 * 280 + 140) * 4 + 3] = 255;
+    const contexts = [];
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => {
+      const context = {
+        clearRect: vi.fn(), fillText: vi.fn(), getImageData: vi.fn(() => ({ data })),
+        measureText: vi.fn(() => ({ width: 100 }))
+      };
+      contexts.push(context);
+      return context;
+    });
+    try {
+      const renderer = new ThreeDSnowRenderer(null);
+      for (const [glyph, mode] of [['❄', 'text'], ['🎄', 'emoji']]) {
+        const shape = renderer._createGlyphMask(glyph, mode);
+        const context = contexts.at(-1);
+        expect(shape.unit).toBe(192);
+        expect(shape.mask.reduce((sum, pixel) => sum + pixel, 0)).toBe(1);
+        expect(context.font).toContain('192px');
+        expect(context.fillText).toHaveBeenCalledWith(glyph, 140, 140, 272);
+      }
+    } finally {
+      getContext.mockRestore();
+    }
+  });
+
   it('selects configured glyphs, modes, and palette colors per flake', () => {
     expect(resolveGlyphAppearance({
       snowletters: ['❄', '✦'],
@@ -162,6 +190,84 @@ describe('ThreeDSnowRenderer', () => {
     expect(renderer.flakes[0].velocityX).toBeLessThan(renderer.flakes[1].velocityX);
   });
 
+  it.each([
+    {
+      name: 'head-on',
+      previous: [{ x: -10, y: 0, z: 0, scale: 1 }, { x: 10, y: 0, z: 0, scale: 1 }],
+      current: [{ x: 10, y: 0, z: 0, scale: 1 }, { x: -10, y: 0, z: 0, scale: 1 }],
+      velocities: [[1200, 0, 0], [-1200, 0, 0]]
+    },
+    {
+      name: 'glancing',
+      previous: [{ x: -10, y: 0, z: 0, scale: 1 }, { x: 0, y: 11.5, z: 0, scale: 1 }],
+      current: [{ x: 10, y: 0, z: 0, scale: 1 }, { x: 0, y: -8.5, z: 0, scale: 1 }],
+      velocities: [[1200, 0, 0], [0, 1200, 0]]
+    }
+  ])('detects a fast $name impact when the flakes no longer overlap', ({ previous, current, velocities }) => {
+    const renderer = new ThreeDSnowRenderer(null);
+    renderer.viewportWidth = 100;
+    renderer.viewportHeight = 100;
+    renderer.flakes = velocities.map(([velocityX, velocityY, velocityZ]) => ({
+      x: 50, y: 50, z: 0, size: 2, mass: 1, velocityX, velocityY, velocityZ
+    }));
+
+    renderer._resolveCollisions(current, previous, 1 / 60);
+
+    expect(renderer.flakes[0].velocityX !== velocities[0][0]
+      || renderer.flakes[0].velocityY !== velocities[0][1]
+      || renderer.flakes[0].velocityZ !== velocities[0][2]).toBe(true);
+    expect(renderer.flakes[1].velocityX !== velocities[1][0]
+      || renderer.flakes[1].velocityY !== velocities[1][1]
+      || renderer.flakes[1].velocityZ !== velocities[1][2]).toBe(true);
+  });
+
+  it('keeps grabbed flakes kinematic during a swept impact', () => {
+    const renderer = new ThreeDSnowRenderer(null);
+    renderer.viewportWidth = 100;
+    renderer.viewportHeight = 100;
+    renderer.flakes = [
+      { x: 50, y: 50, z: 0, size: 2, mass: 1, velocityX: 1200, velocityY: 0, velocityZ: 0 },
+      { x: 50, y: 50, z: 0, size: 2, mass: 1, isGrabbed: true, velocityX: 0, velocityY: 0, velocityZ: 0 }
+    ];
+
+    renderer._resolveCollisions(
+      [{ x: 10, y: 0, z: 0, scale: 1 }, { x: 0, y: 0, z: 0, scale: 1 }],
+      [{ x: -10, y: 0, z: 0, scale: 1 }, { x: 0, y: 0, z: 0, scale: 1 }],
+      1 / 60
+    );
+
+    expect(renderer.flakes[0].velocityX).toBeLessThan(0);
+    expect(renderer.flakes[1].velocityX).toBe(0);
+    expect(renderer.flakes[1].y).toBe(50);
+  });
+
+  it('does not sweep collision paths across viewport wraps', () => {
+    const renderer = new ThreeDSnowRenderer(null);
+    renderer.config = { gravity: 0 };
+    renderer.viewportWidth = 100;
+    renderer.viewportHeight = 100;
+    renderer.flakes = [
+      {
+        x: -1.9, y: 50, z: 0, size: 2,
+        velocityX: -900, velocityY: 0, velocityZ: 0,
+        rotationX: 0, rotationY: 0, rotationZ: 0,
+        rotationSpeedX: 0, rotationSpeedY: 0, rotationSpeedZ: 0
+      },
+      {
+        x: 50, y: 50, z: 0, size: 2,
+        velocityX: 0, velocityY: 0, velocityZ: 0,
+        rotationX: 0, rotationY: 0, rotationZ: 0,
+        rotationSpeedX: 0, rotationSpeedY: 0, rotationSpeedZ: 0
+      }
+    ];
+
+    renderer._updateInstances(1 / 60);
+
+    expect(renderer.flakes[0].x).toBeGreaterThan(100);
+    expect(renderer.flakes[1].velocityX).toBe(0);
+    expect(renderer.flakes[1].velocityY).toBe(0);
+  });
+
   it('uses full vertical velocity and leaves a grabbed 3D support kinematic', () => {
     const renderer = new ThreeDSnowRenderer(null);
     renderer.viewportWidth = 100;
@@ -206,6 +312,23 @@ describe('ThreeDSnowRenderer', () => {
     expect(near.velocityX).toBeLessThan(0);
     expect(far.velocityX).toBeLessThan(0);
     expect(Math.abs(near.velocityX)).toBeGreaterThan(Math.abs(far.velocityX));
+  });
+
+  it.each(['blower', 'suction'])('matches the shared held %s force at the 3D screen plane', (mode) => {
+    const renderer = new ThreeDSnowRenderer(null, { mouseRadius: 100, mouseForce: 300 });
+    renderer.mouseX = 0;
+    renderer.mouseY = 0;
+    renderer.mouseLeftPressed = mode === 'blower';
+    renderer.mouseRightPressed = mode === 'suction';
+    const actual = { x: 50, y: 0, z: 0, velocityX: 0, velocityY: 0, velocityZ: 0 };
+    const expected = { ...actual };
+    applyMouseFieldForce(expected, 0, 0, 350, mode, 3000, 1 / 60);
+
+    renderer._applyMouseForce(actual, 1 / 60);
+
+    expect(actual.velocityX).toBeCloseTo(expected.velocityX);
+    expect(actual.velocityY).toBeCloseTo(expected.velocityY);
+    expect(actual.velocityZ).toBe(0);
   });
 
   it('attenuates the one-shot explosion with 3D depth', () => {

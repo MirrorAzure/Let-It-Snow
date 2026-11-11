@@ -32,6 +32,10 @@ respawning, and end only after the last particle falls past the bottom. Their
 | `ping`         | —                                                                                                                                                                                        |
 | `start`        | `config`: `snowmax` (1–320), `snowminsize`/`snowmaxsize` (2–10), `snowFluffiness` (0–1), `snowShape` (`auto`/`compact`/`regular`/`lacy`), `snowShapeOverrides` (≤320 per-flake entries), `gravity` (0–20), `airDensity` (0.4–2), `colors` (≤12 `#hex`), `symbols` (≤16), `glyphMode` (`text`/`emoji`), `rendererMode` (`auto`/`3d`), `windEnabled`, `windDirection`, `windStrength` (0–3), `windGustFrequency` (0.5–10), `windGustStrength` and `turbulenceStrength` (0–1), `updraftStrength` (0–80 m/s). Missing values come from saved settings. |
 | `stop`         | — (stops the main snow and all effects)                                                                                                                                                  |
+| `getParticle`  | `index` (non-negative integer): inspect one active main-layer particle |
+| `updateParticle` | `index`, `patch`: any of `x`, `y`, `velocityX`, `velocityY` |
+| `applyForce`   | `type` (`impulse`/`field`), `direction` (`outward`/`inward`), `x`, `y`, `radius`, `strength`; fields also require `durationMs` |
+| `clearForces`  | — (cancel all main-layer timed fields) |
 | `burst`        | `count` 250 → 1–600, `durationMs` 6000, legacy `speed` 1.6 → 0.1–6 (ignored by snowflake physics), `symbols`, `colors`, `entry` `instant`/`top` (default `instant`: the whole burst enters from the top as one dense wave; `top` trickles in) |
 | `wind`         | `enabled` true, `direction` `left`/`right`/`random`, `strength` 1.6 → 0–3, `gustFrequency` 5 → 0.5–10, `durationMs` 8000 (`0` = until the next `wind` command)                              |
 | `glyphs`       | **`symbols`** (required, ≤16 symbols, ≤16 code points each), `glyphMode` `text`/`emoji`, `colors`, `count` 60 → 1–300, `durationMs` 10000, legacy `speed` (ignored by snowflake physics), `entry` `top`                       |
@@ -73,6 +77,41 @@ The `speed` parameter for GIF layers remains available.
   Visual/count changes still use `start`. Updates are session-only, not saved popup settings.
 - `start.config` also accepts `mouseRadius` and `accumulationEnabled`.
 - `clearAccumulation`: sheds settled particles on **all layers**, without deleting them or stopping the snow.
+
+### Main-layer particle and force controls
+
+`getParticle` returns `{ok:true, particle:{index,x,y,velocityX,velocityY,size,settled,grabbed}}`.
+Indices refer to the main snow array, not effects or GIFs, and are valid only until the
+main snowfall restarts or the renderer is replaced. A particle can respawn at the same
+index. `particle_unavailable` means the index does not exist or is currently inactive.
+`updateParticle` returns the same shape after applying its nonempty `patch`: coordinates
+are viewport CSS pixels, clamped to the viewport; velocities are CSS px/s, clamped to
+−900–900. Updating a settled particle releases it and any dependents; grabbed particles
+return `particle_grabbed`. Changes while paused appear after rendering resumes.
+
+`applyForce` acts only on active, non-grabbed main snowflakes. It releases settled
+particles in range. `x` and `y` are CSS pixels, `radius` is positive and capped at
+2000 px. `direction` selects attraction or repulsion; influence decreases linearly to
+zero at the radius. At the exact center the outward direction is up. An `impulse`
+applies `strength` (positive, capped at 600 CSS px/s) immediately and returns
+`{ok:true, affected}`. A `field` applies acceleration `strength` (positive, capped at
+3000 CSS px/s²) for `durationMs` (positive, capped at 30000) and returns
+`{ok:true, fields}`. At most four fields coexist; further requests return
+`force_limit_reached`. Fields advance only with simulation steps, pause with the
+simulation, and are discarded on stop, restart, or renderer replacement.
+`clearForces` returns `{ok:true, cleared}`; it does not undo impulses.
+With no main snow the commands return `not_running`; if its renderer is unavailable,
+they return `renderer_unavailable`. Malformed inputs return `invalid_particle_index`,
+`particle_patch_required`, `invalid_particle_value`, `invalid_coordinates`,
+`invalid_force_mode`, `invalid_force_value`, or `invalid_force_duration`.
+
+```json
+{"command":"getParticle","params":{"index":0}}
+{"command":"updateParticle","params":{"index":0,"patch":{"x":200,"y":100,"velocityY":-80}}}
+{"command":"applyForce","params":{"type":"impulse","direction":"outward","x":400,"y":250,"radius":150,"strength":180}}
+{"command":"applyForce","params":{"type":"field","direction":"inward","x":400,"y":250,"radius":250,"strength":300,"durationMs":2000}}
+{"command":"clearForces"}
+```
 
 ```json
 {"command":"burst","params":{"x":400,"y":250,"count":80,"symbols":["🎉","⭐"],"glyphMode":"emoji"}}
@@ -186,6 +225,8 @@ Responses:
 
 `GET /health` returns `{"ok":true,"service":"let-it-snow-relay"}` without the token.
 `delivered` counts connected relay clients, not tabs or confirmed visual effects.
+Relay/OBS commands are broadcasts: the HTTP response does not contain a target's
+execution result or particle state. Use the page API when a response is required.
 
 ### WebSocket (`/ws`)
 
@@ -223,6 +264,31 @@ Page commands only affect the current tab. They are never broadcast to other tab
 They are limited to 20 per 10 s. GIF URLs from a page load with the page's own permissions; the
 extension does not fetch them through its background, so CORS is never bypassed.
 
+For request/response use, this helper correlates IDs and removes its listener on
+success, error, or timeout (the page API must first be enabled for this origin):
+
+```js
+function snowCommand(command, params = {}, timeoutMs = 3000) {
+  const id = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => { clearTimeout(timer); window.removeEventListener('message', onMessage); };
+    const onMessage = (event) => {
+      if (event.source !== window || event.origin !== location.origin ||
+          event.data?.target !== 'let-it-snow-api-response' || event.data.id !== id) return;
+      cleanup();
+      if (event.data.ok) resolve(event.data);
+      else reject(new Error(event.data.error));
+    };
+    const timer = setTimeout(() => { cleanup(); reject(new Error('snow_api_timeout')); }, timeoutMs);
+    window.addEventListener('message', onMessage);
+    window.postMessage({ target: 'let-it-snow-api', id, command, params }, location.origin);
+  });
+}
+
+const { particle } = await snowCommand('getParticle', { index: 0 });
+await snowCommand('updateParticle', { index: 0, patch: { velocityY: -80 } });
+```
+
 ## 4. OBS Browser Source
 
 1. Run `pnpm build` (or `pnpm build:obs`) and start `pnpm relay`.
@@ -232,6 +298,9 @@ extension does not fetch them through its background, so CORS is never bypassed.
    so no custom CSS is needed.
 
 Query parameters:
+- `initialDistribution=viewport` opts into starting with flakes distributed throughout the viewport;
+  without it, normal snowfall enters from above.
+- `symbolModes` optionally lists comma-separated `text`/`emoji` modes in the same order as `symbols`.
 - `snowmax`, `speed`, `minsize`, `maxsize`
 - `colors` (comma-separated, URL-encoded `#`), `symbols`, `glyphMode`
 - `renderer` (`auto`/`3d`)

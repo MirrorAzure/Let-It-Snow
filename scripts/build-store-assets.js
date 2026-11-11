@@ -32,15 +32,7 @@ const LANGS = ['en', 'ru'];
 const log = (msg) => console.log(`   ${msg}`);
 const warn = (msg) => console.warn(`   ⚠ ${msg}`);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// Screenshots are still frames, so snow can fall faster while the screen fills up.
-// Speeds are clamped to the protocol limits (base snowfall ≤ 3, effects ≤ 6).
-const FAST_FORWARD = 3;
-const fastSpeed = (speed, max) => Math.min(max, Math.round(speed * FAST_FORWARD * 100) / 100);
-const settle = (ms) => sleep(Math.round(ms / FAST_FORWARD));
-const fastCommand = (command) => (command.params?.speed === undefined
-  ? command
-  : { ...command, params: { ...command.params, speed: fastSpeed(command.params.speed, 6) } });
+export const SNOW_WARMUP_MS = 100000;
 
 // ---------------------------------------------------------------------------
 // Scenes
@@ -48,11 +40,11 @@ const fastCommand = (command) => (command.params?.speed === undefined
 
 const PALETTE = ['#ffffff', '#4fc3f7', '#bbdefb', '#e1f5fe'];
 
-const SCENES = [
+export const SCENES = [
   {
     file: 'screenshot-1.png',
     theme: 'market',
-    overlay: { renderer: 'auto', snowmax: 170, gravity: 20, initialSpawnSpanRatio: 0.15, minsize: 3, maxsize: 6, colors: PALETTE },
+    overlay: { renderer: 'auto', snowmax: 170, gravity: 20, minsize: 3, maxsize: 6, colors: PALETTE },
     popupTab: 'subtab:snow',
     texts: {
       en: { title: 'Let it snow on any website', text: 'Beautiful glowing snowfall on top of every page — click-through and lightweight.' },
@@ -62,9 +54,12 @@ const SCENES = [
   {
     file: 'screenshot-2.png',
     theme: 'aurora',
-    overlay: { renderer: '3d', snowmax: 110, gravity: 20, initialSpawnSpanRatio: 0.15, minsize: 4, maxsize: 8, colors: PALETTE },
+    overlay: {
+      renderer: '3d', snowmax: 110, gravity: 20, minsize: 4, maxsize: 8,
+      colors: PALETTE, symbols: ['❄', '❅', '❆', '🎄', '⭐', '🎁'],
+      symbolModes: ['text', 'text', 'text', 'emoji', 'emoji', 'emoji']
+    },
     seed: { rendererMode: '3d', symbols: ['❄', '❅', '❆', '🎄', '⭐', '🎁'], symbolModes: ['text', 'text', 'text', 'emoji', 'emoji', 'emoji'] },
-    commands: [{ command: 'glyphs', params: { symbols: ['🎄', '⭐', '🎁'], glyphMode: 'emoji', count: 26, durationMs: 60000, speed: 0.7, entry: 'top' } }],
     popupTab: 'subtab:symbols',
     texts: {
       en: { title: '3D snowflakes with glow', text: 'Volumetric tumbling flakes and full-color emoji with a soft twinkling glow.' },
@@ -74,7 +69,7 @@ const SCENES = [
   {
     file: 'screenshot-3.png',
     theme: 'sale',
-    overlay: { renderer: 'auto', snowmax: 120, gravity: 20, initialSpawnSpanRatio: 0.15, minsize: 3, maxsize: 6, colors: PALETTE },
+    overlay: { renderer: 'auto', snowmax: 120, gravity: 20, minsize: 3, maxsize: 6, colors: PALETTE },
     seed: { windEnabled: true, windDirection: 'right', windStrength: 0.8 },
     images: true,
     commands: [{ command: 'wind', params: { enabled: true, direction: 'right', strength: 1.2, gustFrequency: 4, durationMs: 0 } }],
@@ -87,7 +82,7 @@ const SCENES = [
   {
     file: 'screenshot-4.png',
     theme: 'blog',
-    overlay: { renderer: 'auto', snowmax: 150, gravity: 20, initialSpawnSpanRatio: 0.15, minsize: 3, maxsize: 6, colors: ['#4fc3f7', '#7c4dff', '#90caf9', '#b39ddb'] },
+    overlay: { renderer: 'auto', snowmax: 150, gravity: 20, minsize: 3, maxsize: 6, colors: ['#4fc3f7', '#7c4dff', '#90caf9', '#b39ddb'] },
     popupTab: 'tab:help',
     popupHelpSection: 'start',
     texts: {
@@ -98,9 +93,7 @@ const SCENES = [
   {
     file: 'screenshot-5.png',
     theme: 'stream',
-    overlay: { renderer: 'auto', snowmax: 120, gravity: 20, initialSpawnSpanRatio: 0.15, minsize: 3, maxsize: 6, colors: PALETTE },
-    commands: [{ command: 'burst', params: { count: 260, durationMs: 60000, speed: 1.1, symbols: ['❄', '❅', '✦'], colors: ['#ffffff', '#b388ff', '#80d8ff'], entry: 'top' } }],
-    burstDelayMs: 5000,
+    overlay: { renderer: 'auto', snowmax: 120, gravity: 20, minsize: 3, maxsize: 6, colors: PALETTE },
     popupTab: 'subtab:api',
     texts: {
       en: { title: 'External API, sync & OBS', text: 'Trigger effects from bots and scripts, sync windows and browsers, stream with OBS.' },
@@ -109,10 +102,45 @@ const SCENES = [
   }
 ];
 
-const PROMOS = [
+export const PROMOS = [
   { file: 'promo-small-440x280.png', width: 440, height: 280, snowmax: 70, minsize: 3, maxsize: 6 },
   { file: 'promo-marquee-1400x560.png', width: 1400, height: 560, snowmax: 160, minsize: 3, maxsize: 6 }
 ];
+
+export function promoOverlayOptions(promo) {
+  return {
+    renderer: 'auto',
+    snowmax: promo.snowmax,
+    gravity: 20,
+    minsize: promo.minsize,
+    maxsize: promo.maxsize,
+    colors: PALETTE
+  };
+}
+
+export function selectStoreScenes(args = []) {
+  const requested = args.filter((arg) => arg.startsWith('--scene=')).map((arg) => arg.slice(8));
+  const names = new Set([...SCENES, ...PROMOS].map(({ file }) => file));
+  for (const name of requested) {
+    if (!names.has(name)) throw new Error(`Unknown store scene: ${name}`);
+  }
+  const includes = ({ file }) => requested.length === 0 || requested.includes(file);
+  return { scenes: SCENES.filter(includes), promos: PROMOS.filter(includes) };
+}
+
+export async function writeCaptureFile(file, png) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.writeFileSync(file, png);
+      return;
+    } catch (error) {
+      if (process.platform !== 'win32' || !['EBUSY', 'EPERM', 'UNKNOWN'].includes(error.code)
+        || attempt >= 4) throw error;
+      warn(`Could not write ${file} (${error.code}); retrying`);
+      await sleep(250 * (attempt + 1));
+    }
+  }
+}
 
 const PROMO_TEXTS = {
   en: { name: 'Let it snow', tagline: 'Glowing snowfall on any website' },
@@ -471,7 +499,8 @@ function chunkImages(images, maxBytes = 28000) {
 // Main
 // ---------------------------------------------------------------------------
 
-export async function generateStoreAssets() {
+export async function generateStoreAssets(args = []) {
+  const { scenes, promos } = selectStoreScenes(args);
   const pkg = readJson(path.join(rootDir, 'package.json'));
   const version = pkg.version;
 
@@ -486,9 +515,9 @@ export async function generateStoreAssets() {
     changelogRu: readText('CHANGELOG_RU.md'),
     warn
   });
+  const imageFiles = [...SCENES, ...PROMOS].map(({ file }) => file).sort();
 
   const executable = findBrowser();
-  fs.rmSync(outDir, { recursive: true, force: true });
   for (const lang of LANGS) fs.mkdirSync(path.join(outDir, lang), { recursive: true });
 
   const writeTexts = () => {
@@ -498,7 +527,7 @@ export async function generateStoreAssets() {
       fs.writeFileSync(path.join(dir, 'title.txt'), `${title}\n`);
       fs.writeFileSync(path.join(dir, 'summary.txt'), `${summary}\n`);
       fs.writeFileSync(path.join(dir, 'description.txt'), `${description}\n`);
-      const shots = fs.readdirSync(dir).filter((name) => name.endsWith('.png')).sort();
+      const shots = imageFiles.filter((name) => fs.existsSync(path.join(dir, name)));
       fs.writeFileSync(path.join(dir, 'listing.md'), [
         `# ${title} — v${version} (${lang})`,
         '',
@@ -547,11 +576,11 @@ export async function generateStoreAssets() {
 
     const capture = async (lang, file) => {
       const png = stripPngAlpha(await page.screenshot());
-      fs.writeFileSync(path.join(outDir, lang, file), png);
+      await writeCaptureFile(path.join(outDir, lang, file), png);
       count += 1;
     };
 
-    for (const scene of SCENES) {
+    for (const scene of scenes) {
       await page.load(`${origin}/stage/`, 1280, 800);
       await page.evaluate(`__stage.setup(${JSON.stringify({
         version,
@@ -564,21 +593,15 @@ export async function generateStoreAssets() {
       })})`);
       await waitForOverlay(relayPort, token);
       for (const command of scene.commands || []) {
-        if (command.command === 'burst' && scene.burstDelayMs) continue;
-        await sendCommand(relayPort, token, fastCommand(command));
+        await sendCommand(relayPort, token, command);
       }
+      await sleep(SNOW_WARMUP_MS);
       if (scene.images) {
         const images = await page.evaluate('__stage.makeImages()');
         for (const urls of chunkImages(images)) {
-          await sendCommand(relayPort, token, fastCommand({ command: 'gif', params: { urls, count: 8 * urls.length > 24 ? 24 : 8 * urls.length, durationMs: 60000, speed: 0.8, entry: 'top' } }));
+          await sendCommand(relayPort, token, { command: 'gif', params: { urls, count: 8 * urls.length > 24 ? 24 : 8 * urls.length, durationMs: 60000, speed: 2.4, entry: 'top' } });
         }
-      }
-      await settle(scene.burstDelayMs ? 4000 : 18000);
-      if (scene.burstDelayMs) {
-        for (const command of scene.commands.filter((item) => item.command === 'burst')) {
-          await sendCommand(relayPort, token, fastCommand(command));
-        }
-        await settle(scene.burstDelayMs);
+        await sleep(6000);
       }
       for (const lang of LANGS) {
         await page.evaluate(`__stage.setLanguage(${JSON.stringify(lang)})`);
@@ -587,25 +610,17 @@ export async function generateStoreAssets() {
       log(`✓ ${scene.file}`);
     }
 
-    for (const promo of PROMOS) {
+    for (const promo of promos) {
       await page.load(`${origin}/stage/`, promo.width, promo.height);
       await page.evaluate(`__stage.setup(${JSON.stringify({
         version,
         promo: true,
         theme: 'promo',
-        overlayUrl: overlayUrl({
-          renderer: 'auto',
-          snowmax: promo.snowmax,
-          gravity: 20,
-          initialSpawnSpanRatio: 0.15,
-          minsize: promo.minsize,
-          maxsize: promo.maxsize,
-          colors: PALETTE
-        }, relayPort, token),
+        overlayUrl: overlayUrl(promoOverlayOptions(promo), relayPort, token),
         texts: PROMO_TEXTS
       })})`);
       await waitForOverlay(relayPort, token);
-      await settle(24000);
+      await sleep(SNOW_WARMUP_MS);
       for (const lang of LANGS) {
         await page.evaluate(`__stage.setLanguage(${JSON.stringify(lang)})`);
         await capture(lang, promo.file);
@@ -636,7 +651,7 @@ export async function generateStoreAssets() {
 
   const rows = [];
   for (const lang of LANGS) {
-    for (const name of fs.readdirSync(path.join(outDir, lang)).filter((file) => file.endsWith('.png')).sort()) {
+    for (const name of imageFiles.filter((file) => fs.existsSync(path.join(outDir, lang, file)))) {
       const info = pngInfo(fs.readFileSync(path.join(outDir, lang, name)));
       if (info.colorType !== 2) warn(`${lang}/${name}: PNG color type ${info.colorType} (expected 2 — RGB without alpha)`);
       rows.push(`| ${lang}/${name} | ${info.width}×${info.height} |`);
@@ -646,7 +661,7 @@ export async function generateStoreAssets() {
     `# Let it snow — Chrome Web Store assets v${version}`,
     '',
     `Generated ${new Date().toISOString()} by \`pnpm store:assets\` (also runs during \`pnpm build\` outside CI).`,
-    'Do not edit by hand — the folder is recreated on every build.',
+    'Generated filenames are overwritten on each build; other files are preserved.',
     '',
     '- `en/`, `ru/` — localized screenshots (1280×800, 24-bit PNG), promo tiles and texts.',
     '- `title.txt`, `summary.txt` (≤ 132 chars), `description.txt` (≤ 16 000 chars), `listing.md` (preview).',
@@ -664,7 +679,7 @@ export async function generateStoreAssets() {
 const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 if (isMain) {
   console.log('🖼️  Chrome Web Store assets...');
-  generateStoreAssets()
+  generateStoreAssets(process.argv.slice(2))
     .then(({ screenshots }) => {
       console.log(`   ✓ store-assets/ (${screenshots} images)`);
       process.exit(0);

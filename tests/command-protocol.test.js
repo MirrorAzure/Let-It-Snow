@@ -59,6 +59,35 @@ describe('command protocol', () => {
     expect(validateCommand(result.command)).toEqual(result);
   });
 
+  it('validates particle commands and bounded radial forces idempotently', () => {
+    for (const index of [-1, 1.5, '1', Infinity]) {
+      expect(validateCommand({ command: 'getParticle', params: { index } }).error)
+        .toBe('invalid_particle_index');
+    }
+    expect(validateCommand({ command: 'updateParticle', params: { index: 0, patch: { x: NaN } } }).error)
+      .toBe('invalid_particle_value');
+    expect(validateCommand({ command: 'updateParticle', params: { index: 0, patch: { size: 2 } } }).error)
+      .toBe('particle_patch_required');
+    const update = validateCommand({
+      command: 'updateParticle', params: { index: 1, patch: { x: -1, velocityY: 10000, size: 8 } }
+    });
+    expect(update.command.params).toEqual({ index: 1, patch: { x: 0, velocityY: 900 } });
+    expect(validateCommand(update.command)).toEqual(update);
+    const force = validateCommand({
+      command: 'applyForce', params: {
+        type: 'field', direction: 'inward', x: -1, y: 1, radius: 3000, strength: 4000, durationMs: 40000
+      }
+    });
+    expect(force.command.params).toEqual({
+      type: 'field', direction: 'inward', x: 0, y: 1, radius: 2000, strength: 3000, durationMs: 30000
+    });
+    expect(validateCommand(force.command)).toEqual(force);
+    for (const patch of [{ x: '1' }, { radius: 0 }, { strength: Infinity }, { durationMs: 0 }, { direction: 'sideways' }]) {
+      expect(validateCommand({ command: 'applyForce', params: { ...force.command.params, ...patch } }).ok).toBe(false);
+    }
+    expect(validateCommand({ command: 'clearForces' }).ok).toBe(true);
+  });
+
   it('allows only live settings in update and rejects empty updates', () => {
     expect(validateCommand({ command: 'update', params: { config: { snowmax: 10 } } }))
       .toEqual({ ok: false, error: 'live_config_required' });

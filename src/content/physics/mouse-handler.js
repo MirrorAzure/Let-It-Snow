@@ -1,7 +1,4 @@
-/**
- * Обработчик взаимодействия анимации с движением мыши
- * Используется как WebGPU так и 2D renderers
- */
+/** Общие помощники взаимодействия с мышью для рендереров 2D, WebGPU и GIF. */
 
 export function applyMouseRepulsion(flake, dx, dy, influence, mouseForce, delta, verticalBias = 0.35) {
   if (!Number.isFinite(delta) || delta <= 0) return;
@@ -9,6 +6,40 @@ export function applyMouseRepulsion(flake, dx, dy, influence, mouseForce, delta,
   const acceleration = influence * mouseForce * delta;
   flake.velocityX = (flake.velocityX ?? 0) + (dx / distance) * acceleration;
   flake.velocityY = (flake.velocityY ?? 0) + (dy / distance) * acceleration * verticalBias;
+}
+
+export function applyMouseMotion(flake, {
+  dx,
+  dy,
+  mouseVelocityX,
+  mouseVelocityY,
+  influence,
+  dragActive,
+  dragStrength,
+  impulseStrength,
+  delta
+}) {
+  if (!flake || !Number.isFinite(delta) || delta <= 0) return;
+  const mouseSpeed = Math.hypot(mouseVelocityX, mouseVelocityY);
+  if (!Number.isFinite(mouseSpeed)) return;
+
+  if (dragActive && mouseSpeed > 0) {
+    const dragForce = influence * dragStrength * (mouseSpeed / 1000);
+    flake.velocityX = (flake.velocityX ?? 0)
+      + (mouseVelocityX / mouseSpeed) * dragForce * delta * 1000;
+    flake.velocityY = (flake.velocityY ?? 0)
+      + (mouseVelocityY / mouseSpeed) * dragForce * delta * 1000;
+  }
+
+  const impulse = influence * impulseStrength;
+  flake.velocityX = (flake.velocityX ?? 0) + mouseVelocityX * impulse * delta;
+  flake.velocityY = (flake.velocityY ?? 0) + mouseVelocityY * impulse * delta;
+
+  if (mouseSpeed > 10 && flake.rotationSpeed !== undefined) {
+    const direction = Math.sign(dx * mouseVelocityY - dy * mouseVelocityX);
+    flake.rotationSpeed = (flake.rotationSpeed ?? 0)
+      + influence * mouseSpeed * 0.01 * direction * delta;
+  }
 }
 
 export class MouseHandler {

@@ -109,3 +109,12 @@ export function resolveInitialSpawnSpanRatio(config = {}, fallback = 1) {
   if (!Number.isFinite(ratio) || ratio <= 0) return fallback;
   return Math.min(3, Math.max(0.05, ratio));
 }
+
+export function resolveInitialViewportY(index, count, viewportHeight) {
+  return ((index + Math.random()) / Math.max(1, count)) * Math.max(1, viewportHeight);
+}
+
+export function resolveInitialViewportX(index, count, viewportWidth) {
+  const position = (index * 0.618033988749895 + Math.random() / Math.max(1, count)) % 1;
+  return position * Math.max(1, viewportWidth);
+}

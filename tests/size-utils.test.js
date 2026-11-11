@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { normalizeGlyphSizePercentRange } from '../src/content/utils/size-utils.js';
+import { normalizeGlyphSizePercentRange, resolveInitialViewportX, resolveInitialViewportY } from '../src/content/utils/size-utils.js';
 
 describe('size-utils normalization', () => {
   const originalGetElementById = document.getElementById;
@@ -36,5 +36,22 @@ describe('size-utils normalization', () => {
       minPercent: 2,
       maxPercent: 4
     });
+  });
+
+  it('stratifies a viewport-filled population across every vertical band', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const positions = Array.from({ length: 120 }, (_, index) => resolveInitialViewportY(index, 120, 800));
+    const bands = Array.from({ length: 4 }, (_, band) =>
+      positions.filter((y) => y >= band * 200 && y < (band + 1) * 200).length);
+    expect(bands).toEqual([30, 30, 30, 30]);
+    for (let row = 0; row < 4; row++) {
+      for (let col = 0; col < 4; col++) {
+        const count = positions.filter((y, index) => {
+          const x = resolveInitialViewportX(index, 120, 1200);
+          return y >= row * 200 && y < (row + 1) * 200 && x >= col * 300 && x < (col + 1) * 300;
+        }).length;
+        expect(count).toBeGreaterThanOrEqual(6);
+      }
+    }
   });
 });

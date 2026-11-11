@@ -3,10 +3,10 @@
  */
 
 import { CollisionHandler } from './physics/collision-handler.js';
-import { applyMouseRepulsion } from './physics/mouse-handler.js';
+import { applyMouseMotion, applyMouseRepulsion } from './physics/mouse-handler.js';
 import { stepWindState } from './physics/wind-field.js';
 import { applyAirBurstImpulse, applyMouseFieldForce, getWindVelocity, MIN_MOUSE_ACTIVITY_SPEED, stepSinkSpeed, stepSnowflakePhysics } from './physics/snow-physics.js';
-import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
+import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio, resolveInitialViewportX, resolveInitialViewportY } from './utils/size-utils.js';
 import { resolveMinGlowStrength } from './utils/glow-utils.js';
 import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
@@ -100,7 +100,7 @@ export class Fallback2DRenderer {
     this.mouseActivityThreshold = config.mouseActivityThreshold ?? MIN_MOUSE_ACTIVITY_SPEED;
     this.maxFlakeSpeed = config.maxFlakeSpeed ?? 560;
     this.maxRotationSpeed = config.maxRotationSpeed ?? 8;
-    this.canvas2dMaxDpr = config.canvas2dMaxDpr ?? 1.75;
+    this.canvas2dMaxDpr = config.canvas2dMaxDpr ?? 2;
     
     // Параметры коллизий между снежинками
     this.enableCollisions = config.enableCollisions ?? true; // Включить коллизии
@@ -512,8 +512,9 @@ export class Fallback2DRenderer {
     this.flakes = []; // Инициализируем как пустой массив для безопасного спауна
     
     const totalFlakes = Math.max(1, snowmax);
-    const initialActive = Math.min(totalFlakes, this.initialActiveFlakes);
-    const { height: viewportHeight } = this._getViewportSize();
+    const fillViewport = this.config.initialDistribution === 'viewport';
+    const initialActive = fillViewport ? totalFlakes : Math.min(totalFlakes, this.initialActiveFlakes);
+    const { width: viewportWidth, height: viewportHeight } = this._getViewportSize();
     const initialDepthSpan = Math.max(viewportHeight * resolveInitialSpawnSpanRatio(this.config, 2.5), 1);
 
     const activeMask = this._buildDistributedSlotMask(totalFlakes, initialActive);
@@ -561,7 +562,9 @@ export class Fallback2DRenderer {
       const color = snowcolor[idx % snowcolor.length];
       
       // Используем функцию поиска безопасной позиции спауна
-      const x = this._findSafeSpawnX(size);
+      const x = fillViewport
+        ? resolveInitialViewportX(idx, totalFlakes, viewportWidth)
+        : this._findSafeSpawnX(size);
       const initialRotation = Math.random() * Math.PI * 2; // Случайный начальный угол для разнообразия
       const initialPhase = Math.random() * Math.PI * 2;
 
@@ -570,9 +573,11 @@ export class Fallback2DRenderer {
         : 0;
 
       const baseY = -size - initialDepth;
-      const startY = isInitiallyActive && initialOffsetSeconds > 0
-        ? this._wrapInitialYPosition(baseY + speed * initialOffsetSeconds, size, viewportHeight)
-        : baseY;
+      const startY = fillViewport
+        ? resolveInitialViewportY(idx, totalFlakes, viewportHeight)
+        : isInitiallyActive && initialOffsetSeconds > 0
+          ? this._wrapInitialYPosition(baseY + speed * initialOffsetSeconds, size, viewportHeight)
+          : baseY;
 
       if (isInitiallyActive) {
         activeCursor++;
@@ -783,7 +788,6 @@ export class Fallback2DRenderer {
       const activityFactor = isMouseActive ? 1 : 0;
       const shouldApplyMouse = burstActive || isMouseActive;
       const isMouseFast = mouseSpeed > this.mouseDragThreshold;
-      const mouseVelMag = mouseSpeed > 0 ? mouseSpeed : 0;
       const speedBoost = isMouseFast
         ? 1 + Math.min(1.8, (mouseSpeed - this.mouseDragThreshold) / this.mouseDragThreshold)
         : 1;
@@ -859,6 +863,7 @@ export class Fallback2DRenderer {
           const burstFactor = burstActive ? Math.min(1, this.mouseBurstTimer / this.mouseBurstDuration) : 0;
           const activeInfluence = influence * Math.max(activityFactor, burstFactor);
           
+          let dragActive = false;
           if (burstActive && this.mouseBurstMode === 'blower') {
             const safeDistance = Math.max(distance, 0.0001);
             const nx = effectiveDx / safeDistance;
@@ -881,16 +886,7 @@ export class Fallback2DRenderer {
             flake.velocityX -= nx * pullAccel * delta;
             flake.velocityY -= ny * pullAccel * delta;
           } else if (isMouseFast) {
-            // Нормализуем вектор скорости мыши
-            if (mouseVelMag > 0) {
-              const mouseDirX = mouseVx / mouseVelMag;
-              const mouseDirY = mouseVy / mouseVelMag;
-              
-              // Притягиваем снежинку в сторону движения мыши
-              const dragForce = activeInfluence * this.mouseDragStrength * (mouseSpeed / 1000) * speedBoost;
-              flake.velocityX += mouseDirX * dragForce * delta * 1000;
-              flake.velocityY += mouseDirY * dragForce * delta * 1000;
-            }
+            dragActive = true;
           } else {
             // Обычное отталкивание при медленном движении
             applyMouseRepulsion(
@@ -904,22 +900,17 @@ export class Fallback2DRenderer {
             );
           }
           
-          // Передаем импульс от движения мыши
-          const impulseStrength = activeInfluence * this.mouseImpulseStrength * speedBoost;
-          flake.velocityX += mouseVx * impulseStrength * delta;
-          flake.velocityY += mouseVy * impulseStrength * delta;
-          
-          // Вращение снежинки при движении мыши рядом
-          // Направление вращения зависит от того, с какой стороны пролетела мышка
-          // mouseSpeed уже объявлена выше в этом forEach-коллбэке
-          // Применяем вращение только если скорость мыши выше порога (> 10 пиксели/сек)
-          // Это предотвращает вращение от дрожания мыши
-          if (mouseSpeed > 10) {
-            const cross = effectiveDx * mouseVy - effectiveDy * mouseVx;
-            const rotationDirection = Math.sign(cross); // +1 или -1
-            const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
-            flake.rotationSpeed = (flake.rotationSpeed || 0) + rotationForce * delta;
-          }
+          applyMouseMotion(flake, {
+            dx: effectiveDx,
+            dy: effectiveDy,
+            mouseVelocityX: mouseVx,
+            mouseVelocityY: mouseVy,
+            influence: activeInfluence,
+            dragActive,
+            dragStrength: this.mouseDragStrength * speedBoost,
+            impulseStrength: this.mouseImpulseStrength * speedBoost,
+            delta
+          });
           
           if (!this.mouseLeftPressed && !this.mouseRightPressed) {
             if (flake.isGrabbed) {

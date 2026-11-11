@@ -10,6 +10,7 @@ import { GifLayer } from './gif-layer.js';
 import { splitSentences } from './utils/glyph-utils.js';
 import { normalizeGlyphSizePercentRange } from './utils/size-utils.js';
 import { ParticleEnvironment } from './physics/particle-environment.js';
+import { LIMITS } from '../api/command-protocol.js';
 
 export const OVERLAY_ID = 'let-it-snow-webgpu-canvas';
 export const MAX_Z_INDEX = '2147483646';
@@ -284,6 +285,58 @@ export class SnowWebGPUController {
 
   clearAccumulation() {
     this.environment?.clear();
+  }
+
+  getParticle(index) {
+    if (!this.renderer || !this.environment) return { ok: false, error: 'renderer_unavailable' };
+    const flake = (this.renderer.flakes || this.renderer.instances || [])[index];
+    if (!flake || flake.isFinished || flake.isAwaitingRespawn) {
+      return { ok: false, error: 'particle_unavailable' };
+    }
+    return {
+      ok: true,
+      particle: {
+        index, x: flake.x, y: flake.y, velocityX: flake.velocityX || 0,
+        velocityY: flake.velocityY || 0, size: flake.size,
+        settled: Boolean(flake.isSettled), grabbed: Boolean(flake.isGrabbed)
+      }
+    };
+  }
+
+  updateParticle(index, patch) {
+    const result = this.getParticle(index);
+    if (!result.ok) return result;
+    const flake = (this.renderer.flakes || this.renderer.instances)[index];
+    if (flake.isGrabbed) return { ok: false, error: 'particle_grabbed' };
+    if (flake.isSettled) this.environment.release(flake, { x: 0, y: 0 });
+    const width = this.renderer.viewportWidth || window.innerWidth || 1;
+    const height = this.renderer.viewportHeight || window.innerHeight || 1;
+    if (patch.x !== undefined) flake.x = flake.baseX = Math.min(width, patch.x);
+    if (patch.y !== undefined) flake.y = Math.min(height, patch.y);
+    if (patch.velocityX !== undefined) flake.velocityX = patch.velocityX;
+    if (patch.velocityY !== undefined) flake.verticalVelocity = flake.velocityY = patch.velocityY;
+    this.environment.resetMotion(flake);
+    return this.getParticle(index);
+  }
+
+  applyForce(params) {
+    if (!this.renderer || !this.environment) return { ok: false, error: 'renderer_unavailable' };
+    const particles = this.renderer.flakes || this.renderer.instances || [];
+    if (params.type === 'impulse') {
+      return { ok: true, affected: this.environment.applyRadialForce(params, particles) };
+    }
+    if (this.environment.forceFields.length >= LIMITS.maxForceFields) {
+      return { ok: false, error: 'force_limit_reached' };
+    }
+    this.environment.forceFields.push({ ...params, remaining: params.durationMs / 1000 });
+    return { ok: true, fields: this.environment.forceFields.length };
+  }
+
+  clearForces() {
+    if (!this.renderer || !this.environment) return { ok: false, error: 'renderer_unavailable' };
+    const cleared = this.environment.forceFields.length;
+    this.environment.forceFields = [];
+    return { ok: true, cleared };
   }
 
   getState() {

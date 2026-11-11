@@ -3,7 +3,7 @@
  */
 
 import { CollisionHandler } from './physics/collision-handler.js';
-import { applyMouseRepulsion } from './physics/mouse-handler.js';
+import { applyMouseMotion, applyMouseRepulsion } from './physics/mouse-handler.js';
 import { createWindVortexField, applyVortexWindImpulse } from './physics/wind-field.js';
 import { applyAirBurstImpulse, applyMouseFieldForce, MIN_MOUSE_ACTIVITY_SPEED, stepSinkSpeed } from './physics/snow-physics.js';
 import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
@@ -590,6 +590,7 @@ export class GifLayer {
         const burstFactor = burstActive ? Math.min(1, this.mouseBurstTimer / this.mouseBurstDuration) : 0;
         const activeInfluence = influence * Math.max(activityFactor, burstFactor);
 
+        let dragActive = false;
         if (burstActive && this.mouseBurstMode === 'explode') {
           const safeDistance = Math.max(distance, 0.0001);
           const nx = dx / safeDistance;
@@ -605,37 +606,23 @@ export class GifLayer {
           flake.velocityX -= nx * pullAccel * delta;
           flake.velocityY -= ny * pullAccel * delta;
         } else if (isMouseFast) {
-          // Нормализуем вектор скорости мыши
-          const mouseVelMag = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
-          if (mouseVelMag > 0) {
-            const mouseDirX = this.mouseVelocityX / mouseVelMag;
-            const mouseDirY = this.mouseVelocityY / mouseVelMag;
-            
-            // Притягиваем снежинку в сторону движения мыши
-            const dragForce = activeInfluence * this.mouseDragStrength * (mouseSpeed / 1000);
-            flake.velocityX += mouseDirX * dragForce * delta * 1000;
-            flake.velocityY += mouseDirY * dragForce * delta * 1000;
-          }
+          dragActive = true;
         } else {
           // Обычное отталкивание при медленном движении
           applyMouseRepulsion(flake, dx, dy, activeInfluence, this.mouseForce, delta, dy < 0 ? 0.35 : 1.0);
         }
         
-        // Передаем импульс от движения мыши
-        const impulseStrength = activeInfluence * this.mouseImpulseStrength;
-        flake.velocityX += this.mouseVelocityX * impulseStrength * delta;
-        flake.velocityY += this.mouseVelocityY * impulseStrength * delta;
-        
-        // Вращение снежинки при движении мыши рядом
-        // Направление вращения зависит от того, с какой стороны пролетела мышка
-        // Применяем вращение только если скорость мыши выше порога (> 10 пиксели/сек)
-        // Это предотвращает вращение от дрожания мыши
-        if (mouseSpeed > 10) {
-          const cross = dx * this.mouseVelocityY - dy * this.mouseVelocityX;
-          const rotationDirection = Math.sign(cross); // +1 или -1
-          const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
-          flake.rotationSpeed += rotationForce * delta;
-        }
+        applyMouseMotion(flake, {
+          dx,
+          dy,
+          mouseVelocityX: this.mouseVelocityX,
+          mouseVelocityY: this.mouseVelocityY,
+          influence: activeInfluence,
+          dragActive,
+          dragStrength: this.mouseDragStrength,
+          impulseStrength: this.mouseImpulseStrength,
+          delta
+        });
       }
 
       // Apply velocity damping

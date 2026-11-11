@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
+import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio, resolveInitialViewportX, resolveInitialViewportY } from './utils/size-utils.js';
 import { stepWindState } from './physics/wind-field.js';
 import { applyAirBurstImpulse, applyMouseFieldForce, getWindVelocity, MIN_MOUSE_ACTIVITY_SPEED, stepSinkSpeed, stepSnowflakePhysics } from './physics/snow-physics.js';
 import { BackgroundMonitor, getEffectiveBackgroundColor } from './utils/background-monitor.js';
@@ -16,12 +16,57 @@ const MAX_DEPTH = 12;
 const GLOW_MIN_LUMINANCE = 0.72;
 const DEFAULT_GLOW_FLICKER = 0.5;
 const TAN_HALF_FOV = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV / 2));
-const GLYPH_EM_PX = 132;
-const GLYPH_CANVAS_PX = 192;
+const GLYPH_EM_PX = 192;
+const GLYPH_CANVAS_PX = 280;
 const SENTENCE_UNIT_PX = 200;
 const MASK_CACHE_LIMIT = 48;
 const GLOW_STATE_RATE = 5;
 const glyphMaskCache = new Map();
+
+function findSweptSphereImpact(previousA, previousB, currentA, currentB, radius) {
+  const startX = previousB.x - previousA.x;
+  const startY = previousB.y - previousA.y;
+  const startZ = previousB.z - previousA.z;
+  const relativeDeltaX = (currentB.x - previousB.x) - (currentA.x - previousA.x);
+  const relativeDeltaY = (currentB.y - previousB.y) - (currentA.y - previousA.y);
+  const relativeDeltaZ = (currentB.z - previousB.z) - (currentA.z - previousA.z);
+  const c = startX * startX + startY * startY + startZ * startZ - radius * radius;
+  const a = relativeDeltaX ** 2 + relativeDeltaY ** 2 + relativeDeltaZ ** 2;
+  if (c < 0 || a < 1e-12) return null;
+  if (c === 0 && startX * relativeDeltaX
+    + startY * relativeDeltaY + startZ * relativeDeltaZ >= 0) return null;
+
+  const b = 2 * (
+    startX * relativeDeltaX + startY * relativeDeltaY + startZ * relativeDeltaZ
+  );
+  const discriminant = b * b - 4 * a * c;
+  if (discriminant < 0) return null;
+  const time = (-b - Math.sqrt(discriminant)) / (2 * a);
+  if (time < 0 || time > 1) return null;
+
+  const offsetX = startX + relativeDeltaX * time;
+  const offsetY = startY + relativeDeltaY * time;
+  const offsetZ = startZ + relativeDeltaZ * time;
+  const inverseDistance = 1 / Math.hypot(offsetX, offsetY, offsetZ);
+  return {
+    time,
+    normalX: offsetX * inverseDistance,
+    normalY: offsetY * inverseDistance,
+    normalZ: offsetZ * inverseDistance,
+    positionA: {
+      x: previousA.x + (currentA.x - previousA.x) * time,
+      y: previousA.y + (currentA.y - previousA.y) * time,
+      z: previousA.z + (currentA.z - previousA.z) * time,
+      scale: previousA.scale + (currentA.scale - previousA.scale) * time
+    },
+    positionB: {
+      x: previousB.x + (currentB.x - previousB.x) * time,
+      y: previousB.y + (currentB.y - previousB.y) * time,
+      z: previousB.z + (currentB.z - previousB.z) * time,
+      scale: previousB.scale + (currentB.scale - previousB.scale) * time
+    }
+  };
+}
 
 export function createGlyphDetailGeometry(shape, thickness, step = 1) {
   if (!Number.isInteger(step) || step < 1) {
@@ -376,6 +421,7 @@ export class ThreeDSnowRenderer {
     this._euler = new THREE.Euler();
     this._scale = new THREE.Vector3();
     this._worldPositions = [];
+    this._previousWorldPositions = [];
     this._collisionGrid = new Map();
     this.adaptiveQuality = new AdaptiveQuality();
     this.isPaused = false;
@@ -399,7 +445,7 @@ export class ThreeDSnowRenderer {
         powerPreference: 'low-power'
       });
       this.renderer.setClearColor(0x000000, 0);
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       this.glowPass = new ThreeDGlowPass(this.renderer);
 
       this.scene = new THREE.Scene();
@@ -446,8 +492,12 @@ export class ThreeDSnowRenderer {
           : (Number.isFinite(this.config.sinkspeed) ? this.config.sinkspeed : 0.4) * size;
         const flake = {
           _snowflakeIndex: index,
-          x: Math.random() * viewportWidth,
-          y: resolveInitialFlakeY(size, viewportHeight, fallSpeed, initialOffsetSeconds, spawnSpanRatio),
+          x: this.config.initialDistribution === 'viewport'
+            ? resolveInitialViewportX(index, count, viewportWidth)
+            : Math.random() * viewportWidth,
+          y: this.config.initialDistribution === 'viewport'
+            ? resolveInitialViewportY(index, count, viewportHeight)
+            : resolveInitialFlakeY(size, viewportHeight, fallSpeed, initialOffsetSeconds, spawnSpanRatio),
           z: depth,
           size,
           collisionSize: size,
@@ -901,11 +951,15 @@ export class ThreeDSnowRenderer {
     };
   }
 
-  _resolveCollisions(worldPositions) {
+  _resolveCollisions(worldPositions, previousWorldPositions = null, delta = 0) {
     if (!this.enableCollisions) return;
     const restitution = 0.55;
     const maxRadius = this.flakes.reduce((max, flake, index) => {
-      return Math.max(max, (flake.size * worldPositions[index].scale) * 0.5);
+      const currentRadius = (flake.size * worldPositions[index].scale) * 0.5;
+      const previousRadius = previousWorldPositions?.[index]
+        ? (flake.size * previousWorldPositions[index].scale) * 0.5
+        : 0;
+      return Math.max(max, currentRadius, previousRadius);
     }, 0);
     const cellSize = Math.max(0.1, maxRadius * 2);
     const grid = this._collisionGrid;
@@ -915,18 +969,34 @@ export class ThreeDSnowRenderer {
     const GRID_SPAN = 8192;
     const keyFor = (cx, cy, cz) =>
       ((cx + GRID_OFFSET) * GRID_SPAN + (cy + GRID_OFFSET)) * GRID_SPAN + (cz + GRID_OFFSET);
+    const visitSegmentCells = (start, end, visit) => {
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const dz = end.z - start.z;
+      const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / (cellSize * 0.5)));
+      let previousKey = null;
+      for (let step = 0; step <= steps; step++) {
+        const ratio = step / steps;
+        const cellX = Math.floor((start.x + dx * ratio) / cellSize);
+        const cellY = Math.floor((start.y + dy * ratio) / cellSize);
+        const cellZ = Math.floor((start.z + dz * ratio) / cellSize);
+        const key = keyFor(cellX, cellY, cellZ);
+        if (key === previousKey) continue;
+        previousKey = key;
+        visit(cellX, cellY, cellZ);
+      }
+    };
 
     for (let index = 0; index < this.flakes.length; index++) {
       if (this.flakes[index].isFinished || this.flakes[index].isSettled) continue;
       const position = worldPositions[index];
-      const key = keyFor(
-        Math.floor(position.x / cellSize),
-        Math.floor(position.y / cellSize),
-        Math.floor(position.z / cellSize)
-      );
-      const bucket = grid.get(key);
-      if (bucket) bucket.push(index);
-      else grid.set(key, [index]);
+      const previousPosition = previousWorldPositions?.[index] || position;
+      visitSegmentCells(previousPosition, position, (cellX, cellY, cellZ) => {
+        const key = keyFor(cellX, cellY, cellZ);
+        const bucket = grid.get(key);
+        if (bucket) bucket.push(index);
+        else grid.set(key, [index]);
+      });
     }
 
     for (let i = 0; i < this.flakes.length; i++) {
@@ -934,83 +1004,119 @@ export class ThreeDSnowRenderer {
       if (a.isFinished || a.isSettled) continue;
       const pa = worldPositions[i];
       const radiusA = (a.size * pa.scale) * 0.5;
-      const cellX = Math.floor(pa.x / cellSize);
-      const cellY = Math.floor(pa.y / cellSize);
-      const cellZ = Math.floor(pa.z / cellSize);
-      for (let ox = -1; ox <= 1; ox++) {
-        for (let oy = -1; oy <= 1; oy++) {
-          for (let oz = -1; oz <= 1; oz++) {
-            const bucket = grid.get(keyFor(cellX + ox, cellY + oy, cellZ + oz));
-            if (!bucket) continue;
-            for (const j of bucket) {
-              if (j <= i) continue;
-              const b = this.flakes[j];
-              const pb = worldPositions[j];
-              const radiusB = (b.size * pb.scale) * 0.5;
-              let dx = pb.x - pa.x;
-              let dy = pb.y - pa.y;
-              let dz = pb.z - pa.z;
-              const distanceSq = dx * dx + dy * dy + dz * dz;
-              const minDistance = radiusA + radiusB;
-              if (distanceSq >= minDistance * minDistance) continue;
-
-              const distance = Math.sqrt(distanceSq);
-              let nx;
-              let ny;
-              let nz;
-              if (distance < 1e-5) {
-                nx = 1;
-                ny = 0;
-                nz = 0;
-              } else {
-                const inverseDistance = 1 / distance;
-                nx = dx * inverseDistance;
-                ny = dy * inverseDistance;
-                nz = dz * inverseDistance;
+      const previousA = previousWorldPositions?.[i] || pa;
+      const candidates = new Set();
+      visitSegmentCells(previousA, pa, (cellX, cellY, cellZ) => {
+        for (let ox = -1; ox <= 1; ox++) {
+          for (let oy = -1; oy <= 1; oy++) {
+            for (let oz = -1; oz <= 1; oz++) {
+              const bucket = grid.get(keyFor(cellX + ox, cellY + oy, cellZ + oz));
+              if (!bucket) continue;
+              for (const index of bucket) {
+                if (index > i) candidates.add(index);
               }
-              const relativeX = b.velocityX * pb.scale - a.velocityX * pa.scale;
-              const relativeY = -b.velocityY * pb.scale + a.velocityY * pa.scale;
-              const relativeZ = b.velocityZ - a.velocityZ;
-              const normalVelocity = relativeX * nx + relativeY * ny + relativeZ * nz;
-              const massA = Number.isFinite(a.mass) && a.mass > 0
-                ? a.mass : Math.max(0.001, (a.size / 20) ** 3);
-              const massB = Number.isFinite(b.mass) && b.mass > 0
-                ? b.mass : Math.max(0.001, (b.size / 20) ** 3);
-              const inverseMassA = a.isGrabbed ? 0 : 1 / massA;
-              const inverseMassB = b.isGrabbed ? 0 : 1 / massB;
-              const inverseMassSum = inverseMassA + inverseMassB;
-
-              if (normalVelocity < 0 && inverseMassSum > 0) {
-                const impulse = -(1 + restitution) * normalVelocity / inverseMassSum;
-                a.velocityX -= impulse * inverseMassA * nx / pa.scale;
-                a.velocityY += impulse * inverseMassA * ny / pa.scale;
-                a.velocityZ -= impulse * inverseMassA * nz;
-                b.velocityX += impulse * inverseMassB * nx / pb.scale;
-                b.velocityY -= impulse * inverseMassB * ny / pb.scale;
-                b.velocityZ += impulse * inverseMassB * nz;
-              }
-
-              const overlap = Math.max(0, minDistance - distance);
-              const correction = inverseMassSum > 0 ? overlap / inverseMassSum : 0;
-              const correctionA = correction * inverseMassA;
-              const correctionB = correction * inverseMassB;
-              pa.x -= nx * correctionA;
-              pa.y -= ny * correctionA;
-              pa.z -= nz * correctionA;
-              pb.x += nx * correctionB;
-              pb.y += ny * correctionB;
-              pb.z += nz * correctionB;
-              pa.scale = this._worldScaleAtDepth(pa.z);
-              pb.scale = this._worldScaleAtDepth(pb.z);
-              a.x = pa.x / pa.scale + this.viewportWidth / 2;
-              a.y = this.viewportHeight / 2 - pa.y / pa.scale;
-              a.z = pa.z;
-              b.x = pb.x / pb.scale + this.viewportWidth / 2;
-              b.y = this.viewportHeight / 2 - pb.y / pb.scale;
-              b.z = pb.z;
             }
           }
         }
+      });
+
+      for (const j of candidates) {
+        const b = this.flakes[j];
+        const pb = worldPositions[j];
+        const previousB = previousWorldPositions?.[j] || pb;
+        const radiusB = (b.size * pb.scale) * 0.5;
+        const currentMinDistance = radiusA + radiusB;
+        const previousRadiusA = (a.size * previousA.scale) * 0.5;
+        const previousRadiusB = (b.size * previousB.scale) * 0.5;
+        const sweptMinDistance = Math.max(radiusA, previousRadiusA)
+          + Math.max(radiusB, previousRadiusB);
+        const endpointX = pb.x - pa.x;
+        const endpointY = pb.y - pa.y;
+        const endpointZ = pb.z - pa.z;
+        const endpointDistanceSq = endpointX ** 2 + endpointY ** 2 + endpointZ ** 2;
+        const impact = delta > 0 && previousWorldPositions
+          ? findSweptSphereImpact(previousA, previousB, pa, pb, sweptMinDistance)
+          : null;
+        if (!impact && endpointDistanceSq >= currentMinDistance * currentMinDistance) continue;
+
+        if (impact) {
+          Object.assign(pa, impact.positionA);
+          Object.assign(pb, impact.positionB);
+        }
+        let dx = pb.x - pa.x;
+        let dy = pb.y - pa.y;
+        let dz = pb.z - pa.z;
+        const distance = Math.hypot(dx, dy, dz);
+        let nx = impact?.normalX;
+        let ny = impact?.normalY;
+        let nz = impact?.normalZ;
+        if (!impact) {
+          if (distance < 1e-5) {
+            nx = 1;
+            ny = 0;
+            nz = 0;
+          } else {
+            const inverseDistance = 1 / distance;
+            nx = dx * inverseDistance;
+            ny = dy * inverseDistance;
+            nz = dz * inverseDistance;
+          }
+        }
+
+        const relativeX = b.velocityX * pb.scale - a.velocityX * pa.scale;
+        const relativeY = -b.velocityY * pb.scale + a.velocityY * pa.scale;
+        const relativeZ = b.velocityZ - a.velocityZ;
+        const normalVelocity = relativeX * nx + relativeY * ny + relativeZ * nz;
+        const massA = Number.isFinite(a.mass) && a.mass > 0
+          ? a.mass : Math.max(0.001, (a.size / 20) ** 3);
+        const massB = Number.isFinite(b.mass) && b.mass > 0
+          ? b.mass : Math.max(0.001, (b.size / 20) ** 3);
+        const inverseMassA = a.isGrabbed ? 0 : 1 / massA;
+        const inverseMassB = b.isGrabbed ? 0 : 1 / massB;
+        const inverseMassSum = inverseMassA + inverseMassB;
+
+        if (normalVelocity < 0 && inverseMassSum > 0) {
+          const impulse = -(1 + restitution) * normalVelocity / inverseMassSum;
+          a.velocityX -= impulse * inverseMassA * nx / pa.scale;
+          a.velocityY += impulse * inverseMassA * ny / pa.scale;
+          a.velocityZ -= impulse * inverseMassA * nz;
+          b.velocityX += impulse * inverseMassB * nx / pb.scale;
+          b.velocityY -= impulse * inverseMassB * ny / pb.scale;
+          b.velocityZ += impulse * inverseMassB * nz;
+        }
+
+        if (impact) {
+          const remaining = delta * (1 - impact.time);
+          if (!a.isGrabbed) {
+            pa.x += a.velocityX * pa.scale * remaining;
+            pa.y -= a.velocityY * pa.scale * remaining;
+            pa.z += a.velocityZ * remaining;
+          }
+          if (!b.isGrabbed) {
+            pb.x += b.velocityX * pb.scale * remaining;
+            pb.y -= b.velocityY * pb.scale * remaining;
+            pb.z += b.velocityZ * remaining;
+          }
+        } else {
+          const overlap = Math.max(0, currentMinDistance - distance);
+          const correction = inverseMassSum > 0 ? overlap / inverseMassSum : 0;
+          const correctionA = correction * inverseMassA;
+          const correctionB = correction * inverseMassB;
+          pa.x -= nx * correctionA;
+          pa.y -= ny * correctionA;
+          pa.z -= nz * correctionA;
+          pb.x += nx * correctionB;
+          pb.y += ny * correctionB;
+          pb.z += nz * correctionB;
+        }
+        pa.scale = this._worldScaleAtDepth(pa.z);
+        pb.scale = this._worldScaleAtDepth(pb.z);
+        a.x = pa.x / pa.scale + this.viewportWidth / 2;
+        a.y = this.viewportHeight / 2 - pa.y / pa.scale;
+        a.z = pa.z;
+        b.x = pb.x / pb.scale + this.viewportWidth / 2;
+        b.y = this.viewportHeight / 2 - pb.y / pb.scale;
+        b.z = pb.z;
       }
     }
   }
@@ -1028,8 +1134,15 @@ export class ThreeDSnowRenderer {
       enabled: this.windEnabled
     };
 
-    this.flakes.forEach((flake) => {
+    const previousPositions = this._previousWorldPositions;
+    previousPositions.length = this.flakes.length;
+    for (let index = 0; index < this.flakes.length; index++) {
+      previousPositions[index] = this._worldPosition(this.flakes[index], previousPositions[index] || {});
+    }
+
+    this.flakes.forEach((flake, index) => {
       if (flake.isFinished || flake.isSettled) return;
+      let resetCollisionPath = false;
       this._applyMouseForce(flake, delta);
       if (Number.isFinite(this.config.gravity)) {
         stepSnowflakePhysics(flake, delta, this.config, physicsWind);
@@ -1057,9 +1170,11 @@ export class ThreeDSnowRenderer {
       }
       if (flake.x < -flake.size) {
         flake.x = this.viewportWidth + flake.size;
+        resetCollisionPath = true;
         this.environment?.resetMotion(flake);
       } else if (flake.x > this.viewportWidth + flake.size) {
         flake.x = -flake.size;
+        resetCollisionPath = true;
         this.environment?.resetMotion(flake);
       }
       if (flake.y > this.viewportHeight + flake.size) {
@@ -1067,12 +1182,16 @@ export class ThreeDSnowRenderer {
         flake.y = -flake.size;
         flake.x = Math.random() * this.viewportWidth;
         flake.z = MIN_DEPTH + Math.random() * (MAX_DEPTH - MIN_DEPTH);
+        resetCollisionPath = true;
         flake.velocityX = 0;
         flake.velocityY = 0;
         flake.fallSpeed = 0;
         flake.verticalVelocity = 0;
         flake._physicsInitialized = false;
         this.environment?.resetMotion(flake);
+      }
+      if (resetCollisionPath) {
+        this._worldPosition(flake, previousPositions[index]);
       }
     });
 
@@ -1082,7 +1201,7 @@ export class ThreeDSnowRenderer {
     for (let index = 0; index < this.flakes.length; index++) {
       positions[index] = this._worldPosition(this.flakes[index], positions[index] || {});
     }
-    this._resolveCollisions(positions);
+    this._resolveCollisions(positions, previousPositions, delta);
     this.elapsed += delta;
     const time = this.elapsed;
     const position = this._position;
@@ -1122,7 +1241,7 @@ export class ThreeDSnowRenderer {
   _adaptQuality(frameSeconds) {
     if (!this.renderer || !this.adaptiveQuality.update(frameSeconds, document.hidden)) return;
     this.renderer.setPixelRatio(
-      Math.min(window.devicePixelRatio || 1, 1.5) * this.adaptiveQuality.resolutionScale
+      Math.min(window.devicePixelRatio || 1, 2) * this.adaptiveQuality.resolutionScale
     );
     const step = Math.max(1, this.adaptiveQuality.level);
     for (const group of this.glyphMeshes.values()) {

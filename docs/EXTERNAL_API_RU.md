@@ -32,6 +32,10 @@
 | `ping`         | —                                                                                                                                                                                        |
 | `start`        | `config`: `snowmax` (1–320), `snowminsize`/`snowmaxsize` (2–10), `snowFluffiness` (0–1), `snowShape` (`auto`/`compact`/`regular`/`lacy`), `snowShapeOverrides` (≤320 переопределений для отдельных снежинок), `gravity` (0–20), `airDensity` (0.4–2), `colors` (≤12 `#hex`), `symbols` (≤16), `glyphMode` (`text`/`emoji`), `rendererMode` (`auto`/`3d`), `windEnabled`, `windDirection`, `windStrength` (0–3), `windGustFrequency` (0.5–10), `windGustStrength` и `turbulenceStrength` (0–1), `updraftStrength` (0–80 м/с). Недостающие значения берутся из сохранённых настроек. |
 | `stop`         | — (останавливает основной снег и все эффекты)                                                                                                                                            |
+| `getParticle`  | `index` (неотрицательное целое): получить активную частицу основного слоя |
+| `updateParticle` | `index`, `patch`: любые из `x`, `y`, `velocityX`, `velocityY` |
+| `applyForce`   | `type` (`impulse`/`field`), `direction` (`outward`/`inward`), `x`, `y`, `radius`, `strength`; для поля также `durationMs` |
+| `clearForces`  | — (отменить все временные поля основного слоя) |
 | `burst`        | `count` 250 → 1–600, `durationMs` 6000, устаревший `speed` 1.6 → 0.1–6 (игнорируется физикой снежинок), `symbols`, `colors`, `entry` `instant`/`top` (по умолчанию `instant`: весь взрыв входит сверху одной плотной волной; `top` — постепенно) |
 | `wind`         | `enabled` true, `direction` `left`/`right`/`random`, `strength` 1.6 → 0–3, `gustFrequency` 5 → 0.5–10, `durationMs` 8000 (`0` — до следующей команды `wind`)                               |
 | `glyphs`       | **`symbols`** (обязательно, ≤16 символов, ≤16 кодовых точек в каждом), `glyphMode` `text`/`emoji`, `colors`, `count` 60 → 1–300, `durationMs` 10000, устаревший `speed` (игнорируется физикой снежинок), `entry` `top`            |
@@ -49,6 +53,42 @@
 ажурности ниже 0.25, обычная — от 0.25 до 0.65, ажурная — от 0.65 включительно.
 Диапазоны коэффициента сопротивления для них соответственно 0.7–1.0, 1.0–1.4
 и 1.4–2.0. Параметр `speed` для GIF-слоёв по-прежнему работает.
+
+### Управление частицами и силами основного слоя
+
+`getParticle` возвращает `{ok:true, particle:{index,x,y,velocityX,velocityY,size,settled,grabbed}}`.
+Индекс относится только к массиву основного снега, не к эффектам или GIF, и действует
+до перезапуска снегопада или замены рендерера; по тому же индексу частица может появиться
+повторно. Несуществующая или неактивная частица возвращает `particle_unavailable`.
+`updateParticle` принимает непустой `patch` и возвращает ту же структуру. Координаты
+задаются в CSS-пикселях viewport и ограничиваются его границами; скорости в CSS px/s
+ограничены диапазоном −900–900. Изменение осевшей частицы освобождает её и зависимые
+частицы; захваченная указателем возвращает `particle_grabbed`. На паузе изменения
+станут видны после возобновления отрисовки.
+
+`applyForce` действует только на активные незахваченные частицы основного слоя и
+освобождает осевшие частицы в радиусе. `x`, `y` и `radius` — CSS-пиксели; радиус
+положителен и ограничен 2000 px. `direction` задаёт притяжение или отталкивание,
+сила линейно уменьшается до нуля у границы; точно в центре отталкивание направлено вверх.
+`impulse` немедленно добавляет `strength` (положительная величина, максимум 600 CSS px/s)
+и возвращает `{ok:true, affected}`. `field` задаёт ускорение `strength` (положительное,
+максимум 3000 CSS px/s²) на `durationMs` (положительное, максимум 30000) и возвращает
+`{ok:true, fields}`. Одновременно доступно четыре поля, иначе `force_limit_reached`.
+Они работают по времени симуляции, останавливаются на паузе и удаляются при остановке,
+перезапуске или смене рендерера. `clearForces` возвращает `{ok:true, cleared}` и не
+отменяет уже применённые импульсы.
+Без основного снега возвращается `not_running`, без рендерера — `renderer_unavailable`.
+Некорректные данные возвращают `invalid_particle_index`, `particle_patch_required`,
+`invalid_particle_value`, `invalid_coordinates`, `invalid_force_mode`,
+`invalid_force_value` или `invalid_force_duration`.
+
+```json
+{"command":"getParticle","params":{"index":0}}
+{"command":"updateParticle","params":{"index":0,"patch":{"x":200,"y":100,"velocityY":-80}}}
+{"command":"applyForce","params":{"type":"impulse","direction":"outward","x":400,"y":250,"radius":150,"strength":180}}
+{"command":"applyForce","params":{"type":"field","direction":"inward","x":400,"y":250,"radius":250,"strength":300,"durationMs":2000}}
+{"command":"clearForces"}
+```
 
 ### Управление, добавленное в 3.1.1
 
@@ -188,6 +228,8 @@ curl -X POST http://127.0.0.1:8787/api/command \
 
 `GET /health` возвращает `{"ok":true,"service":"let-it-snow-relay"}` без токена.
 `delivered` — число подключённых клиентов relay, а не вкладок или подтверждённых визуальных эффектов.
+Команды relay/OBS широковещательные: HTTP-ответ не содержит результат выполнения или
+состояние частицы получателя. Для получения ответа используйте API страницы.
 
 ### WebSocket (`/ws`)
 
@@ -225,6 +267,8 @@ window.postMessage({
 Команды страницы влияют только на текущую вкладку. Они никогда не рассылаются в другие вкладки или в relay.
 Их лимит — 20 за 10 с. GIF по URL со страницы загружаются с правами самой страницы;
 расширение не скачивает их через свой фоновый скрипт, поэтому CORS никогда не обходится.
+Пример функции `snowCommand` с сопоставлением ID, обработкой ошибки и тайм-аутом
+приведён в [английской версии](./EXTERNAL_API.md#3-page-api-opt-in-per-origin).
 
 ## 4. Источник «Браузер» в OBS
 
@@ -235,6 +279,9 @@ window.postMessage({
    поэтому пользовательский CSS не нужен.
 
 Параметры запроса:
+- `initialDistribution=viewport` включает начальное распределение по всему viewport;
+  без него обычный снег появляется сверху.
+- `symbolModes` — необязательные режимы `text`/`emoji` через запятую в порядке `symbols`.
 - `snowmax`, `speed`, `minsize`, `maxsize`
 - `colors` (через запятую, `#` в URL-кодировке), `symbols`, `glyphMode`
 - `renderer` (`auto`/`3d`)

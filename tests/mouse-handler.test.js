@@ -1,5 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MouseHandler, applyMouseRepulsion } from '../src/content/physics/mouse-handler.js';
+import {
+  MouseHandler,
+  applyMouseMotion,
+  applyMouseRepulsion
+} from '../src/content/physics/mouse-handler.js';
+
+describe('shared renderer pointer motion', () => {
+  it.each(['Canvas 2D', 'WebGPU', 'GIF'])('applies the same fast drag, impulse, and spin in %s', (renderer) => {
+    const flake = { velocityX: 5, velocityY: -3, rotationSpeed: 0.1 };
+
+    applyMouseMotion(flake, {
+      dx: 0,
+      dy: 20,
+      mouseVelocityX: 600,
+      mouseVelocityY: 0,
+      influence: 0.75,
+      dragActive: true,
+      dragStrength: 0.8,
+      impulseStrength: 0.5,
+      delta: 0.016
+    });
+
+    expect(flake.velocityX).toBeCloseTo(14.36);
+    expect(flake.velocityY).toBe(-3);
+    expect(flake.rotationSpeed).toBeCloseTo(0.028);
+  });
+});
 
 describe('MouseHandler', () => {
   it('does not apply force for a zero-duration step', () => {

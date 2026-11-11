@@ -15,6 +15,7 @@ export class ParticleEnvironment {
     this.surfaces = null;
     this.pointer = null;
     this.restingContacts = new WeakMap();
+    this.forceFields = [];
     this.setEnabled(config.accumulationEnabled !== false);
   }
 
@@ -91,6 +92,33 @@ export class ParticleEnvironment {
         flake.velocityY = (flake.velocityY || 0) + Math.max(0, minimum - velocity.y);
       }
     }
+    for (const field of this.forceFields) {
+      const step = Math.min(delta, field.remaining);
+      this.applyRadialForce(field, particles, step);
+      field.remaining -= step;
+    }
+    this.forceFields = this.forceFields.filter((field) => field.remaining > 1e-9);
+  }
+
+  applyRadialForce(field, particles, duration = 1) {
+    let affected = 0;
+    const direction = field.direction === 'inward' ? -1 : 1;
+    for (const flake of particles) {
+      if (flake.isFinished || flake.isAwaitingRespawn || flake.isGrabbed) continue;
+      const dx = flake.x - field.x;
+      const dy = flake.y - field.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance >= field.radius) continue;
+      if (flake.isSettled) this.release(flake, { x: 0, y: 0 });
+      const amount = direction * field.strength * duration * (1 - distance / field.radius);
+      const nx = distance > 1e-9 ? dx / distance : 0;
+      const ny = distance > 1e-9 ? dy / distance : -1;
+      flake.velocityX = Math.max(-900, Math.min(900, (flake.velocityX || 0) + nx * amount));
+      flake.velocityY = Math.max(-900, Math.min(900, (flake.velocityY || 0) + ny * amount));
+      flake.verticalVelocity = flake.velocityY;
+      affected++;
+    }
+    return affected;
   }
 
   retire(flake) {
@@ -427,6 +455,7 @@ export class ParticleEnvironment {
 
   destroy() {
     this.clear();
+    this.forceFields = [];
     if (this.surfaces) releasePageSurfaces(this.surfaces);
     this.surfaces = null;
     this.particles = [];

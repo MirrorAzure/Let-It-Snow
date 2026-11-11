@@ -170,7 +170,6 @@ src/
 │   │   ├── three-d-glow-pass.js # 3D-свечение по силуэту и размытие в экранном пространстве
 │   │   └── uniform-buffer.js  # Управление uniform-буферами
 │   ├── physics/
-│   │   ├── simulation-engine.js  # Логика симуляции кадра
 │   │   ├── collision-handler.js  # Столкновения снежинок
 │   │   ├── mouse-handler.js      # Взаимодействие с мышью
 │   │   └── wind-field.js         # Физика общего поля ветра и вихрей

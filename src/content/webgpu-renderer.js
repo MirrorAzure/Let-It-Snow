@@ -11,10 +11,10 @@ import { shouldUseSdfGlyphAtlas } from './utils/glyph-quality-estimator.js';
 import { AtlasManager } from './graphics/atlas-manager.js';
 import { UniformBufferManager } from './graphics/uniform-buffer.js';
 import { CollisionHandler } from './physics/collision-handler.js';
-import { applyMouseRepulsion } from './physics/mouse-handler.js';
+import { applyMouseMotion, applyMouseRepulsion } from './physics/mouse-handler.js';
 import { stepWindState } from './physics/wind-field.js';
 import { applyAirBurstImpulse, applyMouseFieldForce, getWindVelocity, MIN_MOUSE_ACTIVITY_SPEED, stepSinkSpeed, stepSnowflakePhysics } from './physics/snow-physics.js';
-import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
+import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio, resolveInitialViewportX, resolveInitialViewportY } from './utils/size-utils.js';
 import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
 import { resolveMinGlowStrength } from './utils/glow-utils.js';
@@ -599,12 +599,16 @@ export class WebGPURenderer {
       const speed = Number.isFinite(this.config.gravity)
         ? 0
         : (Number.isFinite(this.config.sinkspeed) ? this.config.sinkspeed : 0.4) * size;
-      const spawnX = this._findSafeSpawnX(collisionSize);
+      const spawnX = this.config.initialDistribution === 'viewport'
+        ? resolveInitialViewportX(idx, Math.max(1, snowmax), window.innerWidth)
+        : this._findSafeSpawnX(collisionSize);
       const initialRotation = Math.random() * Math.PI * 2; // Случайный начальный угол для разнообразия
       const baseY = -size - Math.random() * spawnSpan;
-      const startY = initialOffsetSeconds > 0
-        ? this._wrapInitialYPosition(baseY + speed * initialOffsetSeconds, size, viewportHeight)
-        : baseY;
+      const startY = this.config.initialDistribution === 'viewport'
+        ? resolveInitialViewportY(idx, Math.max(1, snowmax), viewportHeight)
+        : initialOffsetSeconds > 0
+          ? this._wrapInitialYPosition(baseY + speed * initialOffsetSeconds, size, viewportHeight)
+          : baseY;
 
       this.instances.push({
         _snowflakeIndex: idx,
@@ -832,8 +836,12 @@ export class WebGPURenderer {
 
   _resizeCanvas() {
     const viewport = this._getViewportSize();
-    const ratio = Math.min(window.devicePixelRatio || 1, 1.75)
-      * this.adaptiveQuality.resolutionScale;
+    const maxDimension = this.device?.limits?.maxTextureDimension2D ?? Infinity;
+    const ratio = Math.min(
+      Math.min(window.devicePixelRatio || 1, 2) * this.adaptiveQuality.resolutionScale,
+      maxDimension / viewport.width,
+      maxDimension / viewport.height
+    );
     const width = Math.floor(viewport.width * ratio);
     const height = Math.floor(viewport.height * ratio);
     if (width === this.canvasWidth && height === this.canvasHeight) return;
@@ -1104,6 +1112,7 @@ export class WebGPURenderer {
         const burstFactor = burstActive ? Math.min(1, this.mouseBurstTimer / this.mouseBurstDuration) : 0;
         const activeInfluence = influence * Math.max(activityFactor, burstFactor);
 
+        let dragActive = false;
         if (burstActive && this.mouseBurstMode === 'blower') {
           const safeDistance = Math.max(distance, 0.0001);
           const nx = dx / safeDistance;
@@ -1126,37 +1135,23 @@ export class WebGPURenderer {
           flake.velocityX -= nx * pullAccel * delta;
           flake.velocityY -= ny * pullAccel * delta;
         } else if (isMouseFast) {
-          // Нормализуем вектор скорости мыши
-          const mouseVelMag = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
-          if (mouseVelMag > 0) {
-            const mouseDirX = this.mouseVelocityX / mouseVelMag;
-            const mouseDirY = this.mouseVelocityY / mouseVelMag;
-            
-            // Притягиваем снежинку в сторону движения мыши
-            const dragForce = activeInfluence * this.mouseDragStrength * (mouseSpeed / 1000);
-            flake.velocityX += mouseDirX * dragForce * delta * 1000;
-            flake.velocityY += mouseDirY * dragForce * delta * 1000;
-          }
+          dragActive = true;
         } else {
           // Обычное отталкивание при медленном движении
           applyMouseRepulsion(flake, dx, dy, activeInfluence, this.mouseForce, delta, dy < 0 ? 0.35 : 1.0);
         }
         
-        // Передаем импульс от движения мыши
-        const impulseStrength = activeInfluence * this.mouseImpulseStrength;
-        flake.velocityX += this.mouseVelocityX * impulseStrength * delta;
-        flake.velocityY += this.mouseVelocityY * impulseStrength * delta;
-        
-        // Вращение снежинки при движении мыши рядом
-        // Направление вращения зависит от того, с какой стороны пролетела мышка
-      // Применяем вращение только если скорость мыши выше порога (> 10 пиксели/сек)
-      // Это предотвращает вращение от дрожания мыши
-      if (mouseSpeed > 10) {
-        const cross = dx * this.mouseVelocityY - dy * this.mouseVelocityX;
-        const rotationDirection = Math.sign(cross); // +1 или -1
-        const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
-        flake.rotationSpeed += rotationForce * delta;
-      }
+        applyMouseMotion(flake, {
+          dx,
+          dy,
+          mouseVelocityX: this.mouseVelocityX,
+          mouseVelocityY: this.mouseVelocityY,
+          influence: activeInfluence,
+          dragActive,
+          dragStrength: this.mouseDragStrength,
+          impulseStrength: this.mouseImpulseStrength,
+          delta
+        });
       }
 
       if (Number.isFinite(this.config.gravity)) {

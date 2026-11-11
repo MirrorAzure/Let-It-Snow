@@ -9,6 +9,7 @@ class PageSurfaceTracker {
     this.users = 0;
     this.surfaces = [];
     this.placements = new Map();
+    this.hitTestCache = new Map();
     this.revision = 0;
     this.lastScroll = -Infinity;
     this.nextScan = 0;
@@ -48,6 +49,7 @@ class PageSurfaceTracker {
   }
 
   refresh(now) {
+    this.hitTestCache.clear();
     if (now < this.nextScan) return;
     this.nextScan = now + 750;
     this.surfaces = [];
@@ -126,13 +128,24 @@ class PageSurfaceTracker {
     }
     const steps = Math.max(2, Math.ceil(size / 8));
     const checkedText = new Set();
+    const hitTest = (px, py) => {
+      let column = this.hitTestCache.get(px);
+      if (column?.has(py)) return column.get(py);
+      if (!column) {
+        column = new Map();
+        this.hitTestCache.set(px, column);
+      }
+      const hit = document.elementFromPoint(px, py);
+      column.set(py, hit);
+      return hit;
+    };
     for (let column = 0; column <= steps; column++) {
       const px = x - radius + size * column / steps;
-      const support = document.elementFromPoint(px, surface.top + 1);
+      const support = hitTest(px, surface.top + 1);
       if (!support || (support !== surface.element && !surface.element.contains(support))) return false;
       for (let row = 0; row <= steps; row++) {
         const py = top + size * row / steps;
-        const hit = document.elementFromPoint(px, py);
+        const hit = hitTest(px, py);
         if (!hit || hit.closest(`${EXCLUDED},${TEXT_CONTENT},img,video,canvas,svg`)) return false;
         if (hit === surface.element || surface.element.contains(hit)) return false;
         if (checkedText.has(hit)) continue;
@@ -155,6 +168,7 @@ class PageSurfaceTracker {
     window.removeEventListener('resize', this.onResize);
     window.visualViewport?.removeEventListener('scroll', this.onScroll);
     window.visualViewport?.removeEventListener('resize', this.onResize);
+    this.hitTestCache.clear();
     this.placements.clear();
   }
 }

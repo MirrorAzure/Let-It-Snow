@@ -19,4 +19,19 @@ describe('OBS overlay snow options', () => {
       .initialSpawnSpanRatio).toBeUndefined();
     expect(parseOverlaySnowConfig(new URLSearchParams('gravity=100')).gravity).toBe(20);
   });
+
+  it('only enables viewport-filled initial distribution when explicitly requested', () => {
+    expect(parseOverlaySnowConfig(new URLSearchParams('initialDistribution=viewport'))
+      .initialDistribution).toBe('viewport');
+    expect(parseOverlaySnowConfig(new URLSearchParams('initialDistribution=other'))
+      .initialDistribution).toBeUndefined();
+  });
+
+  it('accepts a rendering mode for each OBS symbol', () => {
+    const config = parseOverlaySnowConfig(new URLSearchParams({
+      symbols: '❄,🎄', symbolModes: 'text,emoji'
+    }));
+    expect(config.snowletters).toEqual(['❄', '🎄']);
+    expect(config.snowglyphmodes).toEqual(['text', 'emoji']);
+  });
 });

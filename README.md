@@ -170,7 +170,6 @@ src/
 │   │   ├── three-d-glow-pass.js # 3D silhouette glow and screen-space blur
 │   │   └── uniform-buffer.js  # Uniform buffer management
 │   ├── physics/
-│   │   ├── simulation-engine.js  # Frame simulation logic
 │   │   ├── collision-handler.js  # Flake collisions
 │   │   ├── mouse-handler.js      # Mouse interaction
 │   │   └── wind-field.js         # Shared wind + vortex field physics

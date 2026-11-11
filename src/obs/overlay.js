@@ -199,7 +199,12 @@ function bootstrap() {
     token: options.token,
     name: options.name,
     onCommand: (command) => {
-      runtime.execute(command, { source: 'relay' }).catch((err) => console.error('[Let It Snow OBS]', err));
+      runtime.execute(command, { source: 'relay' }).then((result) => {
+        if (!result.ok) {
+          console.warn('[Let It Snow OBS] Command failed:', command.command, result.error);
+          setStatus(`Command failed: ${result.error}`);
+        }
+      }).catch((err) => console.error('[Let It Snow OBS]', err));
     },
     onState: (state) => {
       if (state === 'connected') setStatus('Connected to relay');
