@@ -141,6 +141,86 @@ describe('ThreeDSnowRenderer', () => {
     expect(renderer.flakes.every((flake) => Number.isFinite(flake.x) && Number.isFinite(flake.y))).toBe(true);
   });
 
+  it('preserves world-space momentum for unequal masses during a 3D collision', () => {
+    const renderer = new ThreeDSnowRenderer(null);
+    renderer.viewportWidth = 100;
+    renderer.viewportHeight = 100;
+    renderer.flakes = [
+      { x: 50, y: 50, z: 0, size: 20, mass: 1, velocityX: 10, velocityY: 0, velocityZ: 0 },
+      { x: 65, y: 50, z: 0, size: 20, mass: 8, velocityX: -10, velocityY: 0, velocityZ: 0 }
+    ];
+    const positions = [
+      { x: 0, y: 0, z: 0, scale: 1 },
+      { x: 15, y: 0, z: 0, scale: 1 }
+    ];
+    const momentumBefore = renderer.flakes.reduce((sum, flake) => sum + flake.mass * flake.velocityX, 0);
+
+    renderer._resolveCollisions(positions);
+
+    const momentumAfter = renderer.flakes.reduce((sum, flake) => sum + flake.mass * flake.velocityX, 0);
+    expect(momentumAfter).toBeCloseTo(momentumBefore, 8);
+    expect(renderer.flakes[0].velocityX).toBeLessThan(renderer.flakes[1].velocityX);
+  });
+
+  it('uses full vertical velocity and leaves a grabbed 3D support kinematic', () => {
+    const renderer = new ThreeDSnowRenderer(null);
+    renderer.viewportWidth = 100;
+    renderer.viewportHeight = 100;
+    renderer.flakes = [
+      { x: 50, y: 50, z: 0, size: 20, mass: 1, velocityX: 0, velocityY: 100, velocityZ: 0 },
+      { x: 50, y: 65, z: 0, size: 20, mass: 1, velocityX: 0, velocityY: 0, velocityZ: 0 }
+    ];
+    renderer._resolveCollisions([
+      { x: 0, y: 0, z: 0, scale: 1 },
+      { x: 0, y: -15, z: 0, scale: 1 }
+    ]);
+
+    expect(renderer.flakes[0].velocityY).toBeCloseTo(22.5);
+    expect(renderer.flakes[1].velocityY).toBeCloseTo(77.5);
+    expect(renderer.flakes[0].velocityY + renderer.flakes[1].velocityY).toBeCloseTo(100);
+
+    renderer.flakes = [
+      { x: 50, y: 50, z: 0, size: 20, mass: 1, isGrabbed: true, velocityX: 0, velocityY: 0, velocityZ: 0 },
+      { x: 65, y: 50, z: 0, size: 20, mass: 1, velocityX: -10, velocityY: 0, velocityZ: 0 }
+    ];
+    renderer._resolveCollisions([
+      { x: 0, y: 0, z: 0, scale: 1 },
+      { x: 15, y: 0, z: 0, scale: 1 }
+    ]);
+
+    expect(renderer.flakes[0].velocityX).toBe(0);
+    expect(renderer.flakes[1].velocityX).toBeGreaterThan(0);
+  });
+
+  it('attenuates projected pointer forces with 3D depth', () => {
+    const renderer = new ThreeDSnowRenderer(null, { mouseRadius: 100, mouseForce: 300 });
+    renderer.mouseX = 0;
+    renderer.mouseY = 0;
+    renderer.mouseRightPressed = true;
+    const near = { x: 50, y: 0, z: 0, velocityX: 0, velocityY: 0, velocityZ: 0 };
+    const far = { x: 50, y: 0, z: 1000, velocityX: 0, velocityY: 0, velocityZ: 0 };
+
+    renderer._applyMouseForce(near, 1 / 60);
+    renderer._applyMouseForce(far, 1 / 60);
+
+    expect(near.velocityX).toBeLessThan(0);
+    expect(far.velocityX).toBeLessThan(0);
+    expect(Math.abs(near.velocityX)).toBeGreaterThan(Math.abs(far.velocityX));
+  });
+
+  it('attenuates the one-shot explosion with 3D depth', () => {
+    const renderer = new ThreeDSnowRenderer(null, { mouseRadius: 100, mouseForce: 300 });
+    const near = { x: 50, y: 0, z: 0, size: 20, velocityX: 0, velocityY: 0 };
+    const far = { x: 50, y: 0, z: 1000, size: 20, velocityX: 0, velocityY: 0 };
+    renderer.flakes = [near, far];
+
+    renderer.onMouseDown(0, 0, 0);
+
+    expect(near.velocityX).toBeGreaterThan(0);
+    expect(far.velocityX).toBeGreaterThan(0);
+    expect(near.velocityX).toBeGreaterThan(far.velocityX);
+  });
+
   it('twinkles the glow per flake within the configured flicker depth', () => {
     const flake = { twinkleSpeedA: 2.3, twinkleSpeedB: 6.1, twinklePhaseA: 0.4, twinklePhaseB: 1.7 };
     const samples = Array.from({ length: 400 }, (_, index) => resolveGlowFlicker(index * 0.05, flake, 0.5));

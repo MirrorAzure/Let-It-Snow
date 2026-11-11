@@ -1,6 +1,4 @@
 import { acquirePageSurfaces, releasePageSurfaces } from './page-surfaces.js';
-import { applyAirBurstImpulse } from './snow-physics.js';
-
 const EMOJI = /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u;
 const MIN_IMPACT_SPEED = 100;
 const DISLODGING_ENERGY = 160 ** 2;
@@ -49,7 +47,7 @@ export class ParticleEnvironment {
       placement.windX = (placement.windX || 0) * decay + gustX * (1 - decay);
       placement.windY = (placement.windY || 0) * decay + gustY * (1 - decay);
       if (Math.hypot(placement.windX, placement.windY) >= MIN_IMPACT_SPEED) {
-        this.release(flake);
+        this.release(flake, { x: 0, y: 0 });
         flake.velocityX = placement.windX;
         flake.velocityY = placement.windY;
         continue;
@@ -128,8 +126,7 @@ export class ParticleEnvironment {
     let affected = 0;
     for (const flake of [...this.settled.keys()]) {
       if (!this.settled.has(flake) || Math.hypot(flake.x - x, flake.y - y) >= radius) continue;
-      this.release(flake);
-      applyAirBurstImpulse(flake, x, y, radius, mode, strength, duration);
+      this.release(flake, { x: 0, y: 0 });
       affected++;
     }
     return affected;
@@ -154,7 +151,7 @@ export class ParticleEnvironment {
   impactVelocity(flake) {
     return {
       x: flake.velocityX || 0,
-      y: (flake.fallSpeed || 0) + (flake.velocityY || 0)
+      y: flake.velocityY || 0
     };
   }
 
@@ -345,7 +342,7 @@ export class ParticleEnvironment {
             if (room && this.settle(flake, surface, y)) break;
             flake.y = y;
             this.contactsChanged = true;
-            flake.velocityY = -(flake.fallSpeed || 0);
+            flake.velocityY = 0;
             const free = this.findLanding(surface, flake);
             if (free) flake.velocityX += Math.sign(free.x - flake.x) * 24 * this.delta;
             break;
@@ -406,13 +403,14 @@ export class ParticleEnvironment {
     }
   }
 
-  release(flake) {
+  release(flake, velocity = { x: 0, y: 80 }) {
     this.restingContacts.delete(flake);
     flake.isSettled = false;
     flake.swayLimit = 1;
     flake.hasShed = true;
-    flake.velocityY = Math.max(80, flake.fallSpeed || 0);
-    flake.velocityX = (Math.random() - 0.5) * 90;
+    flake.velocityY = Number.isFinite(velocity.y) ? velocity.y : 0;
+    flake.velocityX = Number.isFinite(velocity.x) ? velocity.x : 0;
+    flake.fallSpeed = 0;
     flake.baseX = flake.x;
     this.settled.delete(flake);
     this.surfaces?.placements.delete(flake);

@@ -5,8 +5,9 @@
 import { CollisionHandler } from './physics/collision-handler.js';
 import { applyMouseRepulsion } from './physics/mouse-handler.js';
 import { createWindVortexField, applyVortexWindImpulse } from './physics/wind-field.js';
+import { applyAirBurstImpulse, applyMouseFieldForce, MIN_MOUSE_ACTIVITY_SPEED, stepSinkSpeed } from './physics/snow-physics.js';
 import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
-import { normalizePhysicsDelta } from './physics/time-step.js';
+import { advancePhysicsClock, createPhysicsClock } from './physics/time-step.js';
 
 const GIF_LAYER_ID = 'let-it-snow-gif-layer';
 const MAX_Z_INDEX = '2147483646';
@@ -85,6 +86,7 @@ export class GifLayer {
     this.flakes = [];
     this.frameRequest = null;
     this.lastTimestamp = 0;
+    this.physicsClock = createPhysicsClock();
     this.gifObjectUrls = new Map();
     // Wind state
     this.currentWindForce = 0;
@@ -106,6 +108,8 @@ export class GifLayer {
     this.mouseBurstTimer = 0;
     this.mouseBurstDuration = 0.2;
     this.mouseBurstRadiusMultiplier = 3.5;
+    this.mouseLeftPressed = false;
+    this.mouseRightPressed = false;
     // Collision system
     this.collisionHandler = new CollisionHandler(config);
     this.enableCollisions = config.enableCollisions ?? true;
@@ -384,10 +388,11 @@ export class GifLayer {
         glowImg: parts.glowImg || null,
         size,
         speed,
+        nominalFallSpeed: speed,
         x: Math.random() * window.innerWidth,
         y: startY,
         velocityX: 0,
-        velocityY: 0,
+        velocityY: speed,
         rotationSpeed: 0,
         rotation: 0,
         tiltX: Math.random() * Math.PI * 2,
@@ -409,6 +414,7 @@ export class GifLayer {
     this.layer = layer;
     this.flakes = flakes;
     this.lastTimestamp = performance.now();
+    this.physicsClock.accumulator = 0;
     this.frameRequest = requestAnimationFrame((ts) => this.animate(ts));
   }
 
@@ -503,25 +509,42 @@ export class GifLayer {
    * Анимация GIF снежинок
    * @param {number} timestamp - Текущее время
    */
-  animate(timestamp) {
+  animate(timestamp, fixedDelta = null) {
     if (!this.layer || !this.flakes.length) return;
 
-    const elapsed = Math.max(0.001, (timestamp - this.lastTimestamp) / 1000);
-    const delta = normalizePhysicsDelta(elapsed);
-    this.lastTimestamp = timestamp;
+    if (fixedDelta === null) {
+      const elapsed = Math.max(0, (timestamp - this.lastTimestamp) / 1000);
+      this.lastTimestamp = timestamp;
+      if (document.hidden) {
+        this.physicsClock.accumulator = 0;
+      } else {
+        const steps = advancePhysicsClock(
+          this.physicsClock,
+          elapsed,
+          (delta) => this.animate(timestamp, delta)
+        );
+        if (steps === 0 && !document.hidden) this.animate(timestamp, 0);
+      }
+      this.frameRequest = requestAnimationFrame((nextTimestamp) => this.animate(nextTimestamp));
+      return;
+    }
+
+    const delta = fixedDelta;
     const width = window.innerWidth;
     const height = window.innerHeight;
     const vortexField = createWindVortexField(width, height, this.windTime);
 
     // Update burst timer
     if (this.mouseBurstTimer > 0) {
-      this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - elapsed);
+      this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - delta);
       if (this.mouseBurstTimer === 0) {
         this.mouseBurstMode = null;
       }
     }
 
     this.flakes.forEach((flake) => {
+      flake.previousCollisionX = flake.x;
+      flake.previousCollisionY = flake.y;
       // Apply wind force
       if (this.currentWindForce !== 0 || this.currentWindLift !== 0 || this.currentWindVortex !== 0) {
         const sizeRatio = Math.sqrt(flake.size / 20);
@@ -544,12 +567,24 @@ export class GifLayer {
       const dy = flake.y - this.mouseY;
       const distance = Math.sqrt(dx * dx + dy * dy);
       const mouseSpeed = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
-      const activityFactor = mouseSpeed > 0 ? 1 : 0;
+      const activityFactor = mouseSpeed > MIN_MOUSE_ACTIVITY_SPEED ? 1 : 0;
       const burstActive = this.mouseBurstTimer > 0;
       const shouldApplyMouse = burstActive || activityFactor > 0;
       const isMouseFast = mouseSpeed > this.mouseDragThreshold;
 
-      if (distance < (this.mouseRadius * (burstActive ? this.mouseBurstRadiusMultiplier : 1)) && shouldApplyMouse) {
+      const heldMouseMode = this.mouseLeftPressed ? 'blower'
+        : this.mouseRightPressed ? 'suction' : null;
+      if (heldMouseMode && distance < this.mouseRadius * this.mouseBurstRadiusMultiplier) {
+        applyMouseFieldForce(
+          flake,
+          this.mouseX,
+          this.mouseY,
+          this.mouseRadius * this.mouseBurstRadiusMultiplier,
+          heldMouseMode,
+          this.mouseForce * 10,
+          delta
+        );
+      } else if (distance < (this.mouseRadius * (burstActive ? this.mouseBurstRadiusMultiplier : 1)) && shouldApplyMouse) {
         const radius = this.mouseRadius * (burstActive ? this.mouseBurstRadiusMultiplier : 1);
         const influence = 1 - distance / radius;
         const burstFactor = burstActive ? Math.min(1, this.mouseBurstTimer / this.mouseBurstDuration) : 0;
@@ -607,6 +642,7 @@ export class GifLayer {
       const damping = Math.pow(0.98, delta * 60);
       flake.velocityX *= damping;
       flake.velocityY *= damping;
+      stepSinkSpeed(flake, delta);
       flake.rotationSpeed *= damping;
       
       // Обнулить очень малые значения вращения, чтобы избежать численных погрешностей
@@ -616,7 +652,7 @@ export class GifLayer {
 
       // Update position
       flake.x += flake.velocityX * delta;
-      flake.y += (flake.speed + flake.velocityY) * delta;
+      flake.y += flake.velocityY * delta;
 
       // Update rotation
       flake.rotation += flake.rotationSpeed * delta;
@@ -645,10 +681,17 @@ export class GifLayer {
 
     // GIF flakes can collide with main-renderer flakes only when both use 2D physics.
     if (this.enableCollisions && this.collisionHandler) {
-      const rendererFlakes = this.mainRenderer?.is3D ? [] : (this.mainRenderer?.flakes || []);
+      const rendererFlakes = this.mainRenderer?.is3D
+        ? []
+        : (this.mainRenderer?.instances || this.mainRenderer?.flakes || []);
       // GIF остаются DOM-слоем, поэтому 3D-снежинки не участвуют в 2D-коллизиях.
+      const gifFlakes = new Set(this.flakes);
       const allFlakes = [...this.flakes, ...rendererFlakes];
-      this.collisionHandler.handleCollisions(allFlakes, delta);
+      this.collisionHandler.handleCollisions(
+        allFlakes,
+        delta,
+        (flakeA, flakeB) => gifFlakes.has(flakeA) || gifFlakes.has(flakeB)
+      );
     }
 
     const glowStrength = Number.isFinite(this.mainRenderer?.glowStrength)
@@ -684,7 +727,6 @@ export class GifLayer {
     });
 
     this.windTime += delta;
-    this.frameRequest = requestAnimationFrame((ts) => this.animate(ts));
   }
 
   /**
@@ -703,6 +745,7 @@ export class GifLayer {
   resume() {
     if (!this.flakes.length || !this.layer) return;
     this.lastTimestamp = performance.now();
+    this.physicsClock.accumulator = 0;
     this.frameRequest = requestAnimationFrame((ts) => this.animate(ts));
   }
 
@@ -731,21 +774,37 @@ export class GifLayer {
    */
   onMouseDown(x, y, button) {
     if (button === 0) {
+      this.mouseLeftPressed = true;
       this.mouseBurstMode = 'explode';
-      this.mouseBurstTimer = this.mouseBurstDuration;
+      const radius = this.mouseRadius * this.mouseBurstRadiusMultiplier;
+      const strength = this.mouseForce * 10;
+      for (const flake of this.flakes) {
+        applyAirBurstImpulse(flake, x, y, radius, 'explode', strength, this.mouseBurstDuration);
+      }
     }
     if (button === 2) {
+      this.mouseRightPressed = true;
       this.mouseBurstMode = 'suction';
-      this.mouseBurstTimer = this.mouseBurstDuration;
     }
     this.mouseX = x;
     this.mouseY = y;
+  }
+
+  onMouseUp(button) {
+    if (button === 0) this.mouseLeftPressed = false;
+    if (button === 2) this.mouseRightPressed = false;
+    if (!this.mouseLeftPressed && !this.mouseRightPressed) {
+      this.mouseBurstTimer = 0;
+      this.mouseBurstMode = null;
+    }
   }
 
   /**
    * Handle mouse leave
    */
   onMouseLeave() {
+    this.mouseLeftPressed = false;
+    this.mouseRightPressed = false;
     this.mouseBurstTimer = 0;
     this.mouseBurstMode = null;
     this.mouseX = -1000;

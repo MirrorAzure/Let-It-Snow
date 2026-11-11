@@ -10,17 +10,16 @@ import { estimateGlyphAtlasCellSize } from './utils/glyph-quality-estimator.js';
 import { shouldUseSdfGlyphAtlas } from './utils/glyph-quality-estimator.js';
 import { AtlasManager } from './graphics/atlas-manager.js';
 import { UniformBufferManager } from './graphics/uniform-buffer.js';
-import { SimulationEngine } from './physics/simulation-engine.js';
 import { CollisionHandler } from './physics/collision-handler.js';
-import { MouseHandler, applyMouseRepulsion } from './physics/mouse-handler.js';
+import { applyMouseRepulsion } from './physics/mouse-handler.js';
 import { stepWindState } from './physics/wind-field.js';
-import { applyAirBurstImpulse, getWindVelocity, stepSnowflakePhysics } from './physics/snow-physics.js';
+import { applyAirBurstImpulse, applyMouseFieldForce, getWindVelocity, MIN_MOUSE_ACTIVITY_SPEED, stepSinkSpeed, stepSnowflakePhysics } from './physics/snow-physics.js';
 import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
 import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
 import { resolveMinGlowStrength } from './utils/glow-utils.js';
 import { AdaptiveQuality } from './utils/adaptive-quality.js';
-import { normalizePhysicsDelta } from './physics/time-step.js';
+import { advancePhysicsClock, createPhysicsClock, normalizePhysicsDelta } from './physics/time-step.js';
 
 /**
  * Класс для рендеринга снега через WebGPU
@@ -49,15 +48,14 @@ export class WebGPURenderer {
     this.visualViewportResizeHandler = null;
     this.visualViewportScrollHandler = null;
     this.lastTimestamp = 0;
+    this.physicsClock = createPhysicsClock();
     this.backgroundMonitor = null;
     this.adaptiveQuality = new AdaptiveQuality();
     
     // Инициализация компонентов
     this.atlasManager = null;
     this.uniformBufferManager = null;
-    this.simulationEngine = null;
     this.collisionHandler = new CollisionHandler(config);
-    this.mouseHandler = new MouseHandler(config);
 
     this.sentenceCursor = 0;
 
@@ -277,8 +275,6 @@ export class WebGPURenderer {
       this.uniformBufferManager = new UniformBufferManager(this.device);
       const glyphAtlasCellSize = this._getGlyphAtlasCellSize();
       this.atlasManager = new AtlasManager(this.device, glyphAtlasCellSize);
-      this.simulationEngine = new SimulationEngine(this.config);
-
       this._debugLog('Using glyph atlas cell size:', glyphAtlasCellSize);
 
       this.setupGeometry();
@@ -616,7 +612,8 @@ export class WebGPURenderer {
         y: startY,
         size,
         collisionSize,
-        fallSpeed: speed,
+        fallSpeed: 0,
+        nominalFallSpeed: speed,
         phase: Math.random() * Math.PI * 2,
         freq: 0.8 + Math.random() * 1.4,
         sway: 10 + Math.random() * 25,
@@ -628,7 +625,7 @@ export class WebGPURenderer {
         isSentence,
         sentenceIndex,
         velocityX: 0,
-        velocityY: 0
+        velocityY: speed
       });
     }
 
@@ -822,25 +819,12 @@ export class WebGPURenderer {
    * Обработка изменения размеров окна
    */
   _rescaleFlakeSizes() {
-    const { minPx: snowminsize, maxPx: snowmaxsize } = resolveGlyphSizeRangePx(this.config);
-    const sizeRange = snowmaxsize - snowminsize;
-    
     for (let i = 0; i < this.instances.length; i++) {
       const flake = this.instances[i];
       if (!flake) continue;
       
       const isSentence = flake.isSentence ?? false;
-      const newSize = isSentence
-        ? Math.max(snowmaxsize * 1.2, 60) + Math.random() * 20
-        : snowminsize + Math.random() * sizeRange;
-      
-      flake.size = newSize;
-      flake.fallSpeed = Number.isFinite(this.config.gravity)
-        ? 0
-        : (Number.isFinite(this.config.sinkspeed) ? this.config.sinkspeed : 0.4) * newSize;
-      flake.verticalVelocity = 0;
-      flake._physicsInitialized = false;
-      
+      const newSize = flake.size;
       const sentenceHorizontalScale = 2.0;
       flake.collisionSize = isSentence ? newSize * sentenceHorizontalScale : newSize;
     }
@@ -1088,9 +1072,11 @@ export class WebGPURenderer {
 
     this.instances.forEach((flake, idx) => {
       if (flake.isFinished || flake.isSettled) return;
+      flake.previousCollisionX = flake.x;
+      flake.previousCollisionY = flake.y;
       // Вычисляем скорость движения мыши
       const mouseSpeed = Math.sqrt(this.mouseVelocityX * this.mouseVelocityX + this.mouseVelocityY * this.mouseVelocityY);
-      const activityFactor = mouseSpeed > 0 ? 1 : 0;
+      const activityFactor = mouseSpeed > MIN_MOUSE_ACTIVITY_SPEED ? 1 : 0;
       const burstActive = this.mouseBurstTimer > 0;
       const shouldApplyMouse = burstActive || activityFactor > 0;
       const isMouseFast = mouseSpeed > this.mouseDragThreshold;
@@ -1100,7 +1086,19 @@ export class WebGPURenderer {
       const dy = flake.y - this.mouseY;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
-      if (distance < (this.mouseRadius * (burstActive ? this.mouseBurstRadiusMultiplier : 1)) && distance > 0 && shouldApplyMouse) {
+      const heldMouseMode = this.mouseLeftPressed ? 'blower'
+        : this.mouseRightPressed ? 'suction' : null;
+      if (heldMouseMode && distance < this.mouseRadius * this.mouseBurstRadiusMultiplier) {
+        applyMouseFieldForce(
+          flake,
+          this.mouseX,
+          this.mouseY,
+          this.mouseRadius * this.mouseBurstRadiusMultiplier,
+          heldMouseMode,
+          this.mouseForce * 10,
+          delta
+        );
+      } else if (distance < (this.mouseRadius * (burstActive ? this.mouseBurstRadiusMultiplier : 1)) && distance > 0 && shouldApplyMouse) {
         const radius = this.mouseRadius * (burstActive ? this.mouseBurstRadiusMultiplier : 1);
         const influence = 1 - distance / radius;
         const burstFactor = burstActive ? Math.min(1, this.mouseBurstTimer / this.mouseBurstDuration) : 0;
@@ -1173,6 +1171,7 @@ export class WebGPURenderer {
       const damping = Math.pow(0.98, delta * 60);
       flake.velocityX *= damping;
       flake.velocityY *= damping;
+      if (!Number.isFinite(this.config.gravity)) stepSinkSpeed(flake, delta);
       flake.rotationSpeed *= damping;
       
       // Обнулить очень малые значения вращения, чтобы избежать численных погрешностей
@@ -1192,8 +1191,6 @@ export class WebGPURenderer {
       // Финальная ротация = постоянное кручение + качание маятника
       flake.rotation = flake.cumulativeSpin + swingAngle;
       
-      flake.y += flake.fallSpeed * delta;
-
       // Сброс позиции если снежинка вышла за экран
       if (flake.y - flake.size > height) {
         if (this.environment?.retire(flake)) {
@@ -1347,11 +1344,14 @@ export class WebGPURenderer {
    * @param {number} timestamp - Текущее время
    */
   frame(timestamp) {
-    const frameSeconds = (timestamp - this.lastTimestamp) / 1000;
-    const delta = normalizePhysicsDelta(Math.max(0.001, frameSeconds));
+    const frameSeconds = Math.max(0, (timestamp - this.lastTimestamp) / 1000);
     this.lastTimestamp = timestamp;
     if (this.adaptiveQuality.update(frameSeconds, document.hidden)) this._resizeCanvas();
-    this.updateSimulation(delta);
+    if (document.hidden) {
+      this.physicsClock.accumulator = 0;
+    } else {
+      advancePhysicsClock(this.physicsClock, frameSeconds, (delta) => this.updateSimulation(delta));
+    }
     this.render();
     this.frameRequest = requestAnimationFrame((ts) => this.frame(ts));
   }
@@ -1361,6 +1361,7 @@ export class WebGPURenderer {
    */
   start() {
     this.adaptiveQuality.resetTiming();
+    this.physicsClock.accumulator = 0;
     this.lastTimestamp = performance.now();
     this.frameRequest = requestAnimationFrame((ts) => this.frame(ts));
   }
@@ -1381,6 +1382,7 @@ export class WebGPURenderer {
   resume() {
     if (!this.device || !this.context) return;
     this.adaptiveQuality.resetTiming();
+    this.physicsClock.accumulator = 0;
     this.lastTimestamp = performance.now();
     this.frameRequest = requestAnimationFrame((ts) => this.frame(ts));
   }
@@ -1510,14 +1512,18 @@ export class WebGPURenderer {
     this.mouseY = y;
     this.mouseVelocityX = 0;
     this.mouseVelocityY = 0;
-    if (button === 0 || button === 2) {
+    if (button === 0) {
       const radius = this.mouseRadius * this.mouseBurstRadiusMultiplier;
       const strength = this.mouseForce * 10;
-      this.environment?.applyAirBurst(x, y, radius, this.mouseBurstMode, strength, this.mouseBurstDuration);
+      this.environment?.applyAirBurst(x, y, radius, 'explode', strength, this.mouseBurstDuration);
       for (const flake of this.instances) {
         if (flake.isFinished || flake.isAwaitingRespawn || flake.isSettled) continue;
-        applyAirBurstImpulse(flake, x, y, radius, this.mouseBurstMode, strength, this.mouseBurstDuration);
+        applyAirBurstImpulse(flake, x, y, radius, 'explode', strength, this.mouseBurstDuration);
       }
+    }
+    if (button === 2) {
+      const radius = this.mouseRadius * this.mouseBurstRadiusMultiplier;
+      this.environment?.applyAirBurst(x, y, radius, 'suction', this.mouseForce * 10, this.mouseBurstDuration);
     }
   }
 

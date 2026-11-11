@@ -188,7 +188,7 @@ describe('CollisionHandler', () => {
     expect(flakes.every((flake) => Number.isFinite(flake.x) && Number.isFinite(flake.y))).toBe(true);
   });
 
-  it('does not separate flakes before their predicted contact', () => {
+  it('does not apply an impulse before a real contact', () => {
     const flakes = [
       { x: 100, y: 100, size: 20, velocityX: 1000, velocityY: 0 },
       { x: 130, y: 100, size: 20, velocityX: -1000, velocityY: 0 }
@@ -198,8 +198,28 @@ describe('CollisionHandler', () => {
 
     expect(flakes[0].x).toBe(100);
     expect(flakes[1].x).toBe(130);
+    expect(flakes[0].velocityX).toBe(1000);
+    expect(flakes[1].velocityX).toBe(-1000);
+  });
+
+  it('resolves a swept collision at the contact time', () => {
+    const flakes = [
+      {
+        x: 110, y: 100, previousCollisionX: 90, previousCollisionY: 100,
+        size: 20, velocityX: 1000, velocityY: 0
+      },
+      {
+        x: 120, y: 100, previousCollisionX: 140, previousCollisionY: 100,
+        size: 20, velocityX: -1000, velocityY: 0
+      }
+    ];
+
+    collisionHandler.handleCollisions(flakes, 0.02);
+
     expect(flakes[0].velocityX).toBeLessThan(0);
     expect(flakes[1].velocityX).toBeGreaterThan(0);
+    expect(Math.hypot(flakes[1].x - flakes[0].x, flakes[1].y - flakes[0].y))
+      .toBeGreaterThanOrEqual(20);
   });
 
   it('uses physical mass and preserves momentum during a collision', () => {
@@ -217,17 +237,17 @@ describe('CollisionHandler', () => {
       .toBeCloseTo(10, 5);
   });
 
-  it('includes gravity-driven fall speed when resolving collisions', () => {
+  it('uses the full vertical velocity when resolving collisions', () => {
     collisionHandler.collisionDamping = 1;
     const flakes = [
-      { x: 100, y: 100, size: 20, velocityX: 0, velocityY: 0, fallSpeed: 100 },
-      { x: 100, y: 115, size: 20, velocityX: 0, velocityY: 0, fallSpeed: 0 }
+      { x: 100, y: 100, size: 20, velocityX: 0, velocityY: 100 },
+      { x: 100, y: 115, size: 20, velocityX: 0, velocityY: 0 }
     ];
 
     collisionHandler.handleCollisions(flakes, 1 / 60);
 
-    expect(flakes[0].velocityY).toBeLessThan(0);
-    expect(flakes[1].velocityY).toBeGreaterThan(0);
+    expect(flakes[0].velocityY).toBeCloseTo(2.5);
+    expect(flakes[1].velocityY).toBeCloseTo(97.5);
   });
 
   it('transfers momentum during collision', () => {

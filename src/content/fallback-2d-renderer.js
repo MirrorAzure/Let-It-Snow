@@ -5,14 +5,14 @@
 import { CollisionHandler } from './physics/collision-handler.js';
 import { applyMouseRepulsion } from './physics/mouse-handler.js';
 import { stepWindState } from './physics/wind-field.js';
-import { applyAirBurstImpulse, getWindVelocity, stepSnowflakePhysics } from './physics/snow-physics.js';
+import { applyAirBurstImpulse, applyMouseFieldForce, getWindVelocity, MIN_MOUSE_ACTIVITY_SPEED, stepSinkSpeed, stepSnowflakePhysics } from './physics/snow-physics.js';
 import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
 import { resolveMinGlowStrength } from './utils/glow-utils.js';
 import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
 import { BackgroundMonitor } from './utils/background-monitor.js';
 import { AdaptiveQuality } from './utils/adaptive-quality.js';
-import { normalizePhysicsDelta } from './physics/time-step.js';
+import { advancePhysicsClock, createPhysicsClock } from './physics/time-step.js';
 
 const TEXT_GLYPH_FONT_STACK = '"Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Times New Roman", serif';
 const EMOJI_GLYPH_FONT_STACK = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif';
@@ -88,17 +88,16 @@ export class Fallback2DRenderer {
     this.mouseLeftPressed = false;
     this.mouseRightPressed = false;
     this.mouseRadius = config.mouseRadius ?? 100;
-    this.mouseForce = config.mouseForce ?? 360;
+    this.mouseForce = config.mouseForce ?? 300;
     this.mouseImpulseStrength = config.mouseImpulseStrength ?? 0.65;
-    this.mouseDragThreshold = config.mouseDragThreshold ?? 420; // Порог скорости для эффекта затягивания
+    this.mouseDragThreshold = config.mouseDragThreshold ?? 500;
     this.mouseDragStrength = config.mouseDragStrength ?? 1.25; // Сила затягивания в поток
     this.mouseBurstDuration = 0.2;
     this.mouseBurstRadiusMultiplier = 3.5;
     this.mouseBurstTimer = 0;
     this.mouseBurstMode = null;
     this.maxMouseVelocity = config.maxMouseVelocity ?? 3800;
-    this.mouseVelocitySmoothing = config.mouseVelocitySmoothing ?? 0.35;
-    this.mouseActivityThreshold = config.mouseActivityThreshold ?? 45;
+    this.mouseActivityThreshold = config.mouseActivityThreshold ?? MIN_MOUSE_ACTIVITY_SPEED;
     this.maxFlakeSpeed = config.maxFlakeSpeed ?? 560;
     this.maxRotationSpeed = config.maxRotationSpeed ?? 8;
     this.canvas2dMaxDpr = config.canvas2dMaxDpr ?? 1.75;
@@ -117,6 +116,7 @@ export class Fallback2DRenderer {
       debugCollisions: this.debugCollisions
     });
     this._collisionFrameStride = 1;
+    this.physicsClock = createPhysicsClock();
     this.resizeObserver = null;
     this.windowResizeHandler = null;
     this.visualViewportResizeHandler = null;
@@ -160,27 +160,15 @@ export class Fallback2DRenderer {
   }
 
   _rescaleFlakeSizes() {
-    const { minPx: snowminsize, maxPx: snowmaxsize } = resolveGlyphSizeRangePx(this.config);
-    const sizeRange = snowmaxsize - snowminsize;
-    
     for (let i = 0; i < this.flakes.length; i++) {
       const flake = this.flakes[i];
       if (!flake) continue;
       
       const isSentence = flake.isSentence ?? false;
-      const newSize = isSentence
-        ? Math.max(snowmaxsize * 1.2, 60) + Math.random() * 20
-        : snowminsize + Math.random() * sizeRange;
-      
-      flake.size = newSize;
-      flake.collisionSize = newSize;
-      const legacySpeed = Number.isFinite(this.config.gravity)
-        ? 0
-        : (Number.isFinite(this.config.sinkspeed) ? this.config.sinkspeed : 0.4) * newSize;
-      flake.speed = legacySpeed;
-      flake.fallSpeed = legacySpeed;
-      flake.verticalVelocity = 0;
-      flake._physicsInitialized = false;
+      const collisionSize = isSentence ? flake.size * 2 : flake.size;
+      flake.collisionSize = collisionSize;
+      flake._collisionRadius = collisionSize * 0.5;
+      flake._swayBuffer = Math.sin(0.35) * collisionSize * 0.5;
       
       if (!flake.isSentence && this.ctx) {
         flake.glyphFont = getFallbackGlyphFont(flake.size, flake.glyphRenderMode);
@@ -600,7 +588,8 @@ export class Fallback2DRenderer {
         size,
         collisionSize,
         speed,
-        fallSpeed: speed,
+        nominalFallSpeed: speed,
+        fallSpeed: 0,
         sway: 10 + Math.random() * 25,
         phase: initialPhase,
         freq: 0.8 + Math.random() * 1.4,
@@ -611,13 +600,13 @@ export class Fallback2DRenderer {
         rotationSpeed: 0,
         cumulativeSpin: initialRotation,
         velocityX: 0,
-        velocityY: 0,
+        velocityY: speed,
         isAwaitingRespawn: !isInitiallyActive,
         isGrabbed: false,
         // Предвычисленные поля для горячего цикла рендера
         _sizeRatio: Math.sqrt(size / 20),
-        _collisionRadius: size * 0.5,
-        _swayBuffer: Math.sin(0.35) * size * 0.5,
+        _collisionRadius: collisionSize * 0.5,
+        _swayBuffer: Math.sin(0.35) * collisionSize * 0.5,
         _sinPhase: Math.sin(initialPhase)
       });
 
@@ -677,13 +666,7 @@ export class Fallback2DRenderer {
 
     let lastFrameTime = performance.now();
     this.adaptiveQuality.resetTiming();
-    const draw = (now = performance.now()) => {
-      const frameSeconds = (now - lastFrameTime) / 1000;
-      const delta = normalizePhysicsDelta(frameSeconds);
-      lastFrameTime = now;
-
-      this.adaptiveQuality.update(frameSeconds, document.hidden);
-      this.currentFpsEstimate = this.adaptiveQuality.currentFps;
+    const drawStep = (delta, shouldRender = true) => {
 
       // Равномерный респаун предотвращает стартовый burst и выравнивает нагрузку на CPU.
       this._respawnCredit = Math.min(
@@ -707,17 +690,7 @@ export class Fallback2DRenderer {
       };
 
       const flakeCount = this.flakes.length;
-      if (flakeCount >= 260 || this.currentFpsEstimate < 42) {
-        this._collisionFrameStride = 5;
-      } else if (flakeCount >= 180 || this.currentFpsEstimate < 48) {
-        this._collisionFrameStride = 4;
-      } else if (flakeCount >= 120 || this.currentFpsEstimate < 54) {
-        this._collisionFrameStride = 3;
-      } else if (flakeCount >= 80 || this.currentFpsEstimate < 58) {
-        this._collisionFrameStride = 2;
-      } else {
-        this._collisionFrameStride = 1;
-      }
+      this._collisionFrameStride = 1;
 
       const ratio = Math.min(window.devicePixelRatio || 1, this.canvas2dMaxDpr)
         * this.adaptiveQuality.resolutionScale;
@@ -733,7 +706,7 @@ export class Fallback2DRenderer {
         this.canvas.height = height;
       }
 
-      ctx.clearRect(0, 0, width, height);
+      if (shouldRender) ctx.clearRect(0, 0, width, height);
 
       // Обновляем параметры ветра
       if (this.windEnabled) {
@@ -820,6 +793,8 @@ export class Fallback2DRenderer {
         const flake = flakes[i];
 
         if (flake.isFinished || flake.isSettled) continue;
+        flake.previousCollisionX = flake.x;
+        flake.previousCollisionY = flake.y;
         if (this._sanitizeFlakeState(flake, worldWidth, worldHeight, canRespawnFlake)) {
           if (flake.isAwaitingRespawn) {
             continue;
@@ -866,7 +841,19 @@ export class Fallback2DRenderer {
           flake.swayLimit = 1.0;
         }
         
-        if (distanceSq < interactionRadiusSq && shouldApplyMouse) {
+        const heldMouseMode = this.mouseLeftPressed ? 'blower'
+          : this.mouseRightPressed ? 'suction' : null;
+        if (heldMouseMode && distanceSq < interactionRadiusSq) {
+          applyMouseFieldForce(
+            flake,
+            this.mouseX,
+            this.mouseY,
+            interactionRadius,
+            heldMouseMode,
+            this.mouseForce * 10,
+            delta
+          );
+        } else if (distanceSq < interactionRadiusSq && shouldApplyMouse) {
           const distance = Math.sqrt(distanceSq);
           const influence = 1 - distance / interactionRadius;
           const burstFactor = burstActive ? Math.min(1, this.mouseBurstTimer / this.mouseBurstDuration) : 0;
@@ -979,7 +966,6 @@ export class Fallback2DRenderer {
           if (flake.cumulativeSpin > 6283.185 || flake.cumulativeSpin < -6283.185) {
             flake.cumulativeSpin = flake.cumulativeSpin % (Math.PI * 2);
           }
-          flake.y += flake.fallSpeed * delta;
         } else {
           flake._sinPhase = 0;
         }
@@ -997,6 +983,8 @@ export class Fallback2DRenderer {
       }
       
       // КРИТИЧНЫЙ ШАГ: Обрабатываем коллизии между снежинками ДО рендеринга
+      this.prevMouseX = this.mouseX;
+      this.prevMouseY = this.mouseY;
       this.environment?.finishFrame();
       // При высокой нагрузке считаем коллизии реже, чтобы стабилизировать FPS.
       this._collisionFrameCounter = (this._collisionFrameCounter + 1) % this._collisionFrameStride;
@@ -1012,6 +1000,7 @@ export class Fallback2DRenderer {
         if (!flake.isGrabbed) {
           flake.velocityX *= damping;
           flake.velocityY *= damping;
+          if (!Number.isFinite(this.config.gravity)) stepSinkSpeed(flake, delta);
           const rs = (flake.rotationSpeed || 0) * damping;
           flake.rotationSpeed = Math.abs(rs) < 0.0001 ? 0 : rs;
         }
@@ -1024,6 +1013,8 @@ export class Fallback2DRenderer {
           flake.baseX = flake.x;
         }
       }
+
+      if (!shouldRender) return;
 
       // ВТОРОЙ ПРОХОД: Рендерим каждую снежинку
       ctx.textAlign = 'center';
@@ -1199,10 +1190,28 @@ export class Fallback2DRenderer {
         });
       }
 
+    };
+
+    const draw = (now = performance.now()) => {
+      const frameSeconds = Math.max(0, (now - lastFrameTime) / 1000);
+      lastFrameTime = now;
+      this.adaptiveQuality.update(frameSeconds, document.hidden);
+      this.currentFpsEstimate = this.adaptiveQuality.currentFps;
+      if (document.hidden) {
+        this.physicsClock.accumulator = 0;
+      } else {
+        const steps = advancePhysicsClock(
+          this.physicsClock,
+          frameSeconds,
+          (delta, index, total) => drawStep(delta, index === total - 1)
+        );
+        if (steps === 0) drawStep(0);
+      }
       this.frameRequest = requestAnimationFrame(draw);
     };
 
     this.drawCallback = draw;
+    this.physicsClock.accumulator = 0;
     draw(performance.now());
   }
 
@@ -1236,6 +1245,8 @@ export class Fallback2DRenderer {
   resume() {
     if (this.drawCallback) {
       this.adaptiveQuality.resetTiming();
+      lastFrameTime = performance.now();
+      this.physicsClock.accumulator = 0;
       this.frameRequest = requestAnimationFrame(this.drawCallback);
     }
   }
@@ -1284,7 +1295,6 @@ export class Fallback2DRenderer {
     this.environment?.updatePointer(x, y, vx, vy, this.mouseRadius);
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const maxMouseV = this.maxMouseVelocity;
-    const smooth = clamp(this.mouseVelocitySmoothing, 0.05, 1);
 
     // При idle-сигнале сразу гасим скорость, чтобы поле влияния не оставалось активным.
     if (Math.abs(vx) < 0.001 && Math.abs(vy) < 0.001) {
@@ -1292,8 +1302,6 @@ export class Fallback2DRenderer {
       this.prevMouseY = y;
       this.mouseX = x;
       this.mouseY = y;
-      this.mouseVelocityX = 0;
-      this.mouseVelocityY = 0;
       this.mouseVelocityX = 0;
       this.mouseVelocityY = 0;
       return;
@@ -1306,8 +1314,8 @@ export class Fallback2DRenderer {
     this.prevMouseY = this.mouseY;
     this.mouseX = x;
     this.mouseY = y;
-    this.mouseVelocityX = this.mouseVelocityX * (1 - smooth) + clampedVx * smooth;
-    this.mouseVelocityY = this.mouseVelocityY * (1 - smooth) + clampedVy * smooth;
+    this.mouseVelocityX = clampedVx;
+    this.mouseVelocityY = clampedVy;
   }
 
   /**
@@ -1328,14 +1336,18 @@ export class Fallback2DRenderer {
     this.prevMouseY = y;
     this.mouseX = x;
     this.mouseY = y;
-    if (button === 0 || button === 2) {
+    if (button === 0) {
       const radius = this.mouseRadius * this.mouseBurstRadiusMultiplier;
       const strength = this.mouseForce * 10;
-      this.environment?.applyAirBurst(x, y, radius, this.mouseBurstMode, strength, this.mouseBurstDuration);
+      this.environment?.applyAirBurst(x, y, radius, 'explode', strength, this.mouseBurstDuration);
       for (const flake of this.flakes) {
         if (flake.isFinished || flake.isAwaitingRespawn || flake.isSettled) continue;
-        applyAirBurstImpulse(flake, x, y, radius, this.mouseBurstMode, strength, this.mouseBurstDuration);
+        applyAirBurstImpulse(flake, x, y, radius, 'explode', strength, this.mouseBurstDuration);
       }
+    }
+    if (button === 2) {
+      const radius = this.mouseRadius * this.mouseBurstRadiusMultiplier;
+      this.environment?.applyAirBurst(x, y, radius, 'suction', this.mouseForce * 10, this.mouseBurstDuration);
     }
   }
 

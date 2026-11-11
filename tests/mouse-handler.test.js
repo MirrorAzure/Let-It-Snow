@@ -2,6 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MouseHandler, applyMouseRepulsion } from '../src/content/physics/mouse-handler.js';
 
 describe('MouseHandler', () => {
+  it('does not apply force for a zero-duration step', () => {
+    const flake = { velocityX: 2, velocityY: -3 };
+    applyMouseRepulsion(flake, 1, 1, 1, 300, 0);
+    expect(flake).toEqual({ velocityX: 2, velocityY: -3 });
+  });
+
   let mouseHandler;
   let config;
 

@@ -134,11 +134,12 @@ stacks spanning multiple effect layers move together without a one-frame delay.
 A removed, transparent or newly interactive support is cleared immediately; flakes also
 fall if a resize leaves them beyond the support's edges or their supporting neighbours
 move apart.
-Moving the mouse across the row also knocks flakes down. Hold the left mouse button
-to create airflow outward in all directions with additional upward lift: flakes
-scatter away from the pointer and rise instead of moving only sideways. The right
-button attracts them toward the pointer. The effect lasts only while held. A
-stationary pointer without a held button does not disturb the row.
+Moving the mouse across the row also knocks flakes down. A left click triggers one
+radial explosion; holding the left button additionally creates airflow outward in
+all directions with upward lift. The right button attracts flakes toward the
+pointer. Held effects stop on release, and API `burst` remains a separate command.
+A stationary pointer without a held button does not disturb the row. In 3D mode,
+pointer forces use the screen projection and weaken with depth.
 Large emoji, sentences and GIFs keep falling.
 API controls: `clearAccumulation` sheds particles; `update` with
 `{"config":{"accumulationEnabled":false}}` disables landing for the main snow.

@@ -4,8 +4,9 @@
  */
 
 export function applyMouseRepulsion(flake, dx, dy, influence, mouseForce, delta, verticalBias = 0.35) {
+  if (!Number.isFinite(delta) || delta <= 0) return;
   const distance = Math.max(Math.hypot(dx, dy), 0.0001);
-  const acceleration = influence * mouseForce * (delta || 0.016);
+  const acceleration = influence * mouseForce * delta;
   flake.velocityX = (flake.velocityX ?? 0) + (dx / distance) * acceleration;
   flake.velocityY = (flake.velocityY ?? 0) + (dy / distance) * acceleration * verticalBias;
 }
@@ -91,6 +92,7 @@ export class MouseHandler {
    * @param {number} delta - Время в секундах
    */
   applyMouseEffect(flake, delta = 0.016) {
+    if (!Number.isFinite(delta) || delta <= 0) return;
     const dx = flake.x - this.mouseX;
     const dy = flake.y - this.mouseY;
     const distance = Math.sqrt(dx * dx + dy * dy);
@@ -126,15 +128,15 @@ export class MouseHandler {
       const nx = dx / safeDistance;
       const ny = dy / safeDistance;
       const burstAccel = activeInfluence * this.mouseForce * 10.0;
-      flake.velocityX = (flake.velocityX ?? 0) + nx * burstAccel * (delta || 0.016);
-      flake.velocityY = (flake.velocityY ?? 0) + ny * burstAccel * (delta || 0.016);
+      flake.velocityX = (flake.velocityX ?? 0) + nx * burstAccel * delta;
+      flake.velocityY = (flake.velocityY ?? 0) + ny * burstAccel * delta;
     } else if (burstActive && this.mouseBurstMode === 'suction') {
       const safeDistance = Math.max(distance, 0.0001);
       const nx = dx / safeDistance;
       const ny = dy / safeDistance;
       const pullAccel = activeInfluence * this.mouseForce * 10.0;
-      flake.velocityX = (flake.velocityX ?? 0) - nx * pullAccel * (delta || 0.016);
-      flake.velocityY = (flake.velocityY ?? 0) - ny * pullAccel * (delta || 0.016);
+      flake.velocityX = (flake.velocityX ?? 0) - nx * pullAccel * delta;
+      flake.velocityY = (flake.velocityY ?? 0) - ny * pullAccel * delta;
     } else if (isMouseFast) {
       // Эффект воздушного потока при быстром движении мыши
       const mouseVelMag = Math.max(0.001, mouseSpeed);
@@ -151,8 +153,8 @@ export class MouseHandler {
     
     // Передаем импульс от движения мыши
     const impulseStrength = activeInfluence * this.mouseImpulseStrength * speedBoost;
-    flake.velocityX = (flake.velocityX ?? 0) + this.mouseVelocityX * impulseStrength * (delta || 0.016);
-    flake.velocityY = (flake.velocityY ?? 0) + this.mouseVelocityY * impulseStrength * (delta || 0.016);
+    flake.velocityX = (flake.velocityX ?? 0) + this.mouseVelocityX * impulseStrength * delta;
+    flake.velocityY = (flake.velocityY ?? 0) + this.mouseVelocityY * impulseStrength * delta;
     
     // Вращение снежинки при движении мыши рядом
     const cross = dx * this.mouseVelocityY - dy * this.mouseVelocityX;
@@ -162,7 +164,7 @@ export class MouseHandler {
     if (mouseSpeed > 10) {
       const rotationForce = activeInfluence * mouseSpeed * 0.01 * rotationDirection;
       if (flake.rotationSpeed !== undefined) {
-        flake.rotationSpeed = (flake.rotationSpeed ?? 0) + rotationForce * (delta || 0.016);
+        flake.rotationSpeed = (flake.rotationSpeed ?? 0) + rotationForce * delta;
       }
     }
     

@@ -139,6 +139,31 @@ describe('GifLayer', () => {
     flatLayer.stop();
   });
 
+  it('collides WebGPU GIF flakes with instances without resolving snow pairs twice', async () => {
+    const gifLayer = new GifLayer({
+      gifUrls: ['https://test.com/test.gif'],
+      gifCount: 1,
+      snowminsize: 20,
+      snowmaxsize: 20,
+      enableCollisions: true
+    });
+    await gifLayer.start();
+    const mainFlakes = [
+      { x: 300, y: 300, size: 20, velocityX: 0, velocityY: 0 },
+      { x: 400, y: 400, size: 20, velocityX: 0, velocityY: 0 }
+    ];
+    gifLayer.setMainRenderer({ is3D: false, instances: mainFlakes });
+    const collisionSpy = vi.spyOn(gifLayer.collisionHandler, 'handleCollisions').mockImplementation(() => {});
+
+    gifLayer.animate(performance.now() + 16, 1 / 60);
+
+    const [flakes, , pairFilter] = collisionSpy.mock.calls[0];
+    expect(flakes).toEqual([...gifLayer.flakes, ...mainFlakes]);
+    expect(pairFilter(gifLayer.flakes[0], mainFlakes[0])).toBe(true);
+    expect(pairFilter(mainFlakes[0], mainFlakes[1])).toBe(false);
+    gifLayer.stop();
+  });
+
   it('keeps 3D GIF tumble away from edge-on and projects the glow consistently', () => {
     for (let phase = 0; phase < Math.PI * 2; phase += 0.2) {
       const tilt = resolveGifTilt({ tiltX: phase, tiltY: phase * 1.7, tiltAmpX: 5, tiltAmpY: 5 });
@@ -247,14 +272,16 @@ describe('GifLayer', () => {
     // Left click (button 0) - explosion
     gifLayer.onMouseDown(500, 300, 0);
     expect(gifLayer.mouseBurstMode).toBe('explode');
-    expect(gifLayer.mouseBurstTimer).toBe(0.2);
+    expect(gifLayer.mouseLeftPressed).toBe(true);
+    expect(gifLayer.mouseBurstTimer).toBe(0);
     expect(gifLayer.mouseX).toBe(500);
     expect(gifLayer.mouseY).toBe(300);
 
     // Right click (button 2) - suction
     gifLayer.onMouseDown(600, 400, 2);
     expect(gifLayer.mouseBurstMode).toBe('suction');
-    expect(gifLayer.mouseBurstTimer).toBe(0.2);
+    expect(gifLayer.mouseRightPressed).toBe(true);
+    expect(gifLayer.mouseBurstTimer).toBe(0);
 
     gifLayer.stop();
   });
@@ -300,7 +327,7 @@ describe('GifLayer', () => {
       return 1;
     });
 
-    gifLayer.animate(performance.now() + 16);
+    gifLayer.animate(performance.now() + 20);
 
     // Wind should have affected velocities
     expect(Math.abs(flake.velocityX)).toBeGreaterThan(0);
@@ -325,7 +352,7 @@ describe('GifLayer', () => {
     flake.velocityY = 0;
     gifLayer.windTime = 0;
     gifLayer.currentWindVortex = 1;
-    gifLayer.animate(performance.now() + 16);
+    gifLayer.animate(performance.now() + 20);
 
     expect(Math.abs(flake.velocityY)).toBeGreaterThan(0);
 
@@ -355,7 +382,7 @@ describe('GifLayer', () => {
         velocityY: 0
       }]
     });
-    gifLayer.animate(performance.now() + 16);
+    gifLayer.animate(performance.now() + 20);
 
     const transform = flake.el.style.transform.match(
       /^translate3d\(([-\d.]+)px, ([-\d.]+)px, 0px?\) rotate\(([-\d.]+)rad\)$/
@@ -382,12 +409,12 @@ describe('GifLayer', () => {
 
     // Test wrap from left to right
     flake.x = -(flake.size * 0.5) - 5;
-    gifLayer.animate(performance.now() + 16);
+    gifLayer.animate(performance.now() + 20);
     expect(flake.x).toBe(width + flake.size * 0.5);
 
     // Test wrap from right to left
     flake.x = width + flake.size * 0.5 + 5;
-    gifLayer.animate(performance.now() + 16);
+    gifLayer.animate(performance.now() + 20);
     expect(flake.x).toBe(-flake.size * 0.5);
 
     gifLayer.stop();
@@ -409,7 +436,7 @@ describe('GifLayer', () => {
     flake.rotation = 3.14;
     flake.rotationSpeed = 0.5;
 
-    gifLayer.animate(performance.now() + 16);
+    gifLayer.animate(performance.now() + 20);
 
     expect(flake.y).toBe(-flake.size * 0.5);
     expect(flake.velocityX).toBe(0);
@@ -432,7 +459,7 @@ describe('GifLayer', () => {
     flake.velocityY = 100;
     flake.rotationSpeed = 1.0;
 
-    gifLayer.animate(performance.now() + 16);
+    gifLayer.animate(performance.now() + 20);
 
     // Velocities should be damped (reduced)
     expect(Math.abs(flake.velocityX)).toBeLessThan(100);
@@ -554,7 +581,7 @@ describe('GifLayer', () => {
     gifLayer.mouseVelocityX = 0;
     gifLayer.mouseVelocityY = 100; // Moving down
 
-    gifLayer.animate(performance.now() + 16);
+    gifLayer.animate(performance.now() + 20);
 
     // Rotation speed should be affected by mouse movement
     // (cross product of position vector and velocity vector)

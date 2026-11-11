@@ -477,7 +477,7 @@ export class SnowWebGPUController {
     this.mouseMoveHandler = (e) => {
       const now = performance.now();
       const rawDt = this.lastMouseTime ? (now - this.lastMouseTime) / 1000 : 0.016;
-      const dt = clamp(rawDt || 0.016, 1 / 240, 0.05);
+      const dt = clamp(rawDt || 0.016, 0.001, 0.05);
       const pointer = this.normalizePointerPosition(e);
 
       this.mousePrevX = this.mouseX;
@@ -491,9 +491,11 @@ export class SnowWebGPUController {
         const rawVy = (this.mouseY - this.mousePrevY) / dt;
         const clampedVx = clamp(rawVx, -maxMouseVelocity, maxMouseVelocity);
         const clampedVy = clamp(rawVy, -maxMouseVelocity, maxMouseVelocity);
-        const a = clamp(mouseVelocitySmoothing, 0.05, 1);
-        this.mouseVelocityX = this.mouseVelocityX * (1 - a) + clampedVx * a;
-        this.mouseVelocityY = this.mouseVelocityY * (1 - a) + clampedVy * a;
+        const smoothing = clamp(mouseVelocitySmoothing, 0.05, 1);
+        const smoothingSeconds = Math.max(0.001, 0.016 * (1 - smoothing) / smoothing);
+        const alpha = 1 - Math.exp(-dt / smoothingSeconds);
+        this.mouseVelocityX += (clampedVx - this.mouseVelocityX) * alpha;
+        this.mouseVelocityY += (clampedVy - this.mouseVelocityY) * alpha;
       }
 
       this.lastMouseTime = now;
@@ -543,6 +545,9 @@ export class SnowWebGPUController {
       if (this.renderer && this.mouseInteractionEnabled) {
         this.renderer.onMouseUp?.(button);
       }
+      if (this.gifLayer && this.mouseInteractionEnabled) {
+        this.gifLayer.onMouseUp?.(button);
+      }
     };
 
     this.mouseLeaveHandler = () => {
@@ -571,6 +576,7 @@ export class SnowWebGPUController {
       document.addEventListener('pointerup', this.mouseUpHandler, { passive: true });
       document.addEventListener('pointercancel', this.mouseLeaveHandler, { passive: true });
       document.addEventListener('pointerleave', this.mouseLeaveHandler, { passive: true });
+      window.addEventListener('blur', this.mouseLeaveHandler, { passive: true });
       return;
     }
 
@@ -587,6 +593,7 @@ export class SnowWebGPUController {
     document.addEventListener('mousedown', this.mouseDownHandler, { passive: true });
     document.addEventListener('mouseup', this.mouseUpHandler, { passive: true });
     document.addEventListener('mouseleave', this.mouseLeaveHandler, { passive: true });
+    window.addEventListener('blur', this.mouseLeaveHandler, { passive: true });
   }
 
   /**
@@ -606,6 +613,7 @@ export class SnowWebGPUController {
       if (this.mouseLeaveHandler) {
         document.removeEventListener('pointercancel', this.mouseLeaveHandler);
         document.removeEventListener('pointerleave', this.mouseLeaveHandler);
+        window.removeEventListener('blur', this.mouseLeaveHandler);
       }
     }
 
@@ -630,6 +638,7 @@ export class SnowWebGPUController {
     }
     if (this.mouseLeaveHandler) {
       document.removeEventListener('mouseleave', this.mouseLeaveHandler);
+      window.removeEventListener('blur', this.mouseLeaveHandler);
     }
 
     this.mouseMoveHandler = null;

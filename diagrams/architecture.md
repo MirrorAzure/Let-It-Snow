@@ -30,9 +30,9 @@ graph TB
         end
 
         subgraph Physics["🧪 Physics Layer"]
-            SimulationEngine["simulation-engine.js<br/>Frame simulation"]
+            SnowPhysics["snow-physics.js<br/>Shared forces + velocity"]
+            TimeStep["time-step.js<br/>Fixed-step clocks"]
             CollisionHandler["collision-handler.js<br/>Soft collisions"]
-            MouseHandler["mouse-handler.js<br/>Mouse interaction"]
             WindField["wind-field.js<br/>Shared wind + vortices"]
         end
         
@@ -83,6 +83,8 @@ graph TB
     WebGPU -->|Uses| Graphics
     WebGPU -->|Uses| Physics
     Fallback2D -.->|Uses| Physics
+    ThreeD -.->|Uses| Physics
+    GIFLayer -.->|Uses| Physics
     GIFLayer -.->|Uses| WindField
     WebGPU -.->|Uses| WindField
     Fallback2D -.->|Uses| WindField
@@ -121,7 +123,7 @@ graph TB
     class BrowserStorage storage
     class Manifest,ManifestChrome,ManifestEdge,ManifestFirefox config
     class Utils,BgMonitor,ColorUtils,GlyphUtils,GlyphQuality,SizeUtils,ViewportUtils,Localization utility
-    class Physics,SimulationEngine,CollisionHandler,MouseHandler,WindField physics
+    class Physics,SnowPhysics,TimeStep,CollisionHandler,WindField physics
     class Graphics,AtlasManager,UniformBuffer graphics
 ```
 
@@ -140,9 +142,9 @@ graph TB
 - **uniform-buffer.js** - manages WebGPU uniform buffers
 
 #### Physics Layer
-- **simulation-engine.js** - simulates snowflake movement
+- **snow-physics.js** - shared force and velocity helpers used by renderer update loops
+- **time-step.js** - bounded fixed-step clocks used by renderers and GIF layers
 - **collision-handler.js** - soft collisions between snowflakes
-- **mouse-handler.js** - interaction with the cursor and mouse gestures
 - **wind-field.js** - shared wind and vortex field computation for all renderers
 
 #### Utilities

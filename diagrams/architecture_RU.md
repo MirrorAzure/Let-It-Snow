@@ -30,9 +30,9 @@ graph TB
         end
 
         subgraph Physics["🧪 Physics Layer"]
-            SimulationEngine["simulation-engine.js<br/>Frame simulation"]
+            SnowPhysics["snow-physics.js<br/>Shared forces + velocity"]
+            TimeStep["time-step.js<br/>Fixed-step clocks"]
             CollisionHandler["collision-handler.js<br/>Soft collisions"]
-            MouseHandler["mouse-handler.js<br/>Mouse interaction"]
             WindField["wind-field.js<br/>Shared wind + vortices"]
         end
         
@@ -83,6 +83,8 @@ graph TB
     WebGPU -->|Uses| Graphics
     WebGPU -->|Uses| Physics
     Fallback2D -.->|Uses| Physics
+    ThreeD -.->|Uses| Physics
+    GIFLayer -.->|Uses| Physics
     GIFLayer -.->|Uses| WindField
     WebGPU -.->|Uses| WindField
     Fallback2D -.->|Uses| WindField
@@ -121,7 +123,7 @@ graph TB
     class BrowserStorage storage
     class Manifest,ManifestChrome,ManifestEdge,ManifestFirefox config
     class Utils,BgMonitor,ColorUtils,GlyphUtils,GlyphQuality,SizeUtils,ViewportUtils,Localization utility
-    class Physics,SimulationEngine,CollisionHandler,MouseHandler,WindField physics
+    class Physics,SnowPhysics,TimeStep,CollisionHandler,WindField physics
     class Graphics,AtlasManager,UniformBuffer graphics
 ```
 
@@ -140,9 +142,9 @@ graph TB
 - **uniform-buffer.js** - управление uniform-буферами для WebGPU
 
 #### Физический слой
-- **simulation-engine.js** - симуляция движения снежинок
+- **snow-physics.js** - общие силы и полная скорость, используемые циклами рендереров
+- **time-step.js** - ограниченные физические часы с фиксированным шагом
 - **collision-handler.js** - мягкие коллизии между снежинками
-- **mouse-handler.js** - взаимодействие с курсором и жестами мыши
 - **wind-field.js** - общий расчёт ветра и вихревого поля для всех рендереров
 
 #### Утилиты

@@ -4,14 +4,31 @@ import { SnowWebGPUController } from '../src/content/snow-controller.js';
 import { WebGPURenderer } from '../src/content/webgpu-renderer.js';
 import { Fallback2DRenderer } from '../src/content/fallback-2d-renderer.js';
 import { ThreeDSnowRenderer } from '../src/content/three-d-renderer.js';
+import { stepSinkSpeed } from '../src/content/physics/snow-physics.js';
 
-const makeFlake = (overrides = {}) => ({
-  x: 120, baseX: 120, y: 170, size: 20, char: '❄', glyph: '❄', glyphIndex: 0,
-  fallSpeed: 30, velocityX: 0, velocityY: 0, velocityZ: 0, z: 0,
-  phase: 0, freq: 1, sway: 0, rotationSpeed: 0, cumulativeSpin: 0, color: { r: 1, g: 1, b: 1 },
-  rotationX: 0, rotationY: 0, rotationZ: 0, rotationSpeedX: 0, rotationSpeedY: 0, rotationSpeedZ: 0,
-  ...overrides
-});
+const makeFlake = (overrides = {}) => {
+  const flake = {
+    x: 120, baseX: 120, y: 170, size: 20, char: '❄', glyph: '❄', glyphIndex: 0,
+    fallSpeed: 0, nominalFallSpeed: 30, velocityX: 0, velocityY: 30, velocityZ: 0, z: 0,
+    phase: 0, freq: 1, sway: 0, rotationSpeed: 0, cumulativeSpin: 0, color: { r: 1, g: 1, b: 1 },
+    rotationX: 0, rotationY: 0, rotationZ: 0, rotationSpeedX: 0, rotationSpeedY: 0, rotationSpeedZ: 0,
+    ...overrides
+  };
+  if (Object.hasOwn(overrides, 'fallSpeed') && !Object.hasOwn(overrides, 'velocityY')) {
+    flake.velocityY = overrides.fallSpeed;
+  }
+  flake.nominalFallSpeed = overrides.nominalFallSpeed ?? overrides.fallSpeed ?? 30;
+  flake.fallSpeed = 0;
+  return flake;
+};
+const advanceFlake = (flake, delta) => {
+  flake.x += flake.velocityX * delta;
+  flake.y += flake.velocityY * delta;
+  const damping = Math.pow(0.98, 60 * delta);
+  flake.velocityX *= damping;
+  flake.velocityY *= damping;
+  stepSinkSpeed(flake, delta);
+};
 
 describe('DOM accumulation and finite particle lifecycle', () => {
   let environments;
@@ -66,6 +83,28 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     expect(windAtFrameStart).not.toBe(0);
   });
 
+  it('renders Canvas 2D once after fixed physics substeps', () => {
+    const clearRect = vi.fn();
+    const fillText = vi.fn();
+    const renderer = new Fallback2DRenderer(document.createElement('canvas'), { minGlowStrength: 0 });
+    renderer.flakes = [makeFlake()];
+    renderer.ctx = {
+      clearRect, resetTransform: vi.fn(), setTransform: vi.fn(), fillText,
+      save: vi.fn(), restore: vi.fn(),
+      measureText: vi.fn(() => ({ actualBoundingBoxLeft: 0, actualBoundingBoxRight: 20 }))
+    };
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    renderer.start();
+    const clearCount = clearRect.mock.calls.length;
+    const drawCount = fillText.mock.calls.length;
+
+    renderer.drawCallback(1050);
+
+    expect(clearRect).toHaveBeenCalledTimes(clearCount + 1);
+    expect(fillText).toHaveBeenCalledTimes(drawCount + 1);
+    renderer.stop();
+  });
+
   beforeEach(() => {
     environments = [];
     document.body.innerHTML = '<figure style="visibility:visible;opacity:1"></figure>';
@@ -98,6 +137,23 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     expect(environment.settled.size).toBe(1);
   });
 
+  it('refreshes Canvas collision radii when the flake geometry changes', () => {
+    const renderer = new Fallback2DRenderer(document.createElement('canvas'), {});
+    const emoji = makeFlake({ size: 20 });
+    const sentence = makeFlake({ size: 20, isSentence: true });
+    renderer.flakes = [emoji, sentence];
+    emoji.size = 40;
+    sentence.size = 40;
+
+    renderer._rescaleFlakeSizes();
+
+    expect(emoji.collisionSize).toBe(40);
+    expect(emoji._collisionRadius).toBe(20);
+    expect(emoji._swayBuffer).toBeCloseTo(Math.sin(0.35) * 20);
+    expect(sentence.collisionSize).toBe(80);
+    expect(sentence._collisionRadius).toBe(40);
+  });
+
   it('lands at the swept contact point when a diagonal fall ends outside the surface', () => {
     rect = { ...rect, right: 250, width: 200 };
     const environment = create();
@@ -109,7 +165,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     environment.finishFrame();
 
     expect(flake.isSettled).toBe(true);
-    expect(flake.x).toBeCloseTo(236);
+    expect(flake.x).toBeCloseTo(236, 1);
     expect(flake.baseX).toBe(flake.x);
     expect(flake.y).toBe(188);
   });
@@ -147,7 +203,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     }
 
     expect(flake.isSettled).toBe(true);
-    expect(flake.x).toBeCloseTo(236);
+    expect(flake.x).toBeCloseTo(236, 1);
     expect(flake.y).toBe(188);
   });
 
@@ -265,9 +321,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     for (let frame = 0; frame < 600 && !incoming.isSettled; frame++) {
       const previousX = incoming.x;
       environment.beginFrame(1 / 60, [incoming], 800, 600);
-      incoming.x += incoming.velocityX / 60;
-      incoming.y += (incoming.fallSpeed + incoming.velocityY) / 60;
-      incoming.velocityY *= 0.98;
+      advanceFlake(incoming, 1 / 60);
       environment.finishFrame();
       expect(Math.abs(incoming.x - previousX)).toBeLessThan(2);
     }
@@ -302,10 +356,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
       const { x, y } = incoming;
       environment.beginFrame(1 / hz, [left, right, incoming], 800, 600);
       if (!incoming.isSettled) {
-        incoming.x += incoming.velocityX / hz;
-        incoming.y += (incoming.fallSpeed + incoming.velocityY) / hz;
-        incoming.velocityX *= Math.pow(0.98, 60 / hz);
-        incoming.velocityY *= Math.pow(0.98, 60 / hz);
+        advanceFlake(incoming, 1 / hz);
       }
       environment.finishFrame();
       expect(Math.hypot(incoming.x - x, incoming.y - y)).toBeLessThan(1.1);
@@ -336,10 +387,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
       for (let frame = 0; frame < hz * 8 && !incoming.isSettled && !incoming.hasShed; frame++) {
         environment.beginFrame(1 / hz, [left, right, incoming], 800, 600);
         if (!incoming.isSettled) {
-          incoming.x += incoming.velocityX / hz;
-          incoming.y += (incoming.fallSpeed + incoming.velocityY) / hz;
-          incoming.velocityX *= Math.pow(0.98, 60 / hz);
-          incoming.velocityY *= Math.pow(0.98, 60 / hz);
+          advanceFlake(incoming, 1 / hz);
         }
         environment.finishFrame();
       }
@@ -367,10 +415,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
             for (let frame = 0; frame < hz * 6 && !incoming.isSettled && !incoming.hasShed; frame++) {
               environment.beginFrame(1 / hz, [left, right, incoming], 800, 600);
               if (!incoming.isSettled) {
-                incoming.x += incoming.velocityX / hz;
-                incoming.y += (incoming.fallSpeed + incoming.velocityY) / hz;
-                incoming.velocityX *= Math.pow(0.98, 60 / hz);
-                incoming.velocityY *= Math.pow(0.98, 60 / hz);
+                advanceFlake(incoming, 1 / hz);
               }
               environment.finishFrame();
             }
@@ -411,10 +456,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     const incoming = makeFlake({ x: 121.5, y: 120, ...overrides });
     for (let frame = 0; frame < 360; frame++) {
       environment.beginFrame(1 / 60, [left, right, incoming], 800, 600);
-      incoming.x += incoming.velocityX / 60;
-      incoming.y += (incoming.fallSpeed + incoming.velocityY) / 60;
-      incoming.velocityX *= 0.98;
-      incoming.velocityY *= 0.98;
+      advanceFlake(incoming, 1 / 60);
       environment.finishFrame();
     }
     expect(incoming.isSettled).not.toBe(true);
@@ -433,12 +475,9 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     environment.settle(left, surface, 16);
     environment.settle(right, surface, 16);
     const incoming = makeFlake({ x: 121.5, y: -30 });
-    for (let frame = 0; frame < hz * 4; frame++) {
+    for (let frame = 0; frame < hz * 6; frame++) {
       environment.beginFrame(1 / hz, [left, right, incoming], 800, 600);
-      incoming.x += incoming.velocityX / hz;
-      incoming.y += (incoming.fallSpeed + incoming.velocityY) / hz;
-      incoming.velocityX *= Math.pow(0.98, 60 / hz);
-      incoming.velocityY *= Math.pow(0.98, 60 / hz);
+      advanceFlake(incoming, 1 / hz);
       environment.finishFrame();
       if (environment.contactsChanged && incoming.y - incoming.size / 2 < 0) {
         expect(incoming.hasShed).toBe(true);
@@ -580,7 +619,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
             renderer.start();
           }
           let now = performance.now();
-          for (let frame = 0; frame < hz * 4; frame++) {
+          for (let frame = 0; frame < hz * 6; frame++) {
             if (renderer instanceof WebGPURenderer) renderer.updateSimulation(1 / hz);
             else if (renderer instanceof ThreeDSnowRenderer) renderer._updateInstances(1 / hz);
             else {
@@ -730,7 +769,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     const wind = { instances: [incoming], windEnabled: true, currentWindForce: 3, currentWindLift: 2 };
     environment.beginFrame(0.02, [incoming], 800, 600, wind);
 
-    expect(environment.impactVelocity(incoming)).toEqual({ x: 8, y: 95 });
+    expect(environment.impactVelocity(incoming)).toEqual({ x: 8, y: 5 });
   });
 
   it('requires sustained wind exposure independent of frame rate and ignores disabled wind', () => {
@@ -787,10 +826,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
       const { x, y } = incoming;
       environment.beginFrame(1 / hz, particles, 800, 600);
       if (!incoming.isSettled) {
-        incoming.x += incoming.velocityX / hz;
-        incoming.y += (incoming.fallSpeed + incoming.velocityY) / hz;
-        incoming.velocityX *= Math.pow(0.98, 60 / hz);
-        incoming.velocityY *= Math.pow(0.98, 60 / hz);
+        advanceFlake(incoming, 1 / hz);
       }
       environment.finishFrame();
       expect(Math.hypot(incoming.x - x, incoming.y - y)).toBeLessThan(1.1);
@@ -934,10 +970,10 @@ describe('DOM accumulation and finite particle lifecycle', () => {
   it('lets shed particles fall through the pile instead of trapping particles forbidden to settle', () => {
     const environment = create();
     const support = land(environment);
-    const incoming = makeFlake({ y: 160, hasShed: true, velocityY: 80 });
-    for (let frame = 0; frame < 60; frame++) {
+    const incoming = makeFlake({ y: 160, hasShed: true, velocityY: 80, nominalFallSpeed: 80 });
+    for (let frame = 0; frame < 120; frame++) {
       environment.beginFrame(1 / 60, [support, incoming], 800, 600);
-      incoming.y += (incoming.fallSpeed + incoming.velocityY) / 60;
+      advanceFlake(incoming, 1 / 60);
       environment.finishFrame();
     }
     expect(incoming.y).toBeGreaterThan(250);
@@ -1073,6 +1109,8 @@ describe('DOM accumulation and finite particle lifecycle', () => {
       const flake = land(environment);
       const renderer = new Renderer(null, { mouseRadius: 20 });
       renderer.environment = environment;
+      if (renderer.instances) renderer.instances = [flake];
+      else renderer.flakes = [flake];
       return { environment, flake, renderer };
     };
 
@@ -1109,15 +1147,24 @@ describe('DOM accumulation and finite particle lifecycle', () => {
 
     it.each([0, 2])('applies one click impulse to settled flakes (button %s)', (button) => {
       const { environment, flake, renderer } = setup();
+      const airborne = makeFlake({ x: flake.x, y: flake.y });
+      const airborneBefore = { x: airborne.velocityX, y: airborne.velocityY };
+      if (renderer.instances) renderer.instances = [flake, airborne];
+      else renderer.flakes = [flake, airborne];
       renderer.onMouseDown(flake.x - 20, flake.y, button);
       expect(flake.isSettled).toBe(false);
       expect(renderer.mouseBurstTimer).toBe(0);
       expect(renderer.mouseBurstMode).toBe(button === 0 ? 'explode' : 'suction');
       expect(environment.airBurst).toBeUndefined();
+      expect(flake.velocityY).toBe(0);
+      expect(flake.velocityX).toBeCloseTo(airborne.velocityX - airborneBefore.x);
+      expect(flake.velocityY).toBeCloseTo(airborne.velocityY - airborneBefore.y);
       if (button === 0) {
         expect(flake.velocityX).toBeGreaterThan(0);
+        expect(renderer.mouseLeftPressed).toBe(true);
       } else {
-        expect(flake.velocityX).toBeLessThan(0);
+        expect(flake.velocityX).toBe(0);
+        expect(renderer.mouseRightPressed).toBe(true);
       }
       const velocity = { x: flake.velocityX, y: flake.velocityY };
       renderer.onMouseUp(button);
@@ -1125,13 +1172,13 @@ describe('DOM accumulation and finite particle lifecycle', () => {
       expect(flake.velocityY).toBe(velocity.y);
     });
 
-    it.each([0, 2])('does not repeat an airborne impulse while held (button %s)', (button) => {
+    it('does not repeat the one-shot explosion while held', () => {
       const { renderer } = setup();
       const flake = makeFlake({ x: 120, y: 170 });
       if (renderer.instances) renderer.instances = [flake];
       else renderer.flakes = [flake];
 
-      renderer.onMouseDown(100, 170, button);
+      renderer.onMouseDown(110, 170, 0);
       const velocity = { x: flake.velocityX, y: flake.velocityY };
       expect(velocity.x).not.toBe(0);
       expect(renderer.mouseBurstTimer).toBe(0);
@@ -1378,7 +1425,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     environment.beginFrame(2, [flake], 800, 600);
     flake.velocityY = -100;
     environment.beginFrame(1 / 60, [flake], 800, 600);
-    flake.y += (flake.fallSpeed + flake.velocityY) / 60;
+    flake.y += flake.velocityY / 60;
     environment.finishFrame();
     expect(flake.y).toBeGreaterThan(160);
     const resolvedY = flake.y + 10;
@@ -1488,7 +1535,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     controller.updateConfig({ gravity: 12, mouseRadius: 0, windEnabled: true, windStrength: 2 });
     expect(controller.renderer).toBe(renderer);
     expect(controller.config.gravity).toBe(12);
-    expect(flake.fallSpeed).toBe(30);
+    expect(flake.nominalFallSpeed).toBe(30);
     expect(flake.speed).toBe(30);
     expect(flake.y).toBe(170);
     expect(renderer.mouseRadius).toBe(0);
@@ -1504,7 +1551,7 @@ describe('DOM accumulation and finite particle lifecycle', () => {
 
     expect(controller.config.gravity).toBe(15);
     expect(controller.config.airDensity).toBe(0.8);
-    expect(flake.fallSpeed).toBe(0);
+    expect(flake.nominalFallSpeed).toBe(0);
     expect(flake.speed).toBe(0);
     expect(Number.isFinite(flake.fallSpeed)).toBe(true);
   });

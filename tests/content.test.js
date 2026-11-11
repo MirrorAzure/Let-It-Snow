@@ -382,7 +382,8 @@ describe('content script snow control', () => {
     document.dispatchEvent(mouseDownEvent);
 
     expect(controller.gifLayer.mouseBurstMode).toBe('explode');
-    expect(controller.gifLayer.mouseBurstTimer).toBeGreaterThan(0);
+    expect(controller.gifLayer.mouseLeftPressed).toBe(true);
+    expect(controller.gifLayer.mouseBurstTimer).toBe(0);
 
     controller.destroy();
   });
@@ -449,7 +450,7 @@ describe('content script snow control', () => {
     renderer.updateMousePosition(100, 300, 0, 0);
     renderer.updateMousePosition(900, 300, 3500, 0);
 
-    renderer.drawCallback(performance.now() + 16);
+    renderer.drawCallback(performance.now() + 20);
 
     expect(flake.velocityX).toBeGreaterThan(0);
 

@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { applyAirBurstImpulse, stepSnowflakePhysics } from '../src/content/physics/snow-physics.js';
-import { normalizePhysicsDelta } from '../src/content/physics/time-step.js';
+import {
+  applyAirBurstImpulse,
+  applyMouseFieldForce,
+  stepSnowflakePhysics
+} from '../src/content/physics/snow-physics.js';
+import {
+  advancePhysicsClock,
+  createPhysicsClock,
+  FIXED_PHYSICS_STEP,
+  normalizePhysicsDelta
+} from '../src/content/physics/time-step.js';
+import { WebGPURenderer } from '../src/content/webgpu-renderer.js';
 
 const config = {
   gravity: 9.81,
@@ -27,6 +37,81 @@ describe('snowflake physics', () => {
     expect(normalizePhysicsDelta(1 / 60)).toBeCloseTo(1 / 60);
     expect(normalizePhysicsDelta(-1)).toBe(0);
     expect(normalizePhysicsDelta(Number.NaN)).toBe(0);
+  });
+
+  it('keeps the complete vertical speed canonical under aerodynamic drag', () => {
+    const flake = { ...makeFlake(), velocityX: 100, velocityY: 100 };
+    const noGravity = { ...config, gravity: 0 };
+
+    for (let frame = 0; frame < 60; frame++) {
+      stepSnowflakePhysics(flake, 1 / 60, noGravity);
+      expect(flake.velocityX).toBeGreaterThan(0);
+      expect(flake.velocityY).toBeGreaterThan(0);
+      expect(flake.fallSpeed).toBe(0);
+      expect(flake.verticalVelocity).toBe(flake.velocityY);
+    }
+  });
+
+  it('keeps symmetric diagonal velocity moving forward through the WebGPU update loop', () => {
+    const renderer = new WebGPURenderer(null, {
+      gravity: 0,
+      airDensity: 1.2,
+      enableCollisions: false,
+      windEnabled: false,
+      mouseRadius: 0
+    });
+    renderer.viewportWidth = 1000;
+    renderer.viewportHeight = 1000;
+    const flake = {
+      x: 100, y: 100, size: 20, collisionSize: 20, fallSpeed: 0,
+      velocityX: 300, velocityY: 300, velocityZ: 0, phase: 0, freq: 0,
+      sway: 0, rotationSpeed: 0, cumulativeSpin: 0, glyphIndex: 0,
+      color: { r: 1, g: 1, b: 1 }
+    };
+    renderer.instances = [flake];
+    renderer.instanceData = new Float32Array(14);
+
+    for (let frame = 0; frame < 10; frame++) renderer.updateSimulation(0.05);
+
+    expect(flake.x).toBeGreaterThan(100);
+    expect(flake.y).toBeGreaterThan(100);
+    expect(flake.velocityX).toBeGreaterThan(0);
+    expect(flake.velocityY).toBeGreaterThan(0);
+    expect(flake.x - 100).toBeCloseTo(flake.y - 100, 1);
+  });
+
+  it('applies held pointer fields by simulation time and has no suction singularity at center', () => {
+    const flake = { x: 50, y: 0, velocityX: 0, velocityY: 0 };
+    applyMouseFieldForce(flake, 0, 0, 100, 'suction', 100, 1 / 60);
+    expect(flake.velocityX).toBeLessThan(0);
+
+    const approachingCenter = { x: 1, y: 0, velocityX: -100, velocityY: 0 };
+    applyMouseFieldForce(approachingCenter, 0, 0, 100, 'suction', 100, 1 / 60);
+    expect(approachingCenter.velocityX).toBeGreaterThan(-100);
+
+    const atCenter = { x: 0, y: 0, velocityX: 0, velocityY: 0 };
+    expect(applyMouseFieldForce(atCenter, 0, 0, 100, 'suction', 100, 1 / 60)).toBe(true);
+    expect(atCenter.velocityX).toBe(0);
+    expect(atCenter.velocityY).toBe(0);
+  });
+
+  it('advances equal simulated time at supported frame rates and caps backlog', () => {
+    for (const fps of [10, 20, 30, 60, 120]) {
+      const clock = createPhysicsClock();
+      let updates = 0;
+      for (let frame = 0; frame < fps; frame++) {
+        advancePhysicsClock(clock, 1 / fps, () => updates++);
+      }
+      expect(updates * FIXED_PHYSICS_STEP).toBeCloseTo(1, 8);
+      expect(clock.droppedTime).toBe(0);
+    }
+
+    const clock = createPhysicsClock();
+    let updates = 0;
+    advancePhysicsClock(clock, 0.5, () => updates++);
+    expect(updates).toBe(8);
+    expect(clock.droppedTime).toBeGreaterThan(0);
+    expect(clock.accumulator).toBeLessThan(FIXED_PHYSICS_STEP);
   });
 
   it('calculates physical properties and approaches terminal speed over time', () => {

@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
 import { stepWindState } from './physics/wind-field.js';
-import { applyAirBurstImpulse, getWindVelocity, stepSnowflakePhysics } from './physics/snow-physics.js';
+import { applyAirBurstImpulse, applyMouseFieldForce, getWindVelocity, MIN_MOUSE_ACTIVITY_SPEED, stepSinkSpeed, stepSnowflakePhysics } from './physics/snow-physics.js';
 import { BackgroundMonitor, getEffectiveBackgroundColor } from './utils/background-monitor.js';
 import { resolveMinGlowStrength } from './utils/glow-utils.js';
 import { ThreeDGlowPass } from './graphics/three-d-glow-pass.js';
 import { isCellMonotone } from './utils/glyph-utils.js';
 import { AdaptiveQuality } from './utils/adaptive-quality.js';
-import { normalizePhysicsDelta } from './physics/time-step.js';
+import { advancePhysicsClock, createPhysicsClock, normalizePhysicsDelta } from './physics/time-step.js';
 
 const CAMERA_Z = 35;
 const CAMERA_FOV = 52;
@@ -333,6 +333,7 @@ export class ThreeDSnowRenderer {
     this.frameRequest = null;
     this.resizeObserver = null;
     this.lastTimestamp = 0;
+    this.physicsClock = createPhysicsClock();
     this.viewportWidth = 0;
     this.viewportHeight = 0;
     this.mouseX = -1000;
@@ -451,9 +452,10 @@ export class ThreeDSnowRenderer {
           size,
           collisionSize: size,
           fallSpeed: 0,
+          nominalFallSpeed: fallSpeed,
           verticalVelocity: 0,
           velocityX: (Math.random() - 0.5) * 5,
-          velocityY: 0,
+          velocityY: fallSpeed,
           velocityZ: (Math.random() - 0.5) * 0.08,
           rotationX: Math.random() * Math.PI * 2,
           rotationY: Math.random() * Math.PI * 2,
@@ -771,14 +773,27 @@ export class ThreeDSnowRenderer {
       this.mouseRightPressed = true;
       this.mouseBurstMode = 'suction';
     }
-    if (button === 0 || button === 2) {
+    if (button === 0) {
       const radius = this.mouseRadius * this.mouseBurstRadiusMultiplier;
       const strength = this.mouseForce * 10;
-      this.environment?.applyAirBurst(x, y, radius, this.mouseBurstMode, strength, this.mouseBurstDuration);
+      this.environment?.applyAirBurst(x, y, radius, 'explode', strength, this.mouseBurstDuration);
       for (const flake of this.flakes) {
         if (flake.isFinished || flake.isAwaitingRespawn || flake.isSettled) continue;
-        applyAirBurstImpulse(flake, x, y, radius, this.mouseBurstMode, strength, this.mouseBurstDuration);
+        const depthFactor = 1 / (1 + Math.abs(flake.z) / CAMERA_Z);
+        applyAirBurstImpulse(
+          flake,
+          x,
+          y,
+          radius,
+          'explode',
+          strength * depthFactor,
+          this.mouseBurstDuration
+        );
       }
+    }
+    if (button === 2) {
+      const radius = this.mouseRadius * this.mouseBurstRadiusMultiplier;
+      this.environment?.applyAirBurst(x, y, radius, 'suction', this.mouseForce * 10, this.mouseBurstDuration);
     }
   }
 
@@ -804,13 +819,37 @@ export class ThreeDSnowRenderer {
   }
 
   _applyMouseForce(flake, delta) {
+    const heldMode = this.mouseLeftPressed ? 'blower'
+      : this.mouseRightPressed ? 'suction' : null;
+    if (heldMode) {
+      const depthFactor = 1 / (1 + Math.abs(flake.z) / CAMERA_Z);
+      const radius = this.mouseRadius * this.mouseBurstRadiusMultiplier;
+      const applied = applyMouseFieldForce(
+        flake,
+        this.mouseX,
+        this.mouseY,
+        radius,
+        heldMode,
+        this.mouseForce * 10 * depthFactor,
+        delta
+      );
+      if (applied && flake.z !== 0) {
+        const distance = Math.hypot(flake.x - this.mouseX, flake.y - this.mouseY, flake.z);
+        const influence = (1 - Math.min(1, distance / radius)) ** 2;
+        const direction = heldMode === 'suction' ? -1 : 1;
+        flake.velocityZ -= direction * Math.sign(flake.z) * this.mouseForce
+          * 0.004 * influence * delta;
+      }
+      return;
+    }
+
     const dx = flake.x - this.mouseX;
     const dy = flake.y - this.mouseY;
     const distance = Math.hypot(dx, dy);
     const mouseSpeed = Math.hypot(this.mouseVelocityX, this.mouseVelocityY);
     const burst = this.mouseBurstTimer > 0;
     const radius = this.mouseRadius * (burst ? this.mouseBurstRadiusMultiplier : 1);
-    if (distance >= radius || (!burst && mouseSpeed < 1)) return;
+    if (distance >= radius || (!burst && mouseSpeed < MIN_MOUSE_ACTIVITY_SPEED)) return;
 
     const burstFactor = burst ? this.mouseBurstTimer / this.mouseBurstDuration : 1;
     const influence = (1 - distance / radius) * burstFactor;
@@ -933,25 +972,34 @@ export class ThreeDSnowRenderer {
               const relativeY = -b.velocityY * pb.scale + a.velocityY * pa.scale;
               const relativeZ = b.velocityZ - a.velocityZ;
               const normalVelocity = relativeX * nx + relativeY * ny + relativeZ * nz;
+              const massA = Number.isFinite(a.mass) && a.mass > 0
+                ? a.mass : Math.max(0.001, (a.size / 20) ** 3);
+              const massB = Number.isFinite(b.mass) && b.mass > 0
+                ? b.mass : Math.max(0.001, (b.size / 20) ** 3);
+              const inverseMassA = a.isGrabbed ? 0 : 1 / massA;
+              const inverseMassB = b.isGrabbed ? 0 : 1 / massB;
+              const inverseMassSum = inverseMassA + inverseMassB;
 
-              if (normalVelocity < 0) {
-                const impulse = -(1 + restitution) * normalVelocity * 0.5;
-                a.velocityX -= impulse * nx / pa.scale;
-                a.velocityY += impulse * ny / pa.scale;
-                a.velocityZ -= impulse * nz;
-                b.velocityX += impulse * nx / pb.scale;
-                b.velocityY -= impulse * ny / pb.scale;
-                b.velocityZ += impulse * nz;
+              if (normalVelocity < 0 && inverseMassSum > 0) {
+                const impulse = -(1 + restitution) * normalVelocity / inverseMassSum;
+                a.velocityX -= impulse * inverseMassA * nx / pa.scale;
+                a.velocityY += impulse * inverseMassA * ny / pa.scale;
+                a.velocityZ -= impulse * inverseMassA * nz;
+                b.velocityX += impulse * inverseMassB * nx / pb.scale;
+                b.velocityY -= impulse * inverseMassB * ny / pb.scale;
+                b.velocityZ += impulse * inverseMassB * nz;
               }
 
               const overlap = Math.max(0, minDistance - distance);
-              const correction = overlap * 0.5;
-              pa.x -= nx * correction;
-              pa.y -= ny * correction;
-              pa.z -= nz * correction;
-              pb.x += nx * correction;
-              pb.y += ny * correction;
-              pb.z += nz * correction;
+              const correction = inverseMassSum > 0 ? overlap / inverseMassSum : 0;
+              const correctionA = correction * inverseMassA;
+              const correctionB = correction * inverseMassB;
+              pa.x -= nx * correctionA;
+              pa.y -= ny * correctionA;
+              pa.z -= nz * correctionA;
+              pb.x += nx * correctionB;
+              pb.y += ny * correctionB;
+              pb.z += nz * correctionB;
               pa.scale = this._worldScaleAtDepth(pa.z);
               pb.scale = this._worldScaleAtDepth(pb.z);
               a.x = pa.x / pa.scale + this.viewportWidth / 2;
@@ -992,7 +1040,7 @@ export class ThreeDSnowRenderer {
       flake.velocityZ += Math.cos(windPhase * 0.31 + flake.x * 0.01) * 0.18 * delta;
 
       flake.x += flake.velocityX * delta;
-      flake.y += (flake.fallSpeed + flake.velocityY) * delta;
+      flake.y += flake.velocityY * delta;
       flake.z += flake.velocityZ * delta;
       flake.rotationX += flake.rotationSpeedX * delta;
       flake.rotationY += flake.rotationSpeedY * delta;
@@ -1001,6 +1049,7 @@ export class ThreeDSnowRenderer {
       flake.velocityX *= damping;
       flake.velocityY *= damping;
       flake.velocityZ *= damping;
+      if (!Number.isFinite(this.config.gravity)) stepSinkSpeed(flake, delta);
 
       if (flake.z < MIN_DEPTH || flake.z > MAX_DEPTH) {
         flake.z = THREE.MathUtils.clamp(flake.z, MIN_DEPTH, MAX_DEPTH);
@@ -1101,15 +1150,21 @@ export class ThreeDSnowRenderer {
     if (!this.renderer || this.frameRequest !== null) return;
     this.isPaused = false;
     this.lastTimestamp = performance.now();
+    this.physicsClock.accumulator = 0;
     this.adaptiveQuality.resetTiming();
     const animate = (timestamp) => {
       if (!this.renderer || this.isPaused) return;
       const frameSeconds = Math.max((timestamp - this.lastTimestamp) / 1000, 0);
-      const delta = normalizePhysicsDelta(frameSeconds);
       this.lastTimestamp = timestamp;
       this._adaptQuality(frameSeconds);
-      this._updateInstances(delta);
-      this._stepGlowState(delta);
+      if (document.hidden) {
+        this.physicsClock.accumulator = 0;
+      } else {
+        advancePhysicsClock(this.physicsClock, frameSeconds, (delta) => {
+          this._updateInstances(delta);
+          this._stepGlowState(delta);
+        });
+      }
       this.glowPass.render(this.scene, this.camera);
       this.frameRequest = requestAnimationFrame(animate);
     };

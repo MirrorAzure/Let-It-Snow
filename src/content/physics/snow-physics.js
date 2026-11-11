@@ -3,6 +3,7 @@ import { normalizePhysicsDelta } from './time-step.js';
 const PIXELS_PER_METER = 4;
 const MIN_POSITIVE = 0.0001;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+export const MIN_MOUSE_ACTIVITY_SPEED = 45;
 
 const SHAPES = {
   compact: { area: 0.85, massDensity: 1.3, compactness: 0.82, dragRange: [0.7, 1.0] },
@@ -116,10 +117,7 @@ export function stepSnowflakePhysics(flake, delta, config = {}, wind = {}) {
   turbulenceOffset.y = turbulenceOffsetY;
 
   const velocityX = Number(flake.velocityX) || 0;
-  const externalVelocityY = Number(flake.velocityY) || 0;
-  const currentVelocityY = flake._physicsInitialized
-    ? (Number(flake.fallSpeed) || 0) + externalVelocityY
-    : externalVelocityY;
+  const currentVelocityY = Number(flake.velocityY) || 0;
   const relativeX = velocityX - airVelocityX;
   const relativeY = currentVelocityY - airVelocityY;
   const drag = airDensity * flake._dragAreaMassRatio;
@@ -143,8 +141,9 @@ export function stepSnowflakePhysics(flake, delta, config = {}, wind = {}) {
   const terminalVelocity = PIXELS_PER_METER
     * Math.sqrt((2 * mass * gravity) / (airDensity * flake.dragCoefficient * flake.area));
   flake.velocityX = nextVelocityX;
+  flake.velocityY = nextVelocityY;
   flake.verticalVelocity = nextVelocityY;
-  flake.fallSpeed = nextVelocityY - externalVelocityY;
+  flake.fallSpeed = 0;
   flake.gravity = gravity;
   flake.airDensity = airDensity;
   flake.windGustStrength = windGustStrength;
@@ -154,6 +153,16 @@ export function stepSnowflakePhysics(flake, delta, config = {}, wind = {}) {
   flake.windVerticalSpeed = airVelocityY;
   flake.windSpeed = Math.hypot(airVelocityX, airVelocityY);
   flake._physicsInitialized = true;
+}
+
+export function stepSinkSpeed(flake, delta) {
+  if (!flake || !Number.isFinite(delta) || delta <= 0) return;
+  const target = Number(flake.nominalFallSpeed);
+  if (!Number.isFinite(target) || target <= 0) return;
+  const response = 1 - Math.exp(-3 * delta);
+  flake.velocityY = (Number(flake.velocityY) || 0)
+    + (target - (Number(flake.velocityY) || 0)) * response;
+  flake.verticalVelocity = flake.velocityY;
 }
 
 export function getWindVelocity(config, currentWindForce = 0, currentWindLift = 0, enabled = config.windEnabled) {
@@ -179,14 +188,44 @@ export function applyAirBurstImpulse(flake, x, y, radius, mode, strength, durati
 
   const influence = 1 - distance / radius;
   const impulse = Math.min(600, strength * Math.max(0, duration) * influence * 0.5);
-  const angle = distance > 0 ? 0 : Math.random() * Math.PI * 2;
-  const directionX = distance > 0 ? dx / distance : Math.cos(angle);
-  const directionY = distance > 0 ? dy / distance : Math.sin(angle);
+  const directionX = distance > 0 ? dx / distance : mode === 'explode' ? 1 : 0;
+  const directionY = distance > 0 ? dy / distance : 0;
   const direction = mode === 'suction' ? -1 : 1;
   flake.velocityX = (Number.isFinite(flake.velocityX) ? flake.velocityX : 0)
     + directionX * impulse * direction;
   flake.velocityY = (Number.isFinite(flake.velocityY) ? flake.velocityY : 0)
     + directionY * impulse * direction
     - (mode === 'blower' ? impulse * 2 : 0);
+  return true;
+}
+
+export function applyMouseFieldForce(flake, x, y, radius, mode, strength, delta) {
+  if (!flake || delta <= 0 || !Number.isFinite(delta)
+    || !Number.isFinite(x) || !Number.isFinite(y)
+    || !Number.isFinite(radius) || radius <= 0
+    || !Number.isFinite(strength) || strength <= 0
+    || (mode !== 'blower' && mode !== 'suction')) return false;
+
+  const dx = flake.x - x;
+  const dy = flake.y - y;
+  const distance = Math.hypot(dx, dy);
+  if (distance >= radius) return false;
+
+  const softDistance = Math.max(distance, radius * 0.08);
+  const influence = (1 - distance / radius) ** 2;
+  const direction = mode === 'suction' ? -1 : 1;
+  const acceleration = strength * influence;
+  flake.velocityX = (Number(flake.velocityX) || 0)
+    + direction * (dx / softDistance) * acceleration * delta;
+  flake.velocityY = (Number(flake.velocityY) || 0)
+    + direction * (dy / softDistance) * acceleration * delta
+    - (mode === 'blower' ? acceleration * 2 * delta : 0);
+  if (mode === 'suction' && distance > 0) {
+    const radialVelocity = (Number(flake.velocityX) || 0) * dx / distance
+      + (Number(flake.velocityY) || 0) * dy / distance;
+    const radialDamping = 1 - Math.exp(-4 * influence * delta);
+    flake.velocityX -= (dx / distance) * radialVelocity * radialDamping;
+    flake.velocityY -= (dy / distance) * radialVelocity * radialDamping;
+  }
   return true;
 }

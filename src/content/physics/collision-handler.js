@@ -47,9 +47,10 @@ export class CollisionHandler {
     return flake.x;
   }
 
-  _processPair(flakes, i, j, delta) {
+  _processPair(flakes, i, j, delta, pairFilter) {
     const flakeA = flakes[i];
     const flakeB = flakes[j];
+    if (pairFilter && !pairFilter(flakeA, flakeB)) return;
 
     const centerXA = this._getCollisionCenterX(flakeA);
     const centerXB = this._getCollisionCenterX(flakeB);
@@ -64,20 +65,81 @@ export class CollisionHandler {
                       + (flakeB._collisionRadius ?? (flakeB.collisionSize ?? flakeB.size ?? 20) * 0.5);
     const swayBuffer = ((flakeA._swayBuffer ?? 0) + (flakeB._swayBuffer ?? 0)) * 0.5;
 
-    const safeDistance = Math.max(distance, 0.0001);
-    const nx = dx / safeDistance;
-    const ny = dy / safeDistance;
-    const velocityYA = (flakeA.velocityY ?? 0) + (flakeA.fallSpeed ?? 0);
-    const velocityYB = (flakeB.velocityY ?? 0) + (flakeB.fallSpeed ?? 0);
-    const dvx = (flakeB.velocityX ?? 0) - (flakeA.velocityX ?? 0);
-    const dvy = velocityYB - velocityYA;
-    const dvn = dvx * nx + dvy * ny;
-    const predictivePadding = Math.max(0, -dvn) * Math.max(0, delta);
-
     const contactDistance = minDistance + swayBuffer;
-    if (distance < contactDistance + predictivePadding) {
-      this._resolveCollision(flakeA, flakeB, dx, dy, distance, contactDistance, 0, 0, delta);
+    if (!(delta > 0) || !Number.isFinite(flakeA.previousCollisionX)
+      || !Number.isFinite(flakeA.previousCollisionY)
+      || !Number.isFinite(flakeB.previousCollisionX)
+      || !Number.isFinite(flakeB.previousCollisionY)) {
+      if (distance < contactDistance) {
+        this._resolveCollision(flakeA, flakeB, dx, dy, distance, contactDistance, 0, 0, delta);
+      }
+      return;
     }
+
+    const startX = flakeB.previousCollisionX - flakeA.previousCollisionX;
+    const startY = flakeB.previousCollisionY - flakeA.previousCollisionY;
+    const motionX = dx - startX;
+    const motionY = dy - startY;
+    const quadraticA = motionX * motionX + motionY * motionY;
+    if (quadraticA <= 0) {
+      if (distance < contactDistance) {
+        this._resolveCollision(flakeA, flakeB, dx, dy, distance, contactDistance, 0, 0, delta);
+      }
+      return;
+    }
+    const quadraticB = 2 * (startX * motionX + startY * motionY);
+    const quadraticC = startX * startX + startY * startY - contactDistance * contactDistance;
+    const discriminant = quadraticB * quadraticB - 4 * quadraticA * quadraticC;
+    if (discriminant < 0) {
+      if (distance < contactDistance) {
+        this._resolveCollision(flakeA, flakeB, dx, dy, distance, contactDistance, 0, 0, delta);
+      }
+      return;
+    }
+
+    const timeOfImpact = (-quadraticB - Math.sqrt(discriminant)) / (2 * quadraticA);
+    if (timeOfImpact < 0 || timeOfImpact > 1) {
+      if (distance < contactDistance) {
+        this._resolveCollision(flakeA, flakeB, dx, dy, distance, contactDistance, 0, 0, delta);
+      }
+      return;
+    }
+
+    const contactDx = startX + motionX * timeOfImpact;
+    const contactDy = startY + motionY * timeOfImpact;
+    const contactDistanceActual = Math.hypot(contactDx, contactDy);
+    const contactAX = flakeA.previousCollisionX
+      + (flakeA.x - flakeA.previousCollisionX) * timeOfImpact;
+    const contactAY = flakeA.previousCollisionY
+      + (flakeA.y - flakeA.previousCollisionY) * timeOfImpact;
+    const contactBX = flakeB.previousCollisionX
+      + (flakeB.x - flakeB.previousCollisionX) * timeOfImpact;
+    const contactBY = flakeB.previousCollisionY
+      + (flakeB.y - flakeB.previousCollisionY) * timeOfImpact;
+
+    flakeA.x = contactAX;
+    flakeA.y = contactAY;
+    flakeB.x = contactBX;
+    flakeB.y = contactBY;
+    this._resolveCollision(
+      flakeA,
+      flakeB,
+      contactDx,
+      contactDy,
+      contactDistanceActual,
+      contactDistance,
+      0,
+      0,
+      delta
+    );
+
+    const remaining = delta * (1 - timeOfImpact);
+    flakeA.x += (flakeA.velocityX ?? 0) * remaining;
+    flakeA.y += (flakeA.velocityY ?? 0) * remaining;
+    flakeB.x += (flakeB.velocityX ?? 0) * remaining;
+    flakeB.y += (flakeB.velocityY ?? 0) * remaining;
+    if (flakeA.baseX !== undefined) flakeA.baseX = flakeA.x;
+    if (flakeB.baseX !== undefined) flakeB.baseX = flakeB.x;
   }
 
   /**
@@ -93,7 +155,7 @@ export class CollisionHandler {
    * @param {Array} flakes - Массив объектов снежинок с позициями и скоростями
    * @param {number} delta - Время до следующего кадра в секундах
    */
-  handleCollisions(flakes, delta = 0.016) {
+  handleCollisions(flakes, delta = 0.016, pairFilter = null) {
     if (!this.enableCollisions || !flakes) return;
     delta = normalizePhysicsDelta(delta);
 
@@ -110,7 +172,7 @@ export class CollisionHandler {
       const swayBuffer = flake._swayBuffer ?? Math.sin(0.35) * (flake.size ?? 20) * 0.5;
       const velocityMag = Math.hypot(
         flake.velocityX ?? 0,
-        (flake.velocityY ?? 0) + (flake.fallSpeed ?? 0)
+        (flake.velocityY ?? 0)
       );
 
       if (radius > maxCollisionRadius) maxCollisionRadius = radius;
@@ -151,7 +213,7 @@ export class CollisionHandler {
     for (const [key, indices] of grid.entries()) {
       for (let i = 0; i < indices.length; i++) {
         for (let j = i + 1; j < indices.length; j++) {
-          this._processPair(flakes, indices[i], indices[j], delta);
+          this._processPair(flakes, indices[i], indices[j], delta, pairFilter);
         }
       }
 
@@ -168,7 +230,7 @@ export class CollisionHandler {
         for (let i = 0; i < indices.length; i++) {
           const a = indices[i];
           for (let j = 0; j < neighborBucket.length; j++) {
-            this._processPair(flakes, a, neighborBucket[j], delta);
+            this._processPair(flakes, a, neighborBucket[j], delta, pairFilter);
           }
         }
       }
@@ -252,8 +314,7 @@ export class CollisionHandler {
     
     // Относительная скорость
     const dvx = (flakeB.velocityX ?? 0) - (flakeA.velocityX ?? 0);
-    const dvy = ((flakeB.velocityY ?? 0) + (flakeB.fallSpeed ?? 0))
-      - ((flakeA.velocityY ?? 0) + (flakeA.fallSpeed ?? 0));
+    const dvy = (flakeB.velocityY ?? 0) - (flakeA.velocityY ?? 0);
     
     // Скорость сближения
     const dvn = dvx * nx + dvy * ny;
