@@ -7,6 +7,7 @@ import { resolveMinGlowStrength } from './utils/glow-utils.js';
 import { ThreeDGlowPass } from './graphics/three-d-glow-pass.js';
 import { isCellMonotone } from './utils/glyph-utils.js';
 import { AdaptiveQuality } from './utils/adaptive-quality.js';
+import { normalizePhysicsDelta } from './physics/time-step.js';
 
 const CAMERA_Z = 35;
 const CAMERA_FOV = 52;
@@ -15,8 +16,8 @@ const MAX_DEPTH = 12;
 const GLOW_MIN_LUMINANCE = 0.72;
 const DEFAULT_GLOW_FLICKER = 0.5;
 const TAN_HALF_FOV = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV / 2));
-const GLYPH_EM_PX = 88;
-const GLYPH_CANVAS_PX = 128;
+const GLYPH_EM_PX = 132;
+const GLYPH_CANVAS_PX = 192;
 const SENTENCE_UNIT_PX = 200;
 const MASK_CACHE_LIMIT = 48;
 const GLOW_STATE_RATE = 5;
@@ -765,7 +766,7 @@ export class ThreeDSnowRenderer {
     this.mouseVelocityY = 0;
     if (button === 0) {
       this.mouseLeftPressed = true;
-      this.mouseBurstMode = 'blower';
+      this.mouseBurstMode = 'explode';
     } else if (button === 2) {
       this.mouseRightPressed = true;
       this.mouseBurstMode = 'suction';
@@ -967,6 +968,7 @@ export class ThreeDSnowRenderer {
   }
 
   _updateInstances(delta) {
+    delta = normalizePhysicsDelta(delta);
     this._stepWind(delta);
     this.environment?.beginFrame(delta, this.flakes, this.viewportWidth, this.viewportHeight, this);
     this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - delta);
@@ -1103,7 +1105,7 @@ export class ThreeDSnowRenderer {
     const animate = (timestamp) => {
       if (!this.renderer || this.isPaused) return;
       const frameSeconds = Math.max((timestamp - this.lastTimestamp) / 1000, 0);
-      const delta = Math.min(frameSeconds, 0.05);
+      const delta = normalizePhysicsDelta(frameSeconds);
       this.lastTimestamp = timestamp;
       this._adaptQuality(frameSeconds);
       this._updateInstances(delta);

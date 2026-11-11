@@ -173,6 +173,63 @@ describe('CollisionHandler', () => {
     expect(newDistance).toBeGreaterThan(distance);
   });
 
+  it('keeps coincident flakes finite and limits separation to their overlap', () => {
+    const flakes = [
+      { x: 100, y: 100, size: 20, velocityX: 0, velocityY: 0 },
+      { x: 100, y: 100, size: 20, velocityX: 0, velocityY: 0 }
+    ];
+
+    collisionHandler.handleCollisions(flakes, 1 / 60);
+
+    const distance = Math.hypot(flakes[1].x - flakes[0].x, flakes[1].y - flakes[0].y);
+    expect(Number.isFinite(distance)).toBe(true);
+    expect(distance).toBeGreaterThan(0);
+    expect(distance).toBeLessThan(40);
+    expect(flakes.every((flake) => Number.isFinite(flake.x) && Number.isFinite(flake.y))).toBe(true);
+  });
+
+  it('does not separate flakes before their predicted contact', () => {
+    const flakes = [
+      { x: 100, y: 100, size: 20, velocityX: 1000, velocityY: 0 },
+      { x: 130, y: 100, size: 20, velocityX: -1000, velocityY: 0 }
+    ];
+
+    collisionHandler.handleCollisions(flakes, 0.01);
+
+    expect(flakes[0].x).toBe(100);
+    expect(flakes[1].x).toBe(130);
+    expect(flakes[0].velocityX).toBeLessThan(0);
+    expect(flakes[1].velocityX).toBeGreaterThan(0);
+  });
+
+  it('uses physical mass and preserves momentum during a collision', () => {
+    collisionHandler.collisionDamping = 1;
+    const flakes = [
+      { x: 100, y: 100, size: 20, mass: 1, velocityX: 10, velocityY: 0 },
+      { x: 115, y: 100, size: 20, mass: 3, velocityX: 0, velocityY: 0 }
+    ];
+
+    collisionHandler.handleCollisions(flakes, 1 / 60);
+
+    expect(flakes[0].velocityX).toBeLessThan(0);
+    expect(flakes[1].velocityX).toBeGreaterThan(0);
+    expect(flakes[0].mass * flakes[0].velocityX + flakes[1].mass * flakes[1].velocityX)
+      .toBeCloseTo(10, 5);
+  });
+
+  it('includes gravity-driven fall speed when resolving collisions', () => {
+    collisionHandler.collisionDamping = 1;
+    const flakes = [
+      { x: 100, y: 100, size: 20, velocityX: 0, velocityY: 0, fallSpeed: 100 },
+      { x: 100, y: 115, size: 20, velocityX: 0, velocityY: 0, fallSpeed: 0 }
+    ];
+
+    collisionHandler.handleCollisions(flakes, 1 / 60);
+
+    expect(flakes[0].velocityY).toBeLessThan(0);
+    expect(flakes[1].velocityY).toBeGreaterThan(0);
+  });
+
   it('transfers momentum during collision', () => {
     const flakes = [
       {

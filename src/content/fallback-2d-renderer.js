@@ -12,6 +12,7 @@ import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
 import { BackgroundMonitor } from './utils/background-monitor.js';
 import { AdaptiveQuality } from './utils/adaptive-quality.js';
+import { normalizePhysicsDelta } from './physics/time-step.js';
 
 const TEXT_GLYPH_FONT_STACK = '"Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Times New Roman", serif';
 const EMOJI_GLYPH_FONT_STACK = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif';
@@ -678,14 +679,11 @@ export class Fallback2DRenderer {
     this.adaptiveQuality.resetTiming();
     const draw = (now = performance.now()) => {
       const frameSeconds = (now - lastFrameTime) / 1000;
-      const rawDelta = Math.max(0, Math.min(frameSeconds, 0.05));
+      const delta = normalizePhysicsDelta(frameSeconds);
       lastFrameTime = now;
 
       this.adaptiveQuality.update(frameSeconds, document.hidden);
       this.currentFpsEstimate = this.adaptiveQuality.currentFps;
-      // Для физики используем реальный rawDelta (не сглаженный), только ограничиваем
-      // сверху чтобы снежинки не прыгали после длинной паузы вкладки.
-      const delta = Math.min(rawDelta, 1 / 20);
 
       // Равномерный респаун предотвращает стартовый burst и выравнивает нагрузку на CPU.
       this._respawnCredit = Math.min(
@@ -1320,7 +1318,7 @@ export class Fallback2DRenderer {
   onMouseDown(x, y, button) {
     if (button === 0) {
       this.mouseLeftPressed = true;
-      this.mouseBurstMode = 'blower';
+      this.mouseBurstMode = 'explode';
     }
     if (button === 2) {
       this.mouseRightPressed = true;

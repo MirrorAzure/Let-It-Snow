@@ -1,10 +1,12 @@
+import { normalizePhysicsDelta } from './time-step.js';
+
 /**
  * Обработчик физических коллизий между снежинками
  * Используется как WebGPU так и 2D renderers
  * 
  * Особенности:
  * - Точные коллизии по размеру глифов (основаны на collisionSize)
- * - Упругие столкновения с супер-упругим коэффициентом восстановления
+ * - Столкновения с учетом массы и коэффициента восстановления
  * - Предиктивная проверка для предотвращения прохождения сквозь друг друга
  * - Поддержка взаимодействия с мышью и захватывания снежинок
  * - Оптимизация через радиус проверки коллизий
@@ -65,14 +67,16 @@ export class CollisionHandler {
     const safeDistance = Math.max(distance, 0.0001);
     const nx = dx / safeDistance;
     const ny = dy / safeDistance;
+    const velocityYA = (flakeA.velocityY ?? 0) + (flakeA.fallSpeed ?? 0);
+    const velocityYB = (flakeB.velocityY ?? 0) + (flakeB.fallSpeed ?? 0);
     const dvx = (flakeB.velocityX ?? 0) - (flakeA.velocityX ?? 0);
-    const dvy = (flakeB.velocityY ?? 0) - (flakeA.velocityY ?? 0);
+    const dvy = velocityYB - velocityYA;
     const dvn = dvx * nx + dvy * ny;
-    const predictivePadding = Math.max(0, -dvn) * delta;
+    const predictivePadding = Math.max(0, -dvn) * Math.max(0, delta);
 
-    const effectiveMinDistance = minDistance + predictivePadding + swayBuffer;
-    if (distance < effectiveMinDistance) {
-      this._resolveCollision(flakeA, flakeB, dx, dy, distance, effectiveMinDistance, 0, 0, delta);
+    const contactDistance = minDistance + swayBuffer;
+    if (distance < contactDistance + predictivePadding) {
+      this._resolveCollision(flakeA, flakeB, dx, dy, distance, contactDistance, 0, 0, delta);
     }
   }
 
@@ -91,6 +95,7 @@ export class CollisionHandler {
    */
   handleCollisions(flakes, delta = 0.016) {
     if (!this.enableCollisions || !flakes) return;
+    delta = normalizePhysicsDelta(delta);
 
     // Сбрасываем ограничения покачивания перед новой проверкой
     let maxCollisionRadius = 0;
@@ -103,7 +108,10 @@ export class CollisionHandler {
 
       const radius = flake._collisionRadius ?? (flake.collisionSize ?? flake.size ?? 20) * 0.5;
       const swayBuffer = flake._swayBuffer ?? Math.sin(0.35) * (flake.size ?? 20) * 0.5;
-      const velocityMag = Math.hypot(flake.velocityX ?? 0, flake.velocityY ?? 0);
+      const velocityMag = Math.hypot(
+        flake.velocityX ?? 0,
+        (flake.velocityY ?? 0) + (flake.fallSpeed ?? 0)
+      );
 
       if (radius > maxCollisionRadius) maxCollisionRadius = radius;
       if (swayBuffer > maxSwayBuffer) maxSwayBuffer = swayBuffer;
@@ -115,7 +123,10 @@ export class CollisionHandler {
 
     const maxInteractionDistance = Math.min(
       this.collisionCheckRadius,
-      Math.max(this.minSpatialCellSize, maxCollisionRadius * 2 + maxSwayBuffer + maxVelocity * Math.max(delta, 0.016))
+      Math.max(
+        this.minSpatialCellSize,
+        maxCollisionRadius * 2 + maxSwayBuffer + 2 * maxVelocity * Math.max(0, delta)
+      )
     );
     const cellSize = Math.max(this.minSpatialCellSize, Math.min(this.maxSpatialCellSize, maxInteractionDistance));
     this._spatialCellSize = cellSize;
@@ -241,40 +252,35 @@ export class CollisionHandler {
     
     // Относительная скорость
     const dvx = (flakeB.velocityX ?? 0) - (flakeA.velocityX ?? 0);
-    const dvy = (flakeB.velocityY ?? 0) - (flakeA.velocityY ?? 0);
+    const dvy = ((flakeB.velocityY ?? 0) + (flakeB.fallSpeed ?? 0))
+      - ((flakeA.velocityY ?? 0) + (flakeA.fallSpeed ?? 0));
     
     // Скорость сближения
     const dvn = dvx * nx + dvy * ny;
     
-    // Импульс столкновения (упрощенная физика для равных масс)
-    // Применяем упругое столкновение с коэффициентом восстановления
-    if (dvn < 0) {
+    const massA = Number.isFinite(flakeA.mass) && flakeA.mass > 0 ? flakeA.mass : 1;
+    const massB = Number.isFinite(flakeB.mass) && flakeB.mass > 0 ? flakeB.mass : 1;
+    const inverseMassA = flakeA.isGrabbed ? 0 : 1 / massA;
+    const inverseMassB = flakeB.isGrabbed ? 0 : 1 / massB;
+    const inverseMassSum = inverseMassA + inverseMassB;
+
+    if (dvn < 0 && inverseMassSum > 0) {
       const oldVelAx = flakeA.velocityX;
       const oldVelAy = flakeA.velocityY;
       const oldVelBx = flakeB.velocityX;
       const oldVelBy = flakeB.velocityY;
       
-      // Коэффициент восстановления (elasticity) для упругого столкновения
-      // Использование 0.95 обеспечивает контролируемый отскок с небольшой потерей энергии
-      const restitution = 0.95;
-      // Для равных масс импульс делится поровну
-      const mass = 1.0;
-      const impulse = -(1 + restitution) * dvn / (2 * mass);
-      
-      // Убрано усиление impulseScale, чтобы предотвратить накопление энергии при повторных столкновениях
-      // Ограничиваем максимальный импульс чтобы избежать взрывных столкновений
-      const maxImpulse = 3.0;
-      const clampedImpulse = Math.max(-maxImpulse, Math.min(maxImpulse, impulse));
-      
-      // Применяем damping с небольшой асимметрией для реалистичности
-      // (неидеальные столкновения, шероховатость поверхности и т.д.)
-      const dampingA = this.collisionDamping * (1 + (Math.random() - 0.5) * 0.05);
-      const dampingB = this.collisionDamping * (1 + (Math.random() - 0.5) * 0.05);
-      
-      flakeA.velocityX -= clampedImpulse * nx * dampingA;
-      flakeA.velocityY -= clampedImpulse * ny * dampingA;
-      flakeB.velocityX += clampedImpulse * nx * dampingB;
-      flakeB.velocityY += clampedImpulse * ny * dampingB;
+      const restitution = 0.95 * Math.max(0, Math.min(1, this.collisionDamping));
+      const impulse = -(1 + restitution) * dvn / inverseMassSum;
+
+      if (inverseMassA > 0) {
+        flakeA.velocityX -= impulse * inverseMassA * nx;
+        flakeA.velocityY -= impulse * inverseMassA * ny;
+      }
+      if (inverseMassB > 0) {
+        flakeB.velocityX += impulse * inverseMassB * nx;
+        flakeB.velocityY += impulse * inverseMassB * ny;
+      }
       
       // Применяем вращательный момент при столкновении
       // Тангенциальный вектор (перпендикулярный к линии столкновения)
@@ -301,11 +307,11 @@ export class CollisionHandler {
           const maxRotationSpeed = 2.0; // радиан/сек
           
           // Применяем вращение к обеим снежинкам в противоположных направлениях
-          if (flakeA.rotationSpeed !== undefined) {
+          if (!flakeA.isGrabbed && flakeA.rotationSpeed !== undefined) {
             const newRotationA = flakeA.rotationSpeed + rotationImpulse;
             flakeA.rotationSpeed = Math.max(-maxRotationSpeed, Math.min(maxRotationSpeed, newRotationA));
           }
-          if (flakeB.rotationSpeed !== undefined) {
+          if (!flakeB.isGrabbed && flakeB.rotationSpeed !== undefined) {
             const newRotationB = flakeB.rotationSpeed - rotationImpulse;
             flakeB.rotationSpeed = Math.max(-maxRotationSpeed, Math.min(maxRotationSpeed, newRotationB));
           }
@@ -361,13 +367,9 @@ export class CollisionHandler {
     const overlap = minDistance - safeDistance;
     if (overlap > 0) {
       const slop = minDistance * 0.01; // Допуск для разделения
-      const percent = 1.0; // Полное разделение (50/50)
-      const correctionMag = Math.max(overlap - slop, 0) / (safeDistance + 0.0001);
-      // Умеренная коррекция разделения для предотвращения взрывов
-      // 1.8 обеспечивает достаточное разделение без чрезмерной силы
-      const amplifiedCorrectionMag = correctionMag * 1.8;
-      const correctionX = nx * amplifiedCorrectionMag * percent;
-      const correctionY = ny * amplifiedCorrectionMag * percent;
+      const correctionMag = Math.max(overlap - slop, 0) * 0.4;
+      const correctionX = nx * correctionMag;
+      const correctionY = ny * correctionMag;
       
       // DEBUG: Логирование разделения
       if (this.debugCollisions) {
@@ -390,13 +392,16 @@ export class CollisionHandler {
         flake.y += sy;
       };
 
-      if (!flakeA.isGrabbed && !flakeB.isGrabbed) {
-        applyToFlake(flakeA, -correctionX * 0.5, -correctionY * 0.5);
-        applyToFlake(flakeB, correctionX * 0.5, correctionY * 0.5);
-      } else if (!flakeA.isGrabbed && flakeB.isGrabbed) {
-        applyToFlake(flakeA, -correctionX, -correctionY);
-      } else if (flakeA.isGrabbed && !flakeB.isGrabbed) {
-        applyToFlake(flakeB, correctionX, correctionY);
+      const inverseMassA = flakeA.isGrabbed ? 0
+        : 1 / (Number.isFinite(flakeA.mass) && flakeA.mass > 0 ? flakeA.mass : 1);
+      const inverseMassB = flakeB.isGrabbed ? 0
+        : 1 / (Number.isFinite(flakeB.mass) && flakeB.mass > 0 ? flakeB.mass : 1);
+      const inverseMassSum = inverseMassA + inverseMassB;
+      if (inverseMassSum > 0) {
+        applyToFlake(flakeA, -correctionX * inverseMassA / inverseMassSum,
+          -correctionY * inverseMassA / inverseMassSum);
+        applyToFlake(flakeB, correctionX * inverseMassB / inverseMassSum,
+          correctionY * inverseMassB / inverseMassSum);
       }
     }
   }

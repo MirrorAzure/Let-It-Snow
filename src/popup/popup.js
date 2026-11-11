@@ -1157,6 +1157,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
+  let physicsUpdateTimer = null;
+  const schedulePhysicsUpdate = () => {
+    clearTimeout(physicsUpdateTimer);
+    physicsUpdateTimer = setTimeout(async () => {
+      const { gravity, airDensity } = buildSettingsPayload();
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id || isRestrictedTab(tab)) return;
+        await chrome.tabs.sendMessage(tab.id, {
+          action: 'updateSnowPhysics',
+          config: { gravity, airDensity }
+        });
+      } catch {
+        // A tab without a running content script has no active snowfall to update.
+      }
+    }, 120);
+  };
+
   const switchToPreset = async (presetId) => {
     const preset = findPresetById(presetId);
     if (!preset) return;
@@ -1443,8 +1461,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   );
 
   setupSliderListener(elements.snowFluffiness, elements.snowFluffinessValue, saveAllSettings, (value) => parseFloat(value).toFixed(2));
-  setupSliderListener(elements.gravity, elements.gravityValue, saveAllSettings, (value) => parseFloat(value).toFixed(1));
-  setupSliderListener(elements.airDensity, elements.airDensityValue, saveAllSettings, (value) => parseFloat(value).toFixed(1));
+  setupSliderListener(elements.gravity, elements.gravityValue, () => {
+    saveAllSettings();
+    schedulePhysicsUpdate();
+  }, (value) => parseFloat(value).toFixed(1));
+  setupSliderListener(elements.airDensity, elements.airDensityValue, () => {
+    saveAllSettings();
+    schedulePhysicsUpdate();
+  }, (value) => parseFloat(value).toFixed(1));
   setupSliderListener(elements.windGustStrength, elements.windGustStrengthValue, () => {
     elements.windPreset.value = 'custom';
     saveAllSettings();

@@ -3,7 +3,11 @@
  * Enables hot reload testing without extension installation
  */
 
-import { startSnow as startSnowOriginal, stopSnow as stopSnowOriginal } from '../src/content/index.js';
+import {
+  startSnow as startSnowOriginal,
+  stopSnow as stopSnowOriginal,
+  updateSnowPhysics as updateSnowPhysicsOriginal
+} from '../src/content/index.js';
 
 /**
  * Start snow animation with given config
@@ -36,3 +40,6 @@ export function stopSnow() {
   console.log('✓ Snow stopped');
 }
 
+export function updateSnowPhysics(config) {
+  return updateSnowPhysicsOriginal(config);
+}

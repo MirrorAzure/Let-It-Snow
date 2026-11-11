@@ -46,6 +46,26 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     expect(order).toEqual(['wind', 'accumulate']);
   });
 
+  it('updates WebGPU wind before accumulation reads its current state', () => {
+    const renderer = new WebGPURenderer(null, {
+      enableCollisions: false, windEnabled: true, windDirection: 'right',
+      windStrength: 3, windGustFrequency: 3, windVortexStrength: 0.35
+    });
+    renderer.windTime = 2;
+    let windAtFrameStart;
+    renderer.environment = {
+      beginFrame: (_delta, _flakes, _width, _height, wind) => {
+        windAtFrameStart = wind.currentWindForce;
+      },
+      finishFrame: vi.fn()
+    };
+
+    renderer.updateSimulation(1 / 60);
+
+    expect(windAtFrameStart).toBe(renderer.currentWindForce);
+    expect(windAtFrameStart).not.toBe(0);
+  });
+
   beforeEach(() => {
     environments = [];
     document.body.innerHTML = '<figure style="visibility:visible;opacity:1"></figure>';
@@ -702,17 +722,15 @@ describe('DOM accumulation and finite particle lifecycle', () => {
     expect(impact(120, 120, 30)).toBe(true);
   });
 
-  it('accounts for directional wind drift in WebGPU impact speed and acceleration', () => {
+  it('uses integrated particle velocity for impact speed regardless of renderer wind state', () => {
     const environment = create();
-    const incoming = makeFlake({ x: 100, y: 120, fallSpeed: 90 });
-    const wind = { instances: [incoming], windEnabled: true, currentWindForce: 0, currentWindLift: 0 };
+    const incoming = makeFlake({
+      x: 100, y: 120, fallSpeed: 90, velocityX: 8, velocityY: 5
+    });
+    const wind = { instances: [incoming], windEnabled: true, currentWindForce: 3, currentWindLift: 2 };
     environment.beginFrame(0.02, [incoming], 800, 600, wind);
-    const other = makeFlake({ x: 140, y: 160 });
-    expect(environment.canDislodge(incoming, other)).toBe(false);
-    wind.currentWindForce = 3;
-    expect(environment.canDislodge(incoming, other)).toBe(true);
-    wind.currentWindForce = -3;
-    expect(environment.canDislodge(incoming, other)).toBe(false);
+
+    expect(environment.impactVelocity(incoming)).toEqual({ x: 8, y: 95 });
   });
 
   it('requires sustained wind exposure independent of frame rate and ignores disabled wind', () => {
@@ -1094,12 +1112,10 @@ describe('DOM accumulation and finite particle lifecycle', () => {
       renderer.onMouseDown(flake.x - 20, flake.y, button);
       expect(flake.isSettled).toBe(false);
       expect(renderer.mouseBurstTimer).toBe(0);
-      expect(renderer.mouseBurstMode).toBe(button === 0 ? 'blower' : 'suction');
+      expect(renderer.mouseBurstMode).toBe(button === 0 ? 'explode' : 'suction');
       expect(environment.airBurst).toBeUndefined();
       if (button === 0) {
         expect(flake.velocityX).toBeGreaterThan(0);
-        expect(flake.velocityY).toBeLessThan(0);
-        expect(Math.abs(flake.velocityY)).toBeGreaterThan(flake.velocityX);
       } else {
         expect(flake.velocityX).toBeLessThan(0);
       }

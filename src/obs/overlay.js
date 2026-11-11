@@ -12,11 +12,11 @@
 
 import { SnowWebGPUController } from '../content/snow-controller.js';
 import { SnowCommandRuntime } from '../content/command-runtime.js';
+import { parseOverlaySnowConfig } from './overlay-options.js';
 import {
   DEFAULT_RELAY_URL,
   LIMITS,
   validateCommand,
-  sanitizeStartConfig,
   isLoopbackWebSocketUrl,
   isValidToken
 } from '../api/command-protocol.js';
@@ -25,27 +25,13 @@ const OBS_OVERLAY_ID = 'let-it-snow-obs-overlay';
 const PING_INTERVAL_MS = 20000;
 const MAX_BACKOFF_MS = 15000;
 
-const splitList = (value) => (value ? value.split(',').map((item) => item.trim()).filter(Boolean) : undefined);
-
 /**
  * Читает базовую конфигурацию из query-параметров (только безопасное подмножество).
  */
 export function parseOverlayOptions(locationLike = window.location) {
   const query = new URLSearchParams(locationLike.search || '');
   const hash = new URLSearchParams(String(locationLike.hash || '').replace(/^#/, ''));
-  const config = sanitizeStartConfig({
-    snowmax: query.get('snowmax') ?? undefined,
-    sinkspeed: query.get('speed') ?? query.get('sinkspeed') ?? undefined,
-    snowminsize: query.get('minsize') ?? undefined,
-    snowmaxsize: query.get('maxsize') ?? undefined,
-    colors: splitList(query.get('colors')),
-    symbols: splitList(query.get('symbols')),
-    glyphMode: query.get('glyphMode') ?? undefined,
-    rendererMode: query.get('renderer') ?? undefined,
-    windEnabled: query.has('wind') ? query.get('wind') === '1' : undefined,
-    windDirection: query.get('windDirection') ?? undefined,
-    windStrength: query.get('windStrength') ?? undefined
-  });
+  const config = parseOverlaySnowConfig(query);
 
   let relayUrl = query.get('relay');
   if (!relayUrl) {

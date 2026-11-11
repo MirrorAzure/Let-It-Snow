@@ -454,6 +454,18 @@ describe('Snow Animation System', () => {
 
       expect(renderer.instances.length).toBe(32);
     });
+
+    it('caps canvas pixel density on high-DPI displays', async () => {
+      const { WebGPURenderer } = await import('../src/content/webgpu-renderer.js');
+      const canvas = document.createElement('canvas');
+      const renderer = new WebGPURenderer(canvas, { snowmax: 10 });
+      window.devicePixelRatio = 3;
+
+      renderer._resizeCanvas();
+
+      expect(canvas.width).toBe(Math.floor(window.innerWidth * 1.75));
+      expect(canvas.height).toBe(Math.floor(window.innerHeight * 1.75));
+    });
   });
 
   describe('Fallback2DRenderer', () => {

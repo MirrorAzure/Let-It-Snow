@@ -1,7 +1,7 @@
 const target = 'let-it-snow-playground';
 
 // Import content script with hot reload support
-import { startSnow, stopSnow } from './content-script.js';
+import { startSnow, stopSnow, updateSnowPhysics } from './content-script.js';
 import { normalizeGlyphSizePercentRange } from '../src/content/utils/size-utils.js';
 
 // HMR support indicator
@@ -449,6 +449,26 @@ els.start.addEventListener('click', async () => {
     setStatus('error', error.message);
   }
 });
+
+let physicsUpdateTimeout;
+const queuePhysicsUpdate = () => {
+  clearTimeout(physicsUpdateTimeout);
+  physicsUpdateTimeout = setTimeout(() => {
+    try {
+      const result = updateSnowPhysics({
+        gravity: readNumber(els.gravity, defaults.gravity),
+        airDensity: readNumber(els.airDensity, defaults.airDensity)
+      });
+      if (!result.ok) throw new Error(result.error);
+    } catch (error) {
+      console.error('Unable to update playground snow physics:', error);
+      setStatus('error', error.message);
+    }
+  }, 120);
+};
+
+els.gravity.addEventListener('input', queuePhysicsUpdate);
+els.airDensity.addEventListener('input', queuePhysicsUpdate);
 
 els.stop.addEventListener('click', () => {
   stopSnow();

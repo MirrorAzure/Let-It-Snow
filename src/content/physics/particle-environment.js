@@ -124,7 +124,7 @@ export class ParticleEnvironment {
       || !Number.isFinite(radius) || radius <= 0
       || !Number.isFinite(strength) || strength <= 0
       || !Number.isFinite(duration) || duration < 0
-      || (mode !== 'blower' && mode !== 'suction')) return 0;
+      || (mode !== 'blower' && mode !== 'explode' && mode !== 'suction')) return 0;
     let affected = 0;
     for (const flake of [...this.settled.keys()]) {
       if (!this.settled.has(flake) || Math.hypot(flake.x - x, flake.y - y) >= radius) continue;
@@ -152,12 +152,9 @@ export class ParticleEnvironment {
   }
 
   impactVelocity(flake) {
-    // WebGPU applies its base wind as positional drift; 2D/3D already put it in velocity.
-    const drift = this.wind?.instances && this.wind.windEnabled ? Math.sqrt(flake.size / 20) : 0;
     return {
-      x: (flake.velocityX || 0) + (this.wind?.currentWindForce || 0) * 40 * drift,
+      x: flake.velocityX || 0,
       y: (flake.fallSpeed || 0) + (flake.velocityY || 0)
-        - (this.wind?.currentWindLift || 0) * 70 * drift
     };
   }
 

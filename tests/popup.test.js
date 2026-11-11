@@ -922,6 +922,22 @@ describe('popup UI', () => {
       expect(global.chrome.storage.sync.set).toHaveBeenCalledWith(expect.objectContaining({ activePresetId: 'preset-b' }));
     });
 
+    it('sends gravity and air-density changes to the running snowfall', async () => {
+      await setup();
+      const gravity = document.getElementById('gravity');
+      const airDensity = document.getElementById('airDensity');
+      gravity.value = '18';
+      gravity.dispatchEvent(new Event('input'));
+      airDensity.value = '0.8';
+      airDensity.dispatchEvent(new Event('input'));
+      await new Promise((resolve) => setTimeout(resolve, 180));
+
+      const update = global.chrome.tabs.sendMessage.mock.calls
+        .find((call) => call[1]?.action === 'updateSnowPhysics');
+      expect(update).toBeDefined();
+      expect(update[1].config).toEqual({ gravity: 18, airDensity: 0.8 });
+    });
+
     it('keeps edits as a draft instead of silently rewriting the preset', async () => {
       await setup();
       await editSnowmax(222);

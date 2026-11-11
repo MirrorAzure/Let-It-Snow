@@ -20,6 +20,7 @@ import { getStableViewportSize } from './utils/viewport-utils.js';
 import { nextCircularIndex } from './utils/circular-cursor.js';
 import { resolveMinGlowStrength } from './utils/glow-utils.js';
 import { AdaptiveQuality } from './utils/adaptive-quality.js';
+import { normalizePhysicsDelta } from './physics/time-step.js';
 
 /**
  * Класс для рендеринга снега через WebGPU
@@ -150,7 +151,7 @@ export class WebGPURenderer {
     );
     const maxByGlyphAtlas = Math.floor(maxTextureDim / glyphCount);
     const maxBySentenceAtlas = Math.floor(maxTextureDim / Math.max(2, sentenceCount));
-    const maxSafeSize = Math.max(64, Math.min(1024, maxByGlyphAtlas, maxBySentenceAtlas));
+    const maxSafeSize = Math.max(64, Math.min(2048, maxByGlyphAtlas, maxBySentenceAtlas));
 
     const configuredSize = Number(this.config?.webgpuGlyphAtlasSize);
     if (Number.isFinite(configuredSize)) {
@@ -847,7 +848,8 @@ export class WebGPURenderer {
 
   _resizeCanvas() {
     const viewport = this._getViewportSize();
-    const ratio = (window.devicePixelRatio || 1) * this.adaptiveQuality.resolutionScale;
+    const ratio = Math.min(window.devicePixelRatio || 1, 1.75)
+      * this.adaptiveQuality.resolutionScale;
     const width = Math.floor(viewport.width * ratio);
     const height = Math.floor(viewport.height * ratio);
     if (width === this.canvasWidth && height === this.canvasHeight) return;
@@ -1015,6 +1017,7 @@ export class WebGPURenderer {
    * @param {number} delta - Время с последнего кадра в секундах
    */
   updateSimulation(delta) {
+    delta = normalizePhysicsDelta(delta);
     const width = this.viewportWidth || this._getViewportSize().width;
     const height = this.viewportHeight || this._getViewportSize().height;
     const strideFloats = 14;
@@ -1022,8 +1025,6 @@ export class WebGPURenderer {
     const sentenceCount = this.atlasManager?.sentenceAtlas.count || 0;
     const monotoneFlags = this.glyphMonotoneFlags || this.atlasManager?.getMonotoneFlags() || [];
     let hasChanges = false;
-    this.environment?.beginFrame(delta, this.instances, width, height, this);
-
     // Обновляем параметры ветра
     if (this.windEnabled) {
       const windState = stepWindState({
@@ -1074,6 +1075,8 @@ export class WebGPURenderer {
       time: this.windTime,
       enabled: this.windEnabled
     };
+
+    this.environment?.beginFrame(delta, this.instances, width, height, this);
 
     if (this.mouseBurstTimer > 0) {
       this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - delta);
@@ -1345,7 +1348,7 @@ export class WebGPURenderer {
    */
   frame(timestamp) {
     const frameSeconds = (timestamp - this.lastTimestamp) / 1000;
-    const delta = Math.max(0.001, frameSeconds);
+    const delta = normalizePhysicsDelta(Math.max(0.001, frameSeconds));
     this.lastTimestamp = timestamp;
     if (this.adaptiveQuality.update(frameSeconds, document.hidden)) this._resizeCanvas();
     this.updateSimulation(delta);
@@ -1497,7 +1500,7 @@ export class WebGPURenderer {
   onMouseDown(x, y, button) {
     if (button === 0) {
       this.mouseLeftPressed = true;
-      this.mouseBurstMode = 'blower';
+      this.mouseBurstMode = 'explode';
     }
     if (button === 2) {
       this.mouseRightPressed = true;

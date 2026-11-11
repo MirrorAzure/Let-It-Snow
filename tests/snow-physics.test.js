@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyAirBurstImpulse, stepSnowflakePhysics } from '../src/content/physics/snow-physics.js';
+import { normalizePhysicsDelta } from '../src/content/physics/time-step.js';
 
 const config = {
   gravity: 9.81,
@@ -21,6 +22,13 @@ const makeFlake = (size = 20) => ({
 });
 
 describe('snowflake physics', () => {
+  it('normalizes invalid and stalled frame deltas consistently', () => {
+    expect(normalizePhysicsDelta(1)).toBe(0.05);
+    expect(normalizePhysicsDelta(1 / 60)).toBeCloseTo(1 / 60);
+    expect(normalizePhysicsDelta(-1)).toBe(0);
+    expect(normalizePhysicsDelta(Number.NaN)).toBe(0);
+  });
+
   it('calculates physical properties and approaches terminal speed over time', () => {
     const flake = { ...makeFlake(), x: 100, y: 100 };
 
@@ -38,10 +46,10 @@ describe('snowflake physics', () => {
     expect(flake.relativeVelocity.magnitude).toBeGreaterThan(0);
   });
 
-  it('makes lighter flakes fall faster and reduces terminal speed for lacy flakes', () => {
-    const lightFlake = makeFlake();
-    const largeFlake = makeFlake(40);
-    const lacyFlake = makeFlake();
+  it('scales mass with volume and makes larger flakes fall faster', () => {
+    const lightFlake = { ...makeFlake(), _massVariation: 1 };
+    const largeFlake = { ...makeFlake(40), _massVariation: 1 };
+    const lacyFlake = { ...makeFlake(), _massVariation: 1 };
     const lacyConfig = { ...config, snowShape: 'lacy' };
 
     stepSnowflakePhysics(lightFlake, 1 / 60, config);
@@ -49,7 +57,9 @@ describe('snowflake physics', () => {
     stepSnowflakePhysics(lacyFlake, 1 / 60, lacyConfig);
 
     expect(largeFlake.mass).toBeGreaterThan(lightFlake.mass);
-    expect(largeFlake.terminalVelocity).toBeLessThan(lightFlake.terminalVelocity);
+    expect(largeFlake.mass / lightFlake.mass).toBeCloseTo(8, 5);
+    expect(largeFlake.area / lightFlake.area).toBeCloseTo(4, 5);
+    expect(largeFlake.terminalVelocity).toBeGreaterThan(lightFlake.terminalVelocity);
     expect(lightFlake.terminalVelocity).toBeGreaterThan(lacyFlake.terminalVelocity);
     expect(lacyFlake.dragCoefficient).toBeGreaterThan(lightFlake.dragCoefficient);
   });
@@ -95,6 +105,41 @@ describe('snowflake physics', () => {
     expect(flake.perimeter).toBeGreaterThan(0);
   });
 
+  it('updates terminal velocity when gravity or air density changes', () => {
+    const flake = makeFlake();
+    stepSnowflakePhysics(flake, 1 / 60, config);
+    const initialTerminalVelocity = flake.terminalVelocity;
+
+    stepSnowflakePhysics(flake, 1 / 60, { ...config, gravity: 20 });
+    const highGravityVelocity = flake.terminalVelocity;
+    stepSnowflakePhysics(flake, 1 / 60, { ...config, airDensity: 2 });
+
+    expect(highGravityVelocity).toBeGreaterThan(initialTerminalVelocity);
+    expect(flake.terminalVelocity).toBeLessThan(initialTerminalVelocity);
+  });
+
+  it('reports the post-step relative velocity and reuses per-flake diagnostic objects', () => {
+    const flake = makeFlake();
+    const wind = { enabled: true, x: 40, y: -10, time: 0 };
+    const configWithWind = { ...config, windEnabled: true };
+
+    stepSnowflakePhysics(flake, 1 / 60, configWithWind, wind);
+    const relativeVelocity = flake.relativeVelocity;
+    const turbulenceOffset = flake.turbulenceOffset;
+
+    expect(relativeVelocity.x).toBeCloseTo(flake.velocityX - flake.windX);
+    expect(relativeVelocity.y).toBeCloseTo(flake.verticalVelocity - flake.windVerticalSpeed);
+    expect(relativeVelocity.magnitude).toBeCloseTo(Math.hypot(relativeVelocity.x, relativeVelocity.y));
+
+    wind.time += 1 / 60;
+    stepSnowflakePhysics(flake, 1 / 60, configWithWind, wind);
+
+    expect(flake.relativeVelocity).toBe(relativeVelocity);
+    expect(flake.turbulenceOffset).toBe(turbulenceOffset);
+    expect(relativeVelocity.x).toBeCloseTo(flake.velocityX - flake.windX);
+    expect(relativeVelocity.y).toBeCloseTo(flake.verticalVelocity - flake.windVerticalSpeed);
+  });
+
   it('accelerates gradually into the direction of moving air', () => {
     const flake = { ...makeFlake(), x: 100, y: 100 };
     const windy = { ...config, windEnabled: true };
@@ -106,6 +151,15 @@ describe('snowflake physics', () => {
     expect(flake.y).toBe(100);
     expect(flake.windX).toBeLessThan(0);
     expect(flake.relativeVelocity.magnitude).toBeGreaterThan(0);
+  });
+
+  it('ignores air velocity when wind is disabled', () => {
+    const flake = { ...makeFlake(), x: 100, y: 100 };
+
+    stepSnowflakePhysics(flake, 1 / 60, config, { x: 200, y: -100, enabled: false });
+
+    expect(flake.windX).toBe(0);
+    expect(flake.windVerticalSpeed).toBe(0);
   });
 
   it('preserves upward momentum against gravity when no updraft is configured', () => {
@@ -181,5 +235,27 @@ describe('snowflake physics', () => {
     expect(blowerFlake.velocityY).toBeLessThan(0);
     expect(suctionFlake.velocityX).toBeLessThan(0);
     expect(applyAirBurstImpulse(blowerFlake, 100, 100, 10, 'blower', 3000)).toBe(false);
+  });
+
+  it('applies an explosion impulse radially in every direction without an upward bias', () => {
+    const flakes = [
+      { ...makeFlake(), x: 120, y: 100 },
+      { ...makeFlake(), x: 80, y: 100 },
+      { ...makeFlake(), x: 100, y: 120 },
+      { ...makeFlake(), x: 100, y: 80 }
+    ];
+
+    for (const flake of flakes) {
+      expect(applyAirBurstImpulse(flake, 100, 100, 100, 'explode', 3000)).toBe(true);
+    }
+
+    expect(flakes[0].velocityX).toBeGreaterThan(0);
+    expect(flakes[0].velocityY).toBe(0);
+    expect(flakes[1].velocityX).toBeLessThan(0);
+    expect(flakes[1].velocityY).toBe(0);
+    expect(flakes[2].velocityY).toBeGreaterThan(0);
+    expect(flakes[2].velocityX).toBe(0);
+    expect(flakes[3].velocityY).toBeLessThan(0);
+    expect(flakes[3].velocityX).toBe(0);
   });
 });

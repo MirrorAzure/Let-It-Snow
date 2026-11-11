@@ -73,3 +73,26 @@ describe('shouldUseSdfGlyphAtlas', () => {
     expect(result).toBe(true);
   });
 });
+
+describe('estimateGlyphAtlasCellSize', () => {
+  it('allows larger glyph atlases for large rendered snowflakes', () => {
+    const size = glyphQualityEstimator.estimateGlyphAtlasCellSize({
+      glyphs: ['❄'],
+      targetRenderSize: 400,
+      maxTextureDimension2D: 4096
+    });
+
+    expect(size).toBeGreaterThan(1024);
+    expect(size).toBeLessThanOrEqual(2048);
+  });
+
+  it('keeps glyph cells within the texture dimension available per glyph', () => {
+    const size = glyphQualityEstimator.estimateGlyphAtlasCellSize({
+      glyphs: ['❄', '✦', '✧', '❅'],
+      targetRenderSize: 400,
+      maxTextureDimension2D: 2048
+    });
+
+    expect(size * 4).toBeLessThanOrEqual(2048);
+  });
+});

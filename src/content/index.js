@@ -15,6 +15,7 @@ import {
   PAGE_API_RESPONSE_TARGET,
   LIMITS,
   validateCommand,
+  sanitizeStartConfig,
   createRateLimiter,
   parseOriginList,
   isOriginAllowed
@@ -132,6 +133,22 @@ async function startSnow(config, options = {}) {
     nextController.destroy();
     controller = null;
   }
+}
+
+function updateSnowPhysics(config) {
+  if (!controller) return { ok: true, running: false };
+
+  const sanitized = sanitizeStartConfig(config);
+  const patch = {};
+  for (const key of ['gravity', 'airDensity']) {
+    if (Object.hasOwn(sanitized, key)) patch[key] = sanitized[key];
+  }
+  if (Object.keys(patch).length === 0) {
+    return { ok: false, error: 'invalid_physics_config' };
+  }
+
+  controller.updateConfig(patch);
+  return { ok: true, running: true, physics: patch };
 }
 
 /**
@@ -387,6 +404,11 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
         return;
       }
 
+      if (message.action === 'updateSnowPhysics') {
+        respond(updateSnowPhysics(message.config));
+        return;
+      }
+
       if (message.action === 'stopSnow') {
         stopSnow();
         respond({ ok: true });
@@ -439,4 +461,4 @@ handleVisibilityChange();
 })();
 
 // Экспорт для playground и тестирования
-export { SnowWebGPUController, startSnow, stopSnow, runSnowCommand, commandRuntime, loadStoredSnowConfig };
+export { SnowWebGPUController, startSnow, stopSnow, updateSnowPhysics, runSnowCommand, commandRuntime, loadStoredSnowConfig };

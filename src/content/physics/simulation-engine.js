@@ -3,6 +3,7 @@
  */
 
 import { nextCircularIndex } from '../utils/circular-cursor.js';
+import { normalizePhysicsDelta } from './time-step.js';
 
 export class SimulationEngine {
   constructor(config = {}) {
@@ -31,9 +32,11 @@ export class SimulationEngine {
    * @returns {boolean} true если данные изменились
    */
   updateSimulation(delta, instanceData, mouseHandler, collisionHandler) {
+    delta = normalizePhysicsDelta(delta);
     const width = window.innerWidth;
     const height = window.innerHeight;
     const strideFloats = 14;
+    const monotoneFlags = this.atlasManager?.getMonotoneFlags() || [];
     let hasChanges = false;
 
     this.instances.forEach((flake, idx) => {
@@ -135,20 +138,10 @@ export class SimulationEngine {
       instanceData[base + 10] = flake.color.g;
       instanceData[base + 11] = flake.color.b;
       instanceData[base + 12] = flake.glyphIndex;
-      instanceData[base + 13] = this._getMonotoneFlag(flake.glyphIndex);
+      instanceData[base + 13] = monotoneFlags[flake.glyphIndex] ? 1 : 0;
     });
     
     return hasChanges;
-  }
-
-  /**
-   * Получить флаг монотонности для индекса глифа
-   * @private
-   */
-  _getMonotoneFlag(glyphIndex) {
-    if (!this.atlasManager) return 0;
-    const monotoneFlags = this.atlasManager.getMonotoneFlags();
-    return monotoneFlags?.[glyphIndex] ? 1 : 0;
   }
 
   /**

@@ -22,6 +22,11 @@ let layerSequence = 0;
 const pickVisualBase = (config = {}) => ({
   snowminsize: config.snowminsize ?? DEFAULT_CONFIG.snowminsize,
   snowmaxsize: config.snowmaxsize ?? DEFAULT_CONFIG.snowmaxsize,
+  snowFluffiness: config.snowFluffiness ?? DEFAULT_CONFIG.snowFluffiness,
+  snowShape: config.snowShape ?? DEFAULT_CONFIG.snowShape,
+  snowShapeOverrides: Array.isArray(config.snowShapeOverrides) ? config.snowShapeOverrides : [],
+  gravity: config.gravity ?? DEFAULT_CONFIG.gravity,
+  airDensity: config.airDensity ?? DEFAULT_CONFIG.airDensity,
   snowcolor: Array.isArray(config.snowcolor) && config.snowcolor.length
     ? config.snowcolor
     : DEFAULT_CONFIG.snowcolor,
@@ -37,6 +42,9 @@ const pickVisualBase = (config = {}) => ({
   windDirection: config.windDirection ?? DEFAULT_CONFIG.windDirection,
   windStrength: config.windStrength ?? DEFAULT_CONFIG.windStrength,
   windGustFrequency: config.windGustFrequency ?? DEFAULT_CONFIG.windGustFrequency,
+  windGustStrength: config.windGustStrength ?? DEFAULT_CONFIG.windGustStrength,
+  turbulenceStrength: config.turbulenceStrength ?? DEFAULT_CONFIG.turbulenceStrength,
+  updraftStrength: config.updraftStrength ?? DEFAULT_CONFIG.updraftStrength,
   accumulationEnabled: config.accumulationEnabled !== false
 });
 

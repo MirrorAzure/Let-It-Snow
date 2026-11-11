@@ -269,7 +269,7 @@ export function estimateGlyphAtlasCellSize({
   maxTextureDimension2D = 4096,
   sentenceCount = 0,
   minCellSize = 64,
-  maxCellSize = 1024
+  maxCellSize = 2048
 } = {}) {
   const normalizedGlyphs = Array.isArray(glyphs) && glyphs.length > 0 ? glyphs : ['❄'];
   const normalizedTargetSize = Math.max(12, Number(targetRenderSize) || 24);

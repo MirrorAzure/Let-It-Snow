@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { stepWindState } from '../src/content/physics/wind-field.js';
+import {
+  applyVortexWindImpulse,
+  createWindVortexField,
+  stepWindState
+} from '../src/content/physics/wind-field.js';
 import { getWindVelocity, stepSnowflakePhysics } from '../src/content/physics/snow-physics.js';
 
 const stepWind = (state, delta, strength = 3) => stepWindState({
@@ -24,6 +28,18 @@ const zeroWindState = () => ({
 });
 
 describe('wind field', () => {
+  it('bounds vortex impulses to a valid physics step', () => {
+    const flake = { x: 100, y: 100, velocityX: 0, velocityY: 0 };
+    const cappedFlake = { ...flake };
+    const field = createWindVortexField(800, 600, 0, 3);
+
+    applyVortexWindImpulse(flake, 1, 100, field);
+    applyVortexWindImpulse(cappedFlake, 0.05, 100, field);
+
+    expect(flake.velocityX).toBe(cappedFlake.velocityX);
+    expect(flake.velocityY).toBe(cappedFlake.velocityY);
+  });
+
   it('updates wind response consistently across frame rates', () => {
     const simulate = (hz) => {
       let state = zeroWindState();

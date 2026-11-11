@@ -19,6 +19,9 @@ format and protocol is available in [External API](./EXTERNAL_API.md).
 Snowflakes start from rest and accelerate under gravity until air resistance
 limits their speed. Mass, projected area, perimeter, compactness, and drag are
 calculated automatically from each flake's size, selected shape, and fluffiness.
+For similarly shaped flakes, mass scales with the cube of size, projected area
+with its square, and perimeter linearly; these are relative model properties,
+not measured snowflake mass or dimensions.
 By default, the shape class is derived from fluffiness; you can choose a shape
 globally, or assign individual classes with `snowShapeOverrides` in API configs.
 Automatic shape thresholds are compact below 0.25 fluffiness, regular from
@@ -27,7 +30,8 @@ are 0.7–1.0, 1.0–1.4, and 1.4–2.0, respectively. In the Playground, enter 
 JSON array in **Per-flake shape overrides**; each array index maps to a flake
 index, and `null` inherits the global shape setting.
 Use the **Wind** and **Environment** settings to change airflow, gusts,
-turbulence, gravity, or air density; there is no manual fall-speed control.
+turbulence, gravity, or air density; gravity and air-density changes apply
+immediately to the snowfall on the active tab. There is no manual fall-speed control.
 Wind profiles include light, strong, and hurricane conditions, and each profile
 can be adjusted manually. Updraft is measured in m/s; sufficiently strong airflow
 can slow flakes and lift them upward. Wind strength affects both horizontal flow
@@ -304,6 +308,8 @@ Parameters are specified **before** `#token=…` and separated by `&`:
 |---|---|---|
 | `snowmax` | `120` | Number of regular snowflakes, 1–320. |
 | `renderer` | `3d` | `3d` or `auto`; 3D requires WebGL2 in OBS. |
+| `gravity` | `9.81` | Gravitational acceleration, 0–20 m/s². |
+| `initialSpawnSpanRatio` | `1` | Height of the spawn band above the viewport as a viewport-height ratio, 0.05–3. |
 | `speed` | `0.4` | Legacy parameter; ignored by the automatic snowflake physics. |
 | `minsize`, `maxsize` | `3`, `6` | Sizes as a percentage of the window's shorter side, within 2–10. |
 | `colors` | `%23d9f3ff,%23a9d8ff` | Comma-separated colors; `#` must be written as `%23`. |

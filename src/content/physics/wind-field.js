@@ -1,3 +1,5 @@
+import { normalizePhysicsDelta } from './time-step.js';
+
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 const hash01 = (value) => {
@@ -20,6 +22,7 @@ export function stepWindState({
   highFreq3Scale = 0.02,
   windResponseSeconds = 0.325
 }) {
+  delta = normalizePhysicsDelta(delta);
   if (!enabled) {
     return {
       windTime,
@@ -114,6 +117,12 @@ export function createWindVortexField(width, height, windTime, seed = 0) {
 }
 
 export function applyVortexWindImpulse(flake, delta, vortexAccel, vortexField) {
+  delta = normalizePhysicsDelta(delta);
+  if (!flake || delta === 0 || !Number.isFinite(vortexAccel)
+    || !Number.isFinite(flake.x) || !Number.isFinite(flake.y)
+    || !Number.isFinite(vortexField?.vortexRadiusSq) || vortexField.vortexRadiusSq <= 0
+    || !Array.isArray(vortexField.centers)) return;
+
   const { vortexRadiusSq, centers } = vortexField;
 
   for (let i = 0; i < centers.length; i++) {
@@ -127,7 +136,9 @@ export function applyVortexWindImpulse(flake, delta, vortexAccel, vortexField) {
     const norm = 1 / Math.sqrt(distSq + vortexRadiusSq * 0.35);
     const tangentX = -dy * norm * center.direction;
     const tangentY = dx * norm * center.direction;
-    flake.velocityX += tangentX * vortexAccel * falloff * delta;
-    flake.velocityY += tangentY * vortexAccel * falloff * delta;
+    flake.velocityX = (Number.isFinite(flake.velocityX) ? flake.velocityX : 0)
+      + tangentX * vortexAccel * falloff * delta;
+    flake.velocityY = (Number.isFinite(flake.velocityY) ? flake.velocityY : 0)
+      + tangentY * vortexAccel * falloff * delta;
   }
 }

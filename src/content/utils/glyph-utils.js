@@ -342,7 +342,9 @@ export function createSdfGlyphAtlas(sourceCanvas, cellSize, glyphCount, monotone
       const localRowOffset = y * cellSize;
       for (let x = 0; x < cellSize; x += 1) {
         const idx = localRowOffset + x;
-        const signedDistance = Math.sqrt(distToOutsideSq[idx]) - Math.sqrt(distToInsideSq[idx]);
+        const signedDistance = insideGrid[idx] === 0
+          ? Math.sqrt(distToOutsideSq[idx])
+          : -Math.sqrt(distToInsideSq[idx]);
         const normalized = Math.max(0, Math.min(1, 0.5 + signedDistance * invRange));
         const alphaByte = Math.round(normalized * 255);
         const dstPixelIndex = (dstRowOffset + cellX + x) * 4;

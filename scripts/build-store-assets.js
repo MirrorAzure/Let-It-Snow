@@ -52,7 +52,7 @@ const SCENES = [
   {
     file: 'screenshot-1.png',
     theme: 'market',
-    overlay: { renderer: 'auto', snowmax: 170, speed: 0.9, minsize: 3, maxsize: 6, colors: PALETTE },
+    overlay: { renderer: 'auto', snowmax: 170, gravity: 20, initialSpawnSpanRatio: 0.15, minsize: 3, maxsize: 6, colors: PALETTE },
     popupTab: 'subtab:snow',
     texts: {
       en: { title: 'Let it snow on any website', text: 'Beautiful glowing snowfall on top of every page — click-through and lightweight.' },
@@ -62,7 +62,7 @@ const SCENES = [
   {
     file: 'screenshot-2.png',
     theme: 'aurora',
-    overlay: { renderer: '3d', snowmax: 110, speed: 0.8, minsize: 4, maxsize: 8, colors: PALETTE },
+    overlay: { renderer: '3d', snowmax: 110, gravity: 20, initialSpawnSpanRatio: 0.15, minsize: 4, maxsize: 8, colors: PALETTE },
     seed: { rendererMode: '3d', symbols: ['❄', '❅', '❆', '🎄', '⭐', '🎁'], symbolModes: ['text', 'text', 'text', 'emoji', 'emoji', 'emoji'] },
     commands: [{ command: 'glyphs', params: { symbols: ['🎄', '⭐', '🎁'], glyphMode: 'emoji', count: 26, durationMs: 60000, speed: 0.7, entry: 'top' } }],
     popupTab: 'subtab:symbols',
@@ -74,7 +74,7 @@ const SCENES = [
   {
     file: 'screenshot-3.png',
     theme: 'sale',
-    overlay: { renderer: 'auto', snowmax: 120, speed: 1, minsize: 3, maxsize: 6, colors: PALETTE },
+    overlay: { renderer: 'auto', snowmax: 120, gravity: 20, initialSpawnSpanRatio: 0.15, minsize: 3, maxsize: 6, colors: PALETTE },
     seed: { windEnabled: true, windDirection: 'right', windStrength: 0.8 },
     images: true,
     commands: [{ command: 'wind', params: { enabled: true, direction: 'right', strength: 1.2, gustFrequency: 4, durationMs: 0 } }],
@@ -87,7 +87,7 @@ const SCENES = [
   {
     file: 'screenshot-4.png',
     theme: 'blog',
-    overlay: { renderer: 'auto', snowmax: 150, speed: 0.8, minsize: 3, maxsize: 6, colors: ['#4fc3f7', '#7c4dff', '#90caf9', '#b39ddb'] },
+    overlay: { renderer: 'auto', snowmax: 150, gravity: 20, initialSpawnSpanRatio: 0.15, minsize: 3, maxsize: 6, colors: ['#4fc3f7', '#7c4dff', '#90caf9', '#b39ddb'] },
     popupTab: 'tab:help',
     popupHelpSection: 'start',
     texts: {
@@ -98,7 +98,7 @@ const SCENES = [
   {
     file: 'screenshot-5.png',
     theme: 'stream',
-    overlay: { renderer: 'auto', snowmax: 120, speed: 1, minsize: 3, maxsize: 6, colors: PALETTE },
+    overlay: { renderer: 'auto', snowmax: 120, gravity: 20, initialSpawnSpanRatio: 0.15, minsize: 3, maxsize: 6, colors: PALETTE },
     commands: [{ command: 'burst', params: { count: 260, durationMs: 60000, speed: 1.1, symbols: ['❄', '❅', '✦'], colors: ['#ffffff', '#b388ff', '#80d8ff'], entry: 'top' } }],
     burstDelayMs: 5000,
     popupTab: 'subtab:api',
@@ -443,7 +443,6 @@ async function waitForOverlay(relayPort, token) {
 function overlayUrl(options, relayPort, token) {
   const query = new URLSearchParams({ relay: `ws://127.0.0.1:${relayPort}/ws`, status: '0', name: 'store' });
   const { colors, ...rest } = options;
-  if (rest.speed !== undefined) rest.speed = fastSpeed(rest.speed, 3);
   Object.entries(rest).forEach(([key, value]) => query.set(key, String(value)));
   if (colors) query.set('colors', colors.join(','));
   return `/obs/index.html?${query}#token=${token}`;
@@ -574,7 +573,7 @@ export async function generateStoreAssets() {
           await sendCommand(relayPort, token, fastCommand({ command: 'gif', params: { urls, count: 8 * urls.length > 24 ? 24 : 8 * urls.length, durationMs: 60000, speed: 0.8, entry: 'top' } }));
         }
       }
-      await settle(scene.burstDelayMs ? 4000 : 9000);
+      await settle(scene.burstDelayMs ? 4000 : 18000);
       if (scene.burstDelayMs) {
         for (const command of scene.commands.filter((item) => item.command === 'burst')) {
           await sendCommand(relayPort, token, fastCommand(command));
@@ -594,11 +593,19 @@ export async function generateStoreAssets() {
         version,
         promo: true,
         theme: 'promo',
-        overlayUrl: overlayUrl({ renderer: 'auto', snowmax: promo.snowmax, speed: 1.4, minsize: promo.minsize, maxsize: promo.maxsize, colors: PALETTE }, relayPort, token),
+        overlayUrl: overlayUrl({
+          renderer: 'auto',
+          snowmax: promo.snowmax,
+          gravity: 20,
+          initialSpawnSpanRatio: 0.15,
+          minsize: promo.minsize,
+          maxsize: promo.maxsize,
+          colors: PALETTE
+        }, relayPort, token),
         texts: PROMO_TEXTS
       })})`);
       await waitForOverlay(relayPort, token);
-      await settle(14000);
+      await settle(24000);
       for (const lang of LANGS) {
         await page.evaluate(`__stage.setLanguage(${JSON.stringify(lang)})`);
         await capture(lang, promo.file);

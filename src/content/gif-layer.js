@@ -6,6 +6,7 @@ import { CollisionHandler } from './physics/collision-handler.js';
 import { applyMouseRepulsion } from './physics/mouse-handler.js';
 import { createWindVortexField, applyVortexWindImpulse } from './physics/wind-field.js';
 import { resolveGlyphSizeRangePx, resolveInitialSpawnSpanRatio } from './utils/size-utils.js';
+import { normalizePhysicsDelta } from './physics/time-step.js';
 
 const GIF_LAYER_ID = 'let-it-snow-gif-layer';
 const MAX_Z_INDEX = '2147483646';
@@ -505,7 +506,8 @@ export class GifLayer {
   animate(timestamp) {
     if (!this.layer || !this.flakes.length) return;
 
-    const delta = Math.max(0.001, (timestamp - this.lastTimestamp) / 1000);
+    const elapsed = Math.max(0.001, (timestamp - this.lastTimestamp) / 1000);
+    const delta = normalizePhysicsDelta(elapsed);
     this.lastTimestamp = timestamp;
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -513,7 +515,7 @@ export class GifLayer {
 
     // Update burst timer
     if (this.mouseBurstTimer > 0) {
-      this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - delta);
+      this.mouseBurstTimer = Math.max(0, this.mouseBurstTimer - elapsed);
       if (this.mouseBurstTimer === 0) {
         this.mouseBurstMode = null;
       }

@@ -93,6 +93,38 @@ describe('SnowCommandRuntime', () => {
     });
   });
 
+  it('inherits the main layer physics settings for temporary snow layers', async () => {
+    main.config = {
+      snowFluffiness: 0.8,
+      snowShape: 'lacy',
+      snowShapeOverrides: ['compact', null],
+      gravity: 8.5,
+      airDensity: 0.8,
+      windEnabled: true,
+      windStrength: 2,
+      windGustFrequency: 4,
+      windGustStrength: 0.6,
+      turbulenceStrength: 0.7,
+      updraftStrength: 10
+    };
+
+    await runtime.execute(cmd({ command: 'burst' }));
+
+    expect(fake.created[0].config).toMatchObject({
+      snowFluffiness: 0.8,
+      snowShape: 'lacy',
+      snowShapeOverrides: ['compact', null],
+      gravity: 8.5,
+      airDensity: 0.8,
+      windEnabled: true,
+      windStrength: 2,
+      windGustFrequency: 4,
+      windGustStrength: 0.6,
+      turbulenceStrength: 0.7,
+      updraftStrength: 10
+    });
+  });
+
   it('preserves explicit API pause across visibility changes and new effects', async () => {
     await runtime.execute(cmd({ command: 'pause' }));
     runtime.pauseAll();

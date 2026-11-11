@@ -146,6 +146,43 @@ describe('content script snow control', () => {
     handler({ action: 'stopSnow' });
   });
 
+  it('applies sanitized gravity and air density updates to a running snowfall', async () => {
+    const { SnowWebGPUController, startSnow, stopSnow, updateSnowPhysics } = await import('../src/content/index.js');
+    let activeController;
+    const originalUpdateConfig = SnowWebGPUController.prototype.updateConfig;
+    vi.spyOn(SnowWebGPUController.prototype, 'updateConfig').mockImplementation(function (patch) {
+      activeController = this;
+      return originalUpdateConfig.call(this, patch);
+    });
+    await startSnow({ snowmax: 10, snowcolor: ['#fff'], snowletters: ['*'] });
+
+    const handler = global.chrome.runtime.onMessage.addListener.mock.calls[0][0];
+    const respond = vi.fn();
+    handler({
+      action: 'updateSnowPhysics',
+      config: { gravity: 18, airDensity: 0.8, snowmax: 320 }
+    }, {}, respond);
+
+    expect(respond).toHaveBeenCalledWith({
+      ok: true,
+      running: true,
+      physics: { gravity: 18, airDensity: 0.8 }
+    });
+    expect(activeController.config.gravity).toBe(18);
+    expect(activeController.config.airDensity).toBe(0.8);
+    expect(activeController.renderer.config.gravity).toBe(18);
+    expect(activeController.renderer.config.airDensity).toBe(0.8);
+
+    expect(updateSnowPhysics({ gravity: 12, airDensity: 1.6 })).toEqual({
+      ok: true,
+      running: true,
+      physics: { gravity: 12, airDensity: 1.6 }
+    });
+    expect(activeController.config.gravity).toBe(12);
+    expect(activeController.config.airDensity).toBe(1.6);
+    stopSnow();
+  });
+
   it('creates gif layer when gifs are provided', async () => {
     const { SnowWebGPUController } = await import('../src/content/index.js');
     const controller = new SnowWebGPUController({
@@ -183,7 +220,7 @@ describe('content script snow control', () => {
     });
     document.dispatchEvent(mouseDownEvent);
 
-    expect(controller.renderer.mouseBurstMode).toBe('blower');
+    expect(controller.renderer.mouseBurstMode).toBe('explode');
     expect(controller.renderer.mouseBurstTimer).toBe(0);
 
     controller.destroy();
@@ -464,7 +501,7 @@ describe('content script snow control', () => {
       document.dispatchEvent(touchStartEvent);
     }
 
-    expect(controller.renderer.mouseBurstMode).toBe('blower');
+    expect(controller.renderer.mouseBurstMode).toBe('explode');
 
     if (usePointer) {
       document.dispatchEvent(createInputEvent('mouseup', {

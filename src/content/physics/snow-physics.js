@@ -1,3 +1,5 @@
+import { normalizePhysicsDelta } from './time-step.js';
+
 const PIXELS_PER_METER = 4;
 const MIN_POSITIVE = 0.0001;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -30,7 +32,7 @@ function configureFlake(flake, shapeName, fluffiness) {
   flake._massVariation ??= 0.9 + Math.random() * 0.2;
   const mass = Math.max(
     MIN_POSITIVE,
-    sizeRatio * shape.massDensity * (1 - fluffiness * 0.4) * flake._massVariation
+    sizeRatio ** 3 * shape.massDensity * (1 - fluffiness * 0.4) * flake._massVariation
   );
   const area = sizeRatio ** 2 * shape.area * (1 + fluffiness * 0.25);
   const compactness = clamp(shape.compactness * (1 - fluffiness * 0.55), 0.05, 1);
@@ -41,9 +43,13 @@ function configureFlake(flake, shapeName, fluffiness) {
   flake.perimeter = Math.sqrt((4 * Math.PI * area) / compactness);
   flake.dragCoefficient = shape.dragRange[0]
     + (shape.dragRange[1] - shape.dragRange[0]) * fluffiness;
+  flake._dragAreaMassRatio = 0.5 * flake.dragCoefficient * area / (mass * PIXELS_PER_METER);
+  flake._turbulenceScaleFactor = 12 * Math.sqrt(area / mass);
   flake.resolvedSnowShape = shapeName;
   flake.effectiveFluffiness = fluffiness;
-  flake._physicsConfigKey = `${shapeName}:${fluffiness}:${sizeRatio}`;
+  flake._physicsShapeName = shapeName;
+  flake._physicsFluffiness = fluffiness;
+  flake._physicsSizeRatio = sizeRatio;
 }
 
 /**
@@ -51,7 +57,8 @@ function configureFlake(flake, shapeName, fluffiness) {
  * Positions remain the renderer's responsibility; velocity units are CSS px/s.
  */
 export function stepSnowflakePhysics(flake, delta, config = {}, wind = {}) {
-  if (!flake || !Number.isFinite(delta) || delta <= 0) return;
+  delta = normalizePhysicsDelta(delta);
+  if (!flake || delta <= 0) return;
 
   const flakeFluffiness = Number(flake.snowFluffiness);
   const configuredFluffiness = Number(config.snowFluffiness);
@@ -64,8 +71,11 @@ export function stepSnowflakePhysics(flake, delta, config = {}, wind = {}) {
   );
   const shapeName = resolveShapeName(flake, config, fluffiness);
   const sizeRatio = Math.max(0.1, (Number(flake.size) || 20) / 20);
-  const configKey = `${shapeName}:${fluffiness}:${sizeRatio}`;
-  if (flake._physicsConfigKey !== configKey) configureFlake(flake, shapeName, fluffiness);
+  if (flake._physicsShapeName !== shapeName
+    || flake._physicsFluffiness !== fluffiness
+    || flake._physicsSizeRatio !== sizeRatio) {
+    configureFlake(flake, shapeName, fluffiness);
+  }
   const mass = flake.mass;
 
   const gravityValue = Number(config.gravity);
@@ -85,20 +95,25 @@ export function stepSnowflakePhysics(flake, delta, config = {}, wind = {}) {
   const gustVelocity = Math.sin(
     windTime * (2 * Math.PI / Math.max(0.5, Number(config.windGustFrequency) || 3)) + phaseX
   ) * windGustStrength * windStrength * 20 * windDirection;
-  const turbulenceScale = turbulenceStrength * 12 * Math.sqrt(flake.area / mass);
-  const airVelocityX = (Number(wind.x) || 0)
+  const turbulenceScale = turbulenceStrength * flake._turbulenceScaleFactor;
+  const turbulenceOffsetX = turbulenceScale
+    ? Math.sin(windTime * 2.7 + phaseX) * turbulenceScale
+    : 0;
+  const turbulenceOffsetY = turbulenceScale
+    ? Math.cos(windTime * 2.1 + phaseY) * turbulenceScale * 0.6
+    : 0;
+  const airVelocityX = (windEnabled ? Number(wind.x) || 0 : 0)
     + gustVelocity
-    + Math.sin(windTime * 2.7 + phaseX) * turbulenceScale;
+    + turbulenceOffsetX;
   const updraft = windEnabled
     ? Math.max(0, Number(config.updraftStrength) || 0) * PIXELS_PER_METER
     : 0;
-  const airVelocityY = (Number(wind.y) || 0)
+  const airVelocityY = (windEnabled ? Number(wind.y) || 0 : 0)
     - updraft
-    + Math.cos(windTime * 2.1 + phaseY) * turbulenceScale * 0.6;
-  flake.turbulenceOffset = {
-    x: Math.sin(windTime * 2.7 + phaseX) * turbulenceScale,
-    y: Math.cos(windTime * 2.1 + phaseY) * turbulenceScale * 0.6
-  };
+    + turbulenceOffsetY;
+  const turbulenceOffset = flake.turbulenceOffset ?? (flake.turbulenceOffset = {});
+  turbulenceOffset.x = turbulenceOffsetX;
+  turbulenceOffset.y = turbulenceOffsetY;
 
   const velocityX = Number(flake.velocityX) || 0;
   const externalVelocityY = Number(flake.velocityY) || 0;
@@ -107,19 +122,23 @@ export function stepSnowflakePhysics(flake, delta, config = {}, wind = {}) {
     : externalVelocityY;
   const relativeX = velocityX - airVelocityX;
   const relativeY = currentVelocityY - airVelocityY;
-  const relativeSpeed = Math.hypot(relativeX, relativeY);
-  const drag = 0.5 * airDensity * flake.dragCoefficient * flake.area
-    / (mass * PIXELS_PER_METER);
-  const safeDelta = Math.min(delta, 0.05);
-  const gravityAdjustedRelativeY = relativeY + gravity * PIXELS_PER_METER * safeDelta;
+  const drag = airDensity * flake._dragAreaMassRatio;
+  const gravityAdjustedRelativeY = relativeY + gravity * PIXELS_PER_METER * delta;
   const dragFactor = 1 / (
-    1 + drag * Math.hypot(relativeX, gravityAdjustedRelativeY) * safeDelta
+    1 + drag * Math.hypot(relativeX, gravityAdjustedRelativeY) * delta
   );
   let nextVelocityX = airVelocityX + relativeX * dragFactor;
   let nextVelocityY = airVelocityY + gravityAdjustedRelativeY * dragFactor;
 
   nextVelocityX = clamp(nextVelocityX, -900, 900);
   nextVelocityY = clamp(nextVelocityY, -900, 900);
+
+  const nextRelativeX = nextVelocityX - airVelocityX;
+  const nextRelativeY = nextVelocityY - airVelocityY;
+  const relativeVelocity = flake.relativeVelocity ?? (flake.relativeVelocity = {});
+  relativeVelocity.x = nextRelativeX;
+  relativeVelocity.y = nextRelativeY;
+  relativeVelocity.magnitude = Math.hypot(nextRelativeX, nextRelativeY);
 
   const terminalVelocity = PIXELS_PER_METER
     * Math.sqrt((2 * mass * gravity) / (airDensity * flake.dragCoefficient * flake.area));
@@ -134,11 +153,6 @@ export function stepSnowflakePhysics(flake, delta, config = {}, wind = {}) {
   flake.windX = airVelocityX;
   flake.windVerticalSpeed = airVelocityY;
   flake.windSpeed = Math.hypot(airVelocityX, airVelocityY);
-  flake.relativeVelocity = {
-    x: relativeX,
-    y: relativeY,
-    magnitude: relativeSpeed
-  };
   flake._physicsInitialized = true;
 }
 
@@ -156,7 +170,7 @@ export function applyAirBurstImpulse(flake, x, y, radius, mode, strength, durati
     || !Number.isFinite(radius) || radius <= 0
     || !Number.isFinite(strength) || strength <= 0
     || !Number.isFinite(duration) || duration < 0
-    || (mode !== 'blower' && mode !== 'suction')) return false;
+    || (mode !== 'blower' && mode !== 'explode' && mode !== 'suction')) return false;
 
   const dx = flake.x - x;
   const dy = flake.y - y;
@@ -165,12 +179,14 @@ export function applyAirBurstImpulse(flake, x, y, radius, mode, strength, durati
 
   const influence = 1 - distance / radius;
   const impulse = Math.min(600, strength * Math.max(0, duration) * influence * 0.5);
-  const angle = distance > 0 ? Math.atan2(dy, dx) : Math.random() * Math.PI * 2;
+  const angle = distance > 0 ? 0 : Math.random() * Math.PI * 2;
+  const directionX = distance > 0 ? dx / distance : Math.cos(angle);
+  const directionY = distance > 0 ? dy / distance : Math.sin(angle);
   const direction = mode === 'suction' ? -1 : 1;
   flake.velocityX = (Number.isFinite(flake.velocityX) ? flake.velocityX : 0)
-    + Math.cos(angle) * impulse * direction;
+    + directionX * impulse * direction;
   flake.velocityY = (Number.isFinite(flake.velocityY) ? flake.velocityY : 0)
-    + Math.sin(angle) * impulse * direction
+    + directionY * impulse * direction
     - (mode === 'blower' ? impulse * 2 : 0);
   return true;
 }
